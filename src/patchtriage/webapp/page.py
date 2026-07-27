@@ -405,10 +405,10 @@ function renderResult(summary){
   const name=summary.url?`<a href="${esc(summary.url)}" target="_blank" rel="noopener">${esc(summary.name)} ↗</a>`:esc(summary.name);
   const context=summary.evaluated_context||{};
   const contextText=[["Exposure",context.system_exposure],["Mission",context.mission_impact],["Safety",context.safety_impact]].map(([label,value])=>`${label} ${String(value||"unknown").replaceAll("_"," ")}`).join(" · ");
-  const hasFindings=summary.total>0;const emptyOutcome=summary.result_state==="coverage_incomplete"?"Incomplete":"No findings";const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):emptyOutcome;const outcomeClass=hasFindings?String(outcome).toLowerCase().replaceAll(" ","-"):"no-findings";
+  const hasFindings=summary.total>0;const emptyOutcome=summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):emptyOutcome;const outcomeClass=hasFindings?String(outcome).toLowerCase().replaceAll(" ","-"):"no-findings";
   return `<article class="result" data-result="${summary.target_id}">
     <div class="resulthead">
-      <div class="prioritybox"><div class="priority ${esc(outcomeClass)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"SSVC outcome":"Input result"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`target: ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
+      <div class="prioritybox"><div class="priority ${esc(outcomeClass)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"SSVC outcome":"evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`target: ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
       <div><div class="rname">${name} · ${summary.duration_ms} ms ${summary.demo?"· offline snapshot":""}</div><div class="action">${esc(summary.top_action||summary.result_message||"Assessment completed")}</div></div>
       <a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a>
     </div>
