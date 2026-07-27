@@ -34,7 +34,17 @@ def _free_port():
 @pytest.fixture()
 def server(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for key in (
+        "PATCHTRIAGE_AI_PROVIDER",
+        "PATCHTRIAGE_AI_API_KEY",
+        "PATCHTRIAGE_AI_BASE_URL",
+        "PATCHTRIAGE_AI_MODEL",
+        "PATCHTRIAGE_AI_SCREEN_MODEL",
+        "PATCHTRIAGE_AI_DEEP_MODEL",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     port = _free_port()
@@ -83,6 +93,17 @@ def test_config_lists_rules_backend(server):
     assert "ssvc-deployer" in cfg["capabilities"]
     assert "kev-baseline" in cfg["capabilities"]
     assert "vendor-advisories" in cfg["capabilities"]
+
+
+def test_config_lists_provider_neutral_ai_backends(
+        server, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("PATCHTRIAGE_AI_MODEL", "local-security-model")
+    status, cfg = _req("GET", server + "/api/config")
+    assert status == 200
+    assert cfg["backends"] == ["rules", "ai", "cascade"]
+    assert cfg["has_ai"] is True
+    assert cfg["ai_provider"] == "openai-compatible"
     assert cfg["data_isolation"] == "anonymous-session"
     assert cfg["retention_hours"] == 6
     assert cfg["connectors"] == {
@@ -174,16 +195,37 @@ def test_security_headers_are_present(server):
     assert "Run the offline demo" in page
     assert "Patch what matters" in page
     assert "Severity informs. Your environment decides." in page
+    assert "What are attackers doing?" in page
+    assert "How reachable is this system?" in page
+    assert "Can exploitation be automated?" in page
+    assert "What happens if exploitation succeeds?" in page
+    assert "SSVC · A" in page
+    assert "SSVC · HI" in page
+    assert "<strong>A</strong>" not in page
+    assert "<strong>HI</strong>" not in page
     assert "Immediate decisions" in page
     assert "Upload evidence" in page
     assert "Import repository" in page
     assert "CycloneDX/SPDX JSON" in page
     assert "Categorical outcome — no aggregate SSVC score" in page
-    assert "Automatable are evaluated" in page
+    assert "Exploitation and Automatable are reviewed per vulnerability" in page
     assert 'id="f-automatable"' not in page
+    assert "CERT/CC SSVC standard" in page
+    assert "not a numeric risk score" in page
+    assert "PatchTriage-only:" in page
+    assert "“Not assessed” stores missing context" in page
+    assert "Not assessed — default: Open" in page
+    assert "Not assessed — default: Support Crippled" in page
+    assert "Not assessed — default: Marginal" in page
+    assert "SSVC EXP 1.0.1" in page
+    assert "SSVC MI 2.0.0" in page
+    assert "SSVC SI 2.0.1" in page
     assert "Advanced context evidence" in page
     assert "Context evidence sources" in page
     assert "Review vulnerability-specific SSVC inputs" in page
+    assert 'id="backend-static"' in page
+    assert 'aria-label="Decision engine" hidden' in page
+    assert "const canChoose=available.length>1" in page
     assert "Black Hat" not in page
     assert "Arsenal" not in page
     assert "LOCAL DECISION ENGINE" not in page

@@ -8,8 +8,8 @@
 #
 # Put your scans / SBOMs anywhere under this directory; they appear at /work
 # inside the container. Reports written to /out land in ./out on the host.
-# The triage/start services read ANTHROPIC_API_KEY, NVD_API_KEY, and
-# GITHUB_TOKEN/GH_TOKEN from your shell environment (all optional).
+# The AI settings, NVD key, and GitHub token are read from your shell
+# environment (all optional).
 
 services:
   # Web GUI console: register targets, import scans/SBOMs, browse reports.
@@ -21,7 +21,14 @@ services:
     ports:
       - "${PATCHTRIAGE_BIND:-127.0.0.1}:${PATCHTRIAGE_PORT:-8765}:8765"
     environment:
+      - PATCHTRIAGE_AI_PROVIDER
+      - PATCHTRIAGE_AI_API_KEY
+      - PATCHTRIAGE_AI_BASE_URL
+      - PATCHTRIAGE_AI_MODEL
+      - PATCHTRIAGE_AI_SCREEN_MODEL
+      - PATCHTRIAGE_AI_DEEP_MODEL
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
       - NVD_API_KEY
       - GITHUB_TOKEN
       - GH_TOKEN
@@ -57,7 +64,14 @@ services:
     stdin_open: true
     tty: true
     environment:
+      - PATCHTRIAGE_AI_PROVIDER
+      - PATCHTRIAGE_AI_API_KEY
+      - PATCHTRIAGE_AI_BASE_URL
+      - PATCHTRIAGE_AI_MODEL
+      - PATCHTRIAGE_AI_SCREEN_MODEL
+      - PATCHTRIAGE_AI_DEEP_MODEL
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
       - NVD_API_KEY
       - GITHUB_TOKEN
       - GH_TOKEN
@@ -74,7 +88,14 @@ services:
   triage:
     build: .
     environment:
+      - PATCHTRIAGE_AI_PROVIDER
+      - PATCHTRIAGE_AI_API_KEY
+      - PATCHTRIAGE_AI_BASE_URL
+      - PATCHTRIAGE_AI_MODEL
+      - PATCHTRIAGE_AI_SCREEN_MODEL
+      - PATCHTRIAGE_AI_DEEP_MODEL
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
       - NVD_API_KEY
       - GITHUB_TOKEN
       - GH_TOKEN

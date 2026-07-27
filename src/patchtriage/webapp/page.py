@@ -51,7 +51,7 @@ INDEX_HTML = r"""<!doctype html>
   .decision b{font-size:18px}.decision span{color:var(--muted);font-size:12px}.decision .outcome-now{text-align:right;font:800 22px "SFMono-Regular",Consolas,monospace;color:var(--hot)}
   .benchmark{max-width:1500px;margin:0 auto 34px;padding:0 clamp(20px,4vw,64px);display:grid;grid-template-columns:minmax(300px,.9fr) minmax(520px,1.35fr);gap:1px}
   .benchmarkcopy{background:#111722;border:1px solid var(--line);padding:24px}.benchmarkcopy h2{font-size:clamp(23px,2.8vw,36px);line-height:1.08;letter-spacing:-.035em;margin:10px 0}.benchmarkcopy p{color:var(--muted);margin:0;font-size:13.5px}
-  .outcomes{display:grid;grid-template-columns:repeat(4,1fr)}.outcome{background:var(--panel);border:1px solid var(--line);border-left:0;padding:20px 18px}.outcome strong{display:block;font:800 clamp(25px,3vw,38px) "SFMono-Regular",Consolas,monospace;color:var(--cyan)}.outcome span{display:block;font-size:14px;font-weight:700;margin:5px 0}.outcome small{display:block;color:var(--muted);font-size:13px;line-height:1.45}
+  .outcomes{display:grid;grid-template-columns:repeat(4,1fr)}.outcome{background:var(--panel);border:1px solid var(--line);border-left:0;padding:20px 18px}.factorcode{display:inline-flex;color:var(--cyan);border:1px solid #325464;border-radius:20px;padding:3px 7px;font:750 10.5px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.06em;text-transform:uppercase}.outcome strong{display:block;color:var(--ink);font-size:19px;line-height:1.2;margin:12px 0 4px}.factorquestion{display:block;color:#d2d8e3;font-size:13.5px;font-weight:650;line-height:1.35;min-height:37px}.outcome small{display:block;color:var(--muted);font-size:12.5px;line-height:1.45;margin-top:8px}.outcome small b{color:#c8cfdb;font-weight:700}
   .kpis{max-width:1500px;margin:0 auto;padding:0 clamp(20px,4vw,64px) 34px;display:grid;grid-template-columns:repeat(4,1fr);gap:1px}
   .kpi{background:var(--panel);border:1px solid var(--line);padding:15px 18px}.kpi+.kpi{border-left:0}
   .kpi .value{font:750 28px "SFMono-Regular",Consolas,monospace}.kpi .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.07em}
@@ -59,18 +59,19 @@ INDEX_HTML = r"""<!doctype html>
   .workspaceinner{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:340px minmax(0,1fr);gap:28px}
   .sectiontitle{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
   .sectiontitle h2{margin:0;font-size:22px;letter-spacing:-.02em}.sectiontitle span{font:13px "SFMono-Regular",Consolas,monospace;color:#70798a;text-transform:uppercase;letter-spacing:.07em}
+  .decisionactions{display:flex;align-items:center;gap:8px}.enginecontrol{display:grid;gap:2px;min-width:190px}.enginelabel{color:#70798a;font:700 10.5px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.07em;text-transform:uppercase}.enginevalue{border:1px solid #cfd5e2;border-radius:5px;background:#f7f8fb;color:#313a49;padding:7px 10px;font-size:13px;line-height:1.2}.enginecontrol select{width:auto;min-width:190px;padding:6px 9px;font-size:13px}
   .prioritylegend{display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:14px;overflow:hidden}.prioritylegend>div{padding:11px 12px;border-right:1px solid #e2e6ee;font-size:13px;color:#687285;line-height:1.45}.prioritylegend>div:last-child{border-right:0}.prioritylegend b{display:block;font-size:14px;color:#2d3441}.prioritylegend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:var(--defer)}.prioritylegend .immediate i{background:var(--immediate)}.prioritylegend .outofcycle i{background:var(--outofcycle)}.prioritylegend .scheduled i{background:var(--scheduled)}
   .lightpanel{background:#fff;border:1px solid #d9deea;border-radius:10px;box-shadow:0 10px 28px rgba(30,40,65,.06)}
-  details.add{margin-bottom:14px}details.add summary{list-style:none;padding:14px 16px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between}
-  details.add summary::-webkit-details-marker{display:none}details.add summary:after{content:"+";color:#697386}details.add[open] summary:after{content:"−"}
+  details.add{margin-bottom:14px}details.add>summary{list-style:none;padding:14px 16px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between}
+  details.add>summary::-webkit-details-marker{display:none}details.add>summary:after{content:"+";color:#697386}details.add[open]>summary:after{content:"−"}
   .form{border-top:1px solid #e4e7ee;padding:14px;display:grid;gap:11px}
   input[type=text],select{width:100%;border:1px solid #cfd5e2;border-radius:5px;padding:9px 10px;background:#fff;color:#171b25}
-  .contextintro{border:1px solid #dbe0ec;background:#f7f8fc;border-radius:6px;padding:11px 12px;display:grid;gap:5px}.contextintro strong{font-size:14px}.contextintro span,.contextintro a{font-size:13px;color:#667183;line-height:1.45}.contextintro a{color:#4053ba;font-weight:700;text-decoration:none}.contextintro a:hover{text-decoration:underline}
-  .fieldlabel{display:grid;gap:5px;color:#697386;font-size:13px;font-weight:750;text-transform:uppercase;letter-spacing:.045em}.fieldlabel select,.fieldlabel input{font-size:14px;text-transform:none;letter-spacing:0}.fieldhelp{color:#70798a;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.45}.formactions{display:flex;gap:7px}.formactions .btn{flex:1}
+  .contextintro{border:1px solid #cfd7e8;background:#f7f8fc;border-radius:6px;padding:12px;display:grid;gap:7px}.contexttitle{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.contexttitle strong{font-size:14px}.standardtag{display:inline-flex;border:1px solid #b9c5ed;border-radius:20px;background:#edf1ff;color:#3048a8;padding:3px 7px;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.04em;text-transform:uppercase}.contextintro span,.contextintro a{font-size:13px;color:#667183;line-height:1.45}.contextintro a{color:#4053ba;font-weight:700;text-decoration:none}.contextintro a:hover{text-decoration:underline}.patchtriagenote{border-left:3px solid #e6a32d;background:#fff8e8;padding:8px 9px;color:#66502b!important}.patchtriagenote b{color:#5a4015}
+  .fieldlabel{display:grid;gap:5px;color:#697386;font-size:13px;font-weight:750;text-transform:uppercase;letter-spacing:.045em}.fieldtitle{display:flex;align-items:center;justify-content:space-between;gap:7px}.fieldlabel select,.fieldlabel input{font-size:14px;text-transform:none;letter-spacing:0}.fieldhelp{color:#70798a;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.45}.fieldhelp b{color:#4f596a}.formactions{display:flex;gap:7px}.formactions .btn{flex:1}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:flex;flex-direction:column;gap:9px}
   .privacy{border:1px solid #efc46d;background:#fff7e2;color:#725016;border-radius:6px;padding:10px 11px;font-size:12.5px;line-height:1.45}
-  .advanced{border:1px solid #dbe0ec;border-radius:6px;padding:8px 10px}.advanced summary{cursor:pointer;font-weight:750;color:#596579;font-size:13px}.advancedgrid{display:grid;gap:9px;margin-top:10px}
+  .advanced{border:1px solid #dbe0ec;border-radius:6px;padding:8px 10px}.advanced summary{cursor:pointer;font-weight:750;color:#596579;font-size:13px;display:flex;justify-content:space-between}.advanced summary:after{content:"+"}.advanced[open] summary:after{content:"−"}.advancedgrid{display:grid;gap:9px;margin-top:10px}
   .target{background:#fff;border:1px solid #d9deea;border-radius:8px;padding:13px;transition:.18s}
   .target:hover{border-color:#b8c1d3;transform:translateY(-1px)}.targettop{display:flex;justify-content:space-between;gap:8px}
   .targetname{font-weight:750;overflow-wrap:anywhere}.targetname a{text-decoration:none}.targetname a:hover{text-decoration:underline}
@@ -102,7 +103,7 @@ INDEX_HTML = r"""<!doctype html>
   dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
   @media(max-width:1100px){.hero{grid-template-columns:1fr}.benchmark{grid-template-columns:1fr}.workspaceinner{grid-template-columns:300px minmax(0,1fr)}.resultbody{grid-template-columns:1fr}.compare{border-right:0;border-bottom:1px solid #e4e7ed}}
   @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:1fr}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlink{grid-column:2}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
-  @media(max-width:520px){h1{font-size:43px}.topbar{padding:0 16px}.brand{font-size:13px}.hero{padding-left:16px;padding-right:16px}.kpis{padding-left:16px;padding-right:16px}.prioritylegend{grid-template-columns:1fr 1fr}.prioritylegend>div{border-bottom:1px solid #e2e6ee}.resulthead{padding:15px}.resultbody>div,.metricrow{padding-left:15px;padding-right:15px}.versus{grid-template-columns:1fr}.vs{text-align:center}.row2{grid-template-columns:1fr}}
+  @media(max-width:520px){h1{font-size:43px}.topbar{padding:0 16px}.brand{font-size:13px}.hero{padding-left:16px;padding-right:16px}.kpis{padding-left:16px;padding-right:16px}.prioritylegend{grid-template-columns:1fr 1fr}.prioritylegend>div{border-bottom:1px solid #e2e6ee}.sectiontitle{align-items:flex-start;gap:10px}.decisionactions{align-items:flex-end;flex-direction:column}.enginecontrol{min-width:0}.enginecontrol select{min-width:175px}.resulthead{padding:15px}.resultbody>div,.metricrow{padding-left:15px;padding-right:15px}.versus{grid-template-columns:1fr}.vs{text-align:center}.row2{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header class="topbar">
@@ -139,10 +140,10 @@ INDEX_HTML = r"""<!doctype html>
     <p>KEV and PoC evidence establish what attackers are doing. SSVC combines that state with how your system is deployed and what failure means to your organization.</p>
   </div>
   <div class="outcomes">
-    <div class="outcome"><strong>E</strong><span>Exploitation</span><small>KEV → Active · public exploit → PoC</small></div>
-    <div class="outcome"><strong>EXP</strong><span>System exposure</span><small>Open · Controlled · Small</small></div>
-    <div class="outcome"><strong>A</strong><span>Automatable</span><small>Reviewed for each vulnerability</small></div>
-    <div class="outcome"><strong>HI</strong><span>Human impact</span><small>Mission + safety consequences</small></div>
+    <div class="outcome"><span class="factorcode">SSVC · E</span><strong>Exploitation</strong><span class="factorquestion">What are attackers doing?</span><small><b>Active</b> (CISA KEV) · <b>Public PoC</b> · <b>None</b></small></div>
+    <div class="outcome"><span class="factorcode">SSVC · EXP</span><strong>System exposure</strong><span class="factorquestion">How reachable is this system?</span><small><b>Open</b> · <b>Controlled</b> · <b>Small</b></small></div>
+    <div class="outcome"><span class="factorcode">SSVC · A</span><strong>Automatable</strong><span class="factorquestion">Can exploitation be automated?</span><small><b>Yes</b> · <b>No</b> · reviewed per vulnerability</small></div>
+    <div class="outcome"><span class="factorcode">SSVC · HI</span><strong>Human impact</strong><span class="factorquestion">What happens if exploitation succeeds?</span><small><b>Low</b> · <b>Medium</b> · <b>High</b> · <b>Very high</b>, from mission + safety</small></div>
   </div>
 </section>
 
@@ -162,24 +163,25 @@ INDEX_HTML = r"""<!doctype html>
         <summary id="form-title">Add a target</summary>
         <div class="form">
           <div class="contextintro">
-            <strong>CERT/CC SSVC Deployer context</strong>
-            <span>Enter the deployer-owned values for this system. Exploitation and Automatable are evaluated—and can be confirmed—separately for each vulnerability after the first run.</span>
-            <span>Your upload, targets, and reports are isolated to this anonymous browser session and expire from the server after six hours.</span>
-            <a href="https://certcc.github.io/SSVC/howto/deployer_tree/" target="_blank" rel="noopener">Open the official decision-point definitions ↗</a>
+            <div class="contexttitle"><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC standard</span></div>
+            <span>Official categorical patch-priority inputs—not a numeric risk score. Mission Impact + Safety Impact derive Human Impact; Exploitation and Automatable are reviewed per vulnerability.</span>
+            <span class="patchtriagenote"><b>PatchTriage-only:</b> “Not assessed” stores missing context and uses the displayed CERT/CC-recommended fallback until confirmed.</span>
+            <span>Session data is isolated and expires from the server after six hours.</span>
+            <a href="https://certcc.github.io/SSVC/howto/deployer_tree/" target="_blank" rel="noopener">View the official CERT/CC SSVC Deployer model and definitions ↗</a>
           </div>
           <input type="text" id="f-name" maxlength="120" placeholder="System name" aria-label="System name">
           <input type="text" id="f-url" placeholder="Reference URL (optional; this field is not scanned)" aria-label="Reference link URL">
-          <label class="fieldlabel">System Exposure
-            <span class="fieldhelp">The accessible attack surface of this deployed system or service.</span>
-            <select id="f-exposure"><option value="unknown" selected>Unknown — use official Open default</option><option value="open">Open — Internet or widely accessible network</option><option value="controlled">Controlled — reliable access restrictions or mitigations</option><option value="small">Small — local service or highly controlled network</option></select>
+          <label class="fieldlabel"><span class="fieldtitle">System Exposure <span class="standardtag">SSVC EXP 1.0.1</span></span>
+            <span class="fieldhelp"><b>Question:</b> How accessible is the affected system or service to an attacker?</span>
+            <select id="f-exposure"><option value="unknown" selected>Not assessed — default: Open</option><option value="open">Open — Internet or widely accessible network</option><option value="controlled">Controlled — access restrictions reliably interrupt attacks</option><option value="small">Small — local service or highly controlled network</option></select>
           </label>
-          <label class="fieldlabel">Mission Impact
-            <span class="fieldhelp">Impact on your organization's Mission Essential Functions (MEFs).</span>
-            <select id="f-mission"><option value="unknown" selected>Unknown — use official Support Crippled default</option><option value="degraded">Degraded — little impact or non-essential degradation</option><option value="mef_support_crippled">MEF Support Crippled — essential functions continue temporarily</option><option value="mef_failure">MEF Failure — one essential function fails too long</option><option value="mission_failure">Mission Failure — multiple or all essential functions fail</option></select>
+          <label class="fieldlabel"><span class="fieldtitle">Mission Impact <span class="standardtag">SSVC MI 2.0.0</span></span>
+            <span class="fieldhelp"><b>Question:</b> What happens to the essential functions your organization must continue? MEF means Mission Essential Function.</span>
+            <select id="f-mission"><option value="unknown" selected>Not assessed — default: Support Crippled</option><option value="degraded">Degraded — little impact or non-essential degradation</option><option value="mef_support_crippled">MEF Support Crippled — essential functions continue temporarily</option><option value="mef_failure">MEF Failure — one essential function fails too long</option><option value="mission_failure">Mission Failure — multiple or all essential functions fail</option></select>
           </label>
-          <label class="fieldlabel">Safety Impact
-            <span class="fieldhelp">Highest credible harm to people, operators, systems, environment, finances, or well-being.</span>
-            <select id="f-safety"><option value="unknown" selected>Unknown — use official Marginal default</option><option value="negligible">Negligible — minor harm or small safety-margin reduction</option><option value="marginal">Marginal — major injury or safety capability failure</option><option value="critical">Critical — loss of life or system enters unsafe state</option><option value="catastrophic">Catastrophic — multiple deaths or total system loss</option></select>
+          <label class="fieldlabel"><span class="fieldtitle">Safety Impact <span class="standardtag">SSVC SI 2.0.1</span></span>
+            <span class="fieldhelp"><b>Question:</b> What is the highest credible impact across physical harm, operator or system resilience, environment, financial, or psychological well-being?</span>
+            <select id="f-safety"><option value="unknown" selected>Not assessed — default: Marginal</option><option value="negligible">Negligible — minor injury or small safety-margin reduction</option><option value="marginal">Marginal — major injury or safety capability failure</option><option value="critical">Critical — loss of life or recoverable system damage</option><option value="catastrophic">Catastrophic — multiple deaths or total system loss</option></select>
           </label>
           <details class="advanced">
             <summary>Advanced context evidence</summary>
@@ -191,7 +193,7 @@ INDEX_HTML = r"""<!doctype html>
             </div>
           </details>
           <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
-          <div class="hint">Unknown is a PatchTriage capture state, not an SSVC value. The official conservative default is applied and visibly flagged for confirmation.</div>
+          <div class="hint">Choose a specific SSVC value when the context is known. Any temporary fallback remains visibly flagged for confirmation.</div>
         </div>
       </details>
       <div style="margin:8px 0"><button class="btn small" id="fleet-open" title="Import every recently active repository of a GitHub account as targets">Import organization…</button></div>
@@ -199,10 +201,14 @@ INDEX_HTML = r"""<!doctype html>
     </aside>
 
     <div>
-      <div class="sectiontitle"><h2>Patch decisions</h2><span>
-        <select id="backend" aria-label="Triage backend"></select>
+      <div class="sectiontitle"><h2>Patch decisions</h2><div class="decisionactions">
+        <div class="enginecontrol" aria-label="Decision engine">
+          <small class="enginelabel">Decision engine</small>
+          <strong class="enginevalue" id="backend-static">SSVC deterministic</strong>
+          <select id="backend" aria-label="Decision engine" hidden></select>
+        </div>
         <button class="btn small run-control" id="runall">Run all</button>
-      </span></div>
+      </div></div>
       <div class="prioritylegend lightpanel" aria-label="SSVC outcome meanings">
         <div class="immediate"><b><i></i>Immediate</b>Act now · example local SLA 3 days</div>
         <div class="outofcycle"><b><i></i>Out-of-Cycle</b>Next opportunity · example SLA 14 days</div>
@@ -232,11 +238,11 @@ INDEX_HTML = r"""<!doctype html>
 </section>
 
 <input type="file" id="filepick" class="filehidden" accept=".json">
-<dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a public repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Private, SSH, and embedded-credential URLs are not accepted.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
+<dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Repository access follows the GitHub credentials configured for this deployment.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
 <dialog id="fleetdialog"><div class="dialogbody"><h3>Import an organization</h3><p>Every recently pushed public repository of the account becomes a target with its GitHub Dependency Graph SBOM attached — the same no-clone, no-execution path as a single repository import. Forks and archived repositories are skipped. Each target starts with the official conservative SSVC defaults; review its context before trusting the decision.</p><label class="fieldlabel">Organization or user URL<input type="text" id="fleet-url" placeholder="https://github.com/your-org"></label><label class="fieldlabel">Repository limit<input type="number" id="fleet-limit" min="1" value="10"></label><div class="dialogactions"><button class="btn" id="fleet-cancel">Cancel</button><button class="btn primary" id="fleet-import">Import repositories</button></div></div></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
-let CFG={backends:["rules"],has_key:false};
+let CFG={backends:["rules"],has_ai:false,ai_provider:null};
 let TARGETS=[];let RESULTS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
 
 async function api(method,path,body){
@@ -257,17 +263,24 @@ function pct(value,total){return value&&total?Math.max(5,Math.round(value/total*
 
 async function loadConfig(){
   CFG=await api("GET","/api/config");
-  const labels={rules:"SSVC deterministic",claude:"SSVC + AI explanation",cascade:"SSVC + AI cascade"};
-  document.getElementById("backend").innerHTML=CFG.backends.map(b=>`<option value="${esc(b)}">${esc(labels[b]||b)}</option>`).join("");
+  const labels={rules:"SSVC deterministic",ai:"SSVC + AI explanation",claude:"SSVC + AI explanation",cascade:"SSVC + AI cascade"};
+  const available=CFG.backends.length?CFG.backends:["rules"];
+  const backendSelect=document.getElementById("backend");
+  const backendStatic=document.getElementById("backend-static");
+  backendSelect.innerHTML=available.map(b=>`<option value="${esc(b)}">${esc(labels[b]||b)}</option>`).join("");
+  const canChoose=available.length>1;
+  backendSelect.hidden=!canChoose;
+  backendStatic.hidden=canChoose;
+  backendStatic.textContent=labels[available[0]]||available[0];
   document.getElementById("privacy-note").hidden=CFG.deployment_mode!=="public";
   const generic=CFG.repository_import&&CFG.repository_import.generic_https_git==="local-osv-scanner";
   const privateGithub=Boolean(CFG.repository_import&&CFG.repository_import.github_private_with_token);
-  document.getElementById("repo-title").textContent=(generic||privateGithub)?"Import a repository":"Import a public repository";
+  document.getElementById("repo-title").textContent="Import a repository";
   document.getElementById("repo-help").textContent=generic
-    ?`GitHub uses its Dependency Graph SBOM${privateGithub?" (including repositories authorized by the local token)":""}. Other public HTTPS Git repositories are cloned into a disposable local directory and statically inspected with OSV-Scanner; repository code and package managers are never executed.`
+    ?`GitHub uses its Dependency Graph SBOM${privateGithub?" with the access granted to the local token":""}. Other HTTPS Git repositories supported by this deployment are cloned into a disposable local directory and statically inspected with OSV-Scanner; repository code and package managers are never executed.`
     :privateGithub
-      ?"GitHub repositories authorized by this local deployment's token use the Dependency Graph SPDX SBOM API without cloning or executing repository code. SSH and embedded-credential URLs are not accepted."
-      :"This deployment fetches public GitHub SPDX SBOMs through the Dependency Graph API without cloning or executing repository code. Private, SSH, and embedded-credential URLs are not accepted.";
+      ?"GitHub repositories use the access granted to this local deployment's token and the Dependency Graph SPDX SBOM API without cloning or executing repository code."
+      :"This deployment fetches GitHub SPDX SBOMs through the Dependency Graph API without cloning or executing repository code.";
 }
 async function loadTargets(){
   TARGETS=await api("GET","/api/targets");renderTargets();updateKpis();
@@ -295,7 +308,7 @@ function renderTargets(){
     const sourceName=target.source_name||target.source_format||"evidence";
     const sourceMeta=target.source_file
       ?`${esc(sourceName)} &middot; ${esc(target.source_format)} &middot; ${Math.max(1,Math.round((target.source_size||0)/1024))} KiB &middot; SHA-256 ${esc((target.source_sha256||"").slice(0,12))}`
-      :"Attach scanner JSON, CycloneDX/SPDX JSON, or import a public GitHub repository";
+      :"Attach scanner JSON, CycloneDX/SPDX JSON, or import a GitHub repository";
     return `<article class="target" data-id="${esc(target.id)}">
       <div class="targettop"><div><div class="targetname">${name}</div><div class="targetid">${esc(target.id)}</div></div></div>
       <div class="badges">${contextTags(target)}</div>
@@ -303,7 +316,7 @@ function renderTargets(){
       <div class="targetactions">
         <button class="btn small" data-action="edit">Review context</button>
         <button class="btn small attach" data-action="import" title="Upload Trivy/Grype/OSV JSON or a CycloneDX/SPDX JSON SBOM">Upload evidence</button>
-        <button class="btn small attach" data-action="repository" title="Fetch a public GitHub Dependency Graph SBOM">Import repository</button>
+        <button class="btn small attach" data-action="repository" title="Fetch a GitHub Dependency Graph SBOM">Import repository</button>
         <button class="btn small run-control" data-action="run" ${target.source_file?"":"disabled"}>Run</button>
         <button class="btn small danger" data-action="delete">Delete</button>
       </div></article>`;
@@ -448,7 +461,7 @@ async function runTargets(ids){
   if(!ids.length){notify("Attach evidence or import a repository first.",true);return;}
   setBusy(true);ids.forEach(id=>RESULTS.delete(id));
   document.getElementById("results").innerHTML='<div class="running lightpanel"><strong>Assessment jobs queued...</strong><div class="hint">evidence &rarr; context &rarr; SSVC &rarr; audit &rarr; remediation plan</div><div class="scanline"></div></div>';
-  const backend=document.getElementById("backend").value;
+  const backend=document.getElementById("backend").value||CFG.backends[0]||"rules";
   const pending=[];
   for(const id of ids){
     try{
@@ -519,7 +532,7 @@ document.getElementById("fleet-import").onclick=async()=>{
 document.getElementById("repo-cancel").onclick=()=>{repoTarget=null;document.getElementById("repodialog").close();};
 document.getElementById("repo-import").onclick=async()=>{
   const repositoryUrl=document.getElementById("repo-url").value.trim();
-  if(!repoTarget||!repositoryUrl){notify("Enter a public GitHub repository URL.",true);return;}
+  if(!repoTarget||!repositoryUrl){notify("Enter a GitHub repository URL.",true);return;}
   const targetId=repoTarget;
   try{
     document.getElementById("repo-import").disabled=true;notify("Fetching GitHub Dependency Graph SBOM...");

@@ -2,8 +2,9 @@
 #
 #   docker build -t patchtriage .
 #   mkdir -p out && docker run --rm -v "$PWD/out:/out" patchtriage   # offline demo
-#   docker run --rm -e ANTHROPIC_API_KEY -v "$PWD:/work" patchtriage \
-#       run /work/trivy.json --triage claude -o /work/report.json
+#   docker run --rm -e PATCHTRIAGE_AI_PROVIDER -e OPENAI_API_KEY \
+#       -e PATCHTRIAGE_AI_MODEL -v "$PWD:/work" patchtriage \
+#       run /work/trivy.json --triage ai -o /work/report.json
 
 FROM python:3.12-slim AS build
 WORKDIR /build
@@ -24,7 +25,7 @@ LABEL org.opencontainers.image.title="PatchTriage" \
 COPY --from=build /install /usr/local
 COPY --from=osv-scanner /osv-scanner /usr/local/bin/osv-scanner
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates git \
+    && apt-get install --no-install-recommends -y ca-certificates git nodejs npm \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 patchtriage \
     && mkdir -p /out /work \

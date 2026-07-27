@@ -12,10 +12,22 @@ import json
 import os
 from pathlib import Path
 
-# keys mirrored into the environment for the SDK / enrichment clients
-ENV_KEYS = ("ANTHROPIC_API_KEY", "NVD_API_KEY", "GITHUB_TOKEN")
+# Values mirrored into the environment for provider/enrichment clients.
+ENV_KEYS = (
+    "PATCHTRIAGE_AI_PROVIDER",
+    "PATCHTRIAGE_AI_API_KEY",
+    "PATCHTRIAGE_AI_BASE_URL",
+    "PATCHTRIAGE_AI_MODEL",
+    "PATCHTRIAGE_AI_SCREEN_MODEL",
+    "PATCHTRIAGE_AI_DEEP_MODEL",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "NVD_API_KEY",
+    "GITHUB_TOKEN",
+)
 
 ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
+OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
 
 
 def config_dir() -> Path:
@@ -68,6 +80,25 @@ def validate_anthropic_key(key: str) -> tuple[bool, str]:
         r = httpx.get(ANTHROPIC_MODELS_URL, timeout=15,
                       headers={"x-api-key": key,
                                "anthropic-version": "2023-06-01"})
+    except httpx.HTTPError as exc:
+        return False, f"network error: {exc}"
+    if r.status_code == 200:
+        return True, "key is valid"
+    if r.status_code == 401:
+        return False, "authentication failed (401) - check the key"
+    return False, f"unexpected response: HTTP {r.status_code}"
+
+
+def validate_openai_key(key: str) -> tuple[bool, str]:
+    """Check an OpenAI key against the models endpoint without inference."""
+    import httpx
+
+    try:
+        r = httpx.get(
+            OPENAI_MODELS_URL,
+            timeout=15,
+            headers={"Authorization": f"Bearer {key}"},
+        )
     except httpx.HTTPError as exc:
         return False, f"network error: {exc}"
     if r.status_code == 200:

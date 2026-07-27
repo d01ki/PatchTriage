@@ -29,6 +29,38 @@ def test_apply_to_env_fills_missing_key(tmp_path, monkeypatch):
     cfg.save({"ANTHROPIC_API_KEY": "from-config"})
     cfg.apply_to_env()
     assert os.environ["ANTHROPIC_API_KEY"] == "from-config"
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+
+
+def test_apply_to_env_supports_provider_neutral_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path))
+    for key in (
+        "PATCHTRIAGE_AI_PROVIDER",
+        "PATCHTRIAGE_AI_BASE_URL",
+        "PATCHTRIAGE_AI_MODEL",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    cfg.save({
+        "PATCHTRIAGE_AI_PROVIDER": "openai-compatible",
+        "PATCHTRIAGE_AI_BASE_URL": "https://inference.example/v1",
+        "PATCHTRIAGE_AI_MODEL": "security-model",
+        "OPENAI_API_KEY": "provider-key",
+    })
+    cfg.apply_to_env()
+    assert os.environ["PATCHTRIAGE_AI_PROVIDER"] == "openai-compatible"
+    assert os.environ["PATCHTRIAGE_AI_BASE_URL"] == (
+        "https://inference.example/v1"
+    )
+    assert os.environ["PATCHTRIAGE_AI_MODEL"] == "security-model"
+    assert os.environ["OPENAI_API_KEY"] == "provider-key"
+    for key in (
+        "PATCHTRIAGE_AI_PROVIDER",
+        "PATCHTRIAGE_AI_BASE_URL",
+        "PATCHTRIAGE_AI_MODEL",
+        "OPENAI_API_KEY",
+    ):
+        os.environ.pop(key, None)
 
 
 def test_load_survives_corrupt_file(tmp_path, monkeypatch):

@@ -4,13 +4,13 @@ The deterministic CERT/CC SSVC Deployer tree owns action timing. The LLM
 receives that final assessment and may add explanation, remediation steps,
 and uncertainty notes; it cannot rescore or override the decision.
 
-Backends are pluggable. Three are shipped:
-  * "rules"   — compatibility name for deterministic SSVC (no API key)
-  * "claude"  — Anthropic API (default model: claude-opus-4-8), structured
-                output enforced via strict tool use.
-  * "cascade" — two-tier agent pipeline: a fast screening model triages every
-                finding; urgent or low-confidence SSVC decisions and failed
-                explanation audits are escalated to a frontier model.
+Backends are pluggable. Three public modes are shipped:
+  * "rules"   — deterministic SSVC (no API key)
+  * "ai"      — provider-neutral structured explanation through Anthropic or
+                an OpenAI-compatible endpoint ("claude" remains an alias).
+  * "cascade" — two-tier provider-neutral pipeline: a fast screening model
+                handles every finding; urgent or low-confidence decisions and
+                failed explanation audits are escalated to a deeper model.
 
 Robustness: run_triage() parallelizes API calls and degrades gracefully —
 a finding whose API call fails is triaged by the deterministic SSVC baseline
@@ -26,9 +26,19 @@ from typing import Callable, Optional, Protocol
 
 from ..models import Finding
 from ..ssvc import assess, triage_from_assessment
+from .providers import (
+    AIProvider,
+    ANTHROPIC_DEFAULT_MODEL,
+    ANTHROPIC_DEFAULT_SCREEN_MODEL,
+    AnthropicProvider,
+    make_provider,
+    resolve_model,
+    resolve_provider_name,
+)
 
-DEFAULT_MODEL = "claude-opus-4-8"
-DEFAULT_SCREEN_MODEL = "claude-haiku-4-5"
+# Backwards-compatible imports for callers that customized the old backend.
+DEFAULT_MODEL = ANTHROPIC_DEFAULT_MODEL
+DEFAULT_SCREEN_MODEL = ANTHROPIC_DEFAULT_SCREEN_MODEL
 
 TRIAGE_SYSTEM_PROMPT = """\
 You are a vulnerability-management analyst performing patch triage.
@@ -57,13 +67,16 @@ TRIAGE_TOOL = {
                                 "patch_scheduled", "mitigate", "monitor",
                                 "investigate"]},
             "rationale": {"type": "string",
+                          "maxLength": 2000,
                           "description": "2-3 sentences citing SSVC inputs"},
             "remediation_steps": {
-                "type": "array", "items": {"type": "string"},
+                "type": "array",
+                "items": {"type": "string", "maxLength": 2000},
                 "maxItems": 5,
             },
             "uncertainties": {
-                "type": "array", "items": {"type": "string"},
+                "type": "array",
+                "items": {"type": "string", "maxLength": 2000},
                 "maxItems": 5,
             },
         },
@@ -90,22 +103,6 @@ class RulesBackend(SSVCBackend):
     """Backward-compatible name for the deterministic SSVC backend."""
 
 
-# ------------------------------------------------------------------ Claude
-def _make_anthropic_client():
-    try:
-        import anthropic
-    except ImportError as exc:
-        raise RuntimeError(
-            "The 'claude' backend requires the anthropic SDK: "
-            "pip install 'patchtriage[ai]'") from exc
-    try:
-        return anthropic.Anthropic()
-    except Exception as exc:
-        raise RuntimeError(
-            "Could not create an Anthropic client. Set ANTHROPIC_API_KEY "
-            "(export ANTHROPIC_API_KEY=sk-ant-...) and retry.") from exc
-
-
 def _finding_payload(f: Finding) -> str:
     payload = f.model_dump(mode="json", exclude={"triage", "description"})
     payload["description"] = f.description[:600]
@@ -127,28 +124,77 @@ def _merge_ai_recommendation(f: Finding, recommendation: dict,
     return result
 
 
-class ClaudeBackend:
-    """Anthropic API backend. Requires ANTHROPIC_API_KEY."""
+def _validate_recommendation(recommendation: dict) -> dict:
+    """Enforce the tool schema locally across providers."""
+    if not isinstance(recommendation, dict):
+        raise RuntimeError("AI provider returned a non-object recommendation")
+    expected_fields = {
+        "action", "rationale", "remediation_steps", "uncertainties",
+    }
+    if set(recommendation) != expected_fields:
+        raise RuntimeError(
+            "AI provider returned missing or unexpected recommendation fields"
+        )
+    allowed_actions = set(TRIAGE_TOOL["input_schema"]["properties"]["action"][
+        "enum"
+    ])
+    action = recommendation.get("action")
+    if action not in allowed_actions:
+        raise RuntimeError(f"AI provider returned invalid action: {action!r}")
+    rationale = recommendation.get("rationale")
+    if (not isinstance(rationale, str) or not rationale.strip()
+            or len(rationale) > 2000):
+        raise RuntimeError("AI provider returned an invalid rationale")
+    validated = {
+        "action": action,
+        "rationale": rationale.strip(),
+    }
+    for field in ("remediation_steps", "uncertainties"):
+        values = recommendation.get(field)
+        if (not isinstance(values, list) or len(values) > 5
+                or any(not isinstance(value, str) or len(value) > 2000
+                       for value in values)):
+            raise RuntimeError(
+                f"AI provider returned invalid {field}; expected up to 5 strings"
+            )
+        validated[field] = [value.strip() for value in values if value.strip()]
+    return validated
 
-    def __init__(self, model: str = DEFAULT_MODEL):
-        self.client = _make_anthropic_client()
-        self.model = model
+
+class AIBackend:
+    """Provider-neutral structured AI explanation backend."""
+
+    def __init__(self, model: str | None = None,
+                 provider: str | AIProvider | None = None,
+                 base_url: str | None = None):
+        if provider is not None and not isinstance(provider, str):
+            self.provider = provider
+            provider_name = provider.name
+        else:
+            provider_name = resolve_provider_name(provider)
+            self.provider = make_provider(
+                provider or provider_name, base_url=base_url
+            )
+        self.model = resolve_model(provider_name, model, tier="deep")
 
     def triage(self, f: Finding) -> dict:
-        resp = self.client.messages.create(
+        recommendation = self.provider.complete(
             model=self.model,
-            max_tokens=1024,
-            system=[{"type": "text", "text": TRIAGE_SYSTEM_PROMPT,
-                     "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": _finding_payload(f)}],
-            tools=[TRIAGE_TOOL],
-            tool_choice={"type": "tool", "name": "triage"},
+            system_prompt=TRIAGE_SYSTEM_PROMPT,
+            payload=_finding_payload(f),
+            tool=TRIAGE_TOOL,
         )
-        for block in resp.content:
-            if block.type == "tool_use" and block.name == "triage":
-                out = dict(block.input)
-                return _merge_ai_recommendation(f, out, self.model)
-        raise RuntimeError("Claude returned no triage tool_use block")
+        recommendation = _validate_recommendation(recommendation)
+        return _merge_ai_recommendation(
+            f, recommendation, f"{self.provider.name}:{self.model}"
+        )
+
+
+class ClaudeBackend(AIBackend):
+    """Deprecated compatibility alias for the Anthropic provider."""
+
+    def __init__(self, model: str = DEFAULT_MODEL):
+        super().__init__(model=model, provider="anthropic")
 
 
 # ------------------------------------------------------------------ cascade
@@ -166,12 +212,33 @@ class CascadeBackend:
     """
 
     def __init__(self,
-                 screen_model: str = DEFAULT_SCREEN_MODEL,
-                 deep_model: str = DEFAULT_MODEL,
+                 screen_model: str | None = None,
+                 deep_model: str | None = None,
+                 provider: str | AIProvider | None = None,
+                 base_url: str | None = None,
                  screen: Optional[TriageBackend] = None,
                  deep: Optional[TriageBackend] = None):
-        self.screen = screen or ClaudeBackend(screen_model)
-        self.deep = deep or ClaudeBackend(deep_model)
+        if screen is None or deep is None:
+            if provider is not None and not isinstance(provider, str):
+                provider_client = provider
+                provider_name = provider.name
+            else:
+                provider_name = resolve_provider_name(provider)
+                provider_client = make_provider(
+                    provider or provider_name, base_url=base_url
+                )
+            if screen is None:
+                screen = AIBackend(
+                    resolve_model(provider_name, screen_model, tier="screen"),
+                    provider=provider_client,
+                )
+            if deep is None:
+                deep = AIBackend(
+                    resolve_model(provider_name, deep_model, tier="deep"),
+                    provider=provider_client,
+                )
+        self.screen = screen
+        self.deep = deep
         self._rules = RulesBackend()
 
     def _escalation_reasons(self, f: Finding, tentative: dict) -> list[str]:
@@ -208,14 +275,22 @@ class CascadeBackend:
 
 
 def get_backend(name: str = "rules", model: str | None = None,
-                escalation_model: str | None = None) -> TriageBackend:
+                escalation_model: str | None = None,
+                provider: str | None = None,
+                base_url: str | None = None) -> TriageBackend:
     if name == "rules":
         return RulesBackend()
     if name == "claude":
         return ClaudeBackend(model or DEFAULT_MODEL)
+    if name == "ai":
+        return AIBackend(model, provider=provider, base_url=base_url)
     if name == "cascade":
-        return CascadeBackend(screen_model=model or DEFAULT_SCREEN_MODEL,
-                              deep_model=escalation_model or DEFAULT_MODEL)
+        return CascadeBackend(
+            screen_model=model,
+            deep_model=escalation_model,
+            provider=provider,
+            base_url=base_url,
+        )
     raise ValueError(f"Unknown triage backend: {name}")
 
 
@@ -260,9 +335,10 @@ def run_triage(findings: list[Finding], backend: TriageBackend,
 
 
 # ------------------------------------------------------------------ batch
-def run_triage_batch(findings: list[Finding], model: str = DEFAULT_MODEL,
+def run_triage_batch(findings: list[Finding], model: str | None = None,
                      poll_seconds: float = 15.0,
                      progress: Optional[Callable[[str], None]] = None,
+                     provider: str | None = None,
                      ) -> list[Finding]:
     """Triage via the Anthropic Message Batches API — 50% of standard cost.
 
@@ -271,7 +347,17 @@ def run_triage_batch(findings: list[Finding], model: str = DEFAULT_MODEL,
     custom_id, never by position. Findings whose batch entry errors fall
     back to the SSVC baseline, same as run_triage().
     """
-    client = _make_anthropic_client()
+    provider_name = resolve_provider_name(provider)
+    if provider_name != "anthropic":
+        raise ValueError(
+            "Batch mode currently requires the Anthropic provider; "
+            "use regular parallel mode for OpenAI-compatible endpoints"
+        )
+    model = resolve_model(provider_name, model, tier="deep")
+    provider_client = make_provider(provider_name)
+    if not isinstance(provider_client, AnthropicProvider):
+        raise RuntimeError("Anthropic provider could not be initialized")
+    client = provider_client.client
     rules = RulesBackend()
 
     requests = [{
@@ -314,6 +400,9 @@ def run_triage_batch(findings: list[Finding], model: str = DEFAULT_MODEL,
             out["backend"] = "rules_fallback"
             out["error"] = "batch entry errored or expired"
         else:
-            out = _merge_ai_recommendation(f, out, f"{model} (batch)")
+            out = _merge_ai_recommendation(
+                f, _validate_recommendation(out),
+                f"anthropic:{model} (batch)",
+            )
         f.triage = out
     return findings

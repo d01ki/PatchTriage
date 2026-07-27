@@ -9,7 +9,15 @@ from datetime import datetime, timezone
 from patchtriage.dedup import dedup
 from patchtriage.ingest.parsers import load_file
 from patchtriage.models import Enrichment
-from patchtriage.triage.engine import CascadeBackend, RulesBackend, run_triage
+from patchtriage.triage.engine import (
+    AIBackend,
+    CascadeBackend,
+    RulesBackend,
+    TRIAGE_SYSTEM_PROMPT,
+    TRIAGE_TOOL,
+    run_triage,
+)
+from patchtriage.triage.providers import OpenAICompatibleProvider
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -25,6 +33,39 @@ class FakeBackend:
         if self.fail:
             raise RuntimeError("simulated API failure")
         return dict(self.result)
+
+
+class FakeProvider:
+    name = "test-provider"
+
+    def __init__(self, result: dict):
+        self.result = result
+        self.calls = []
+
+    def complete(self, **kwargs):
+        self.calls.append(kwargs)
+        return dict(self.result)
+
+
+class FakeResponse:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
+class FakeHTTPClient:
+    def __init__(self, response: dict):
+        self.response = response
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeResponse(self.response)
 
 
 def _findings():
@@ -123,3 +164,81 @@ def test_rules_backend_errors_are_not_masked():
     rules = RulesBackend()
     run_triage(findings, rules)
     assert all(f.triage["backend"] == "ssvc" for f in findings)
+
+
+def test_provider_neutral_backend_keeps_ssvc_authoritative():
+    finding = _quiet_finding()
+    baseline = RulesBackend().triage(finding)
+    provider = FakeProvider({
+        "action": baseline["action"],
+        "rationale": "Explain the supplied SSVC path.",
+        "remediation_steps": ["Review the vendor advisory."],
+        "uncertainties": [],
+    })
+    result = AIBackend(model="example-model", provider=provider).triage(finding)
+
+    assert result["priority"] == baseline["priority"]
+    assert result["action"] == baseline["action"]
+    assert result["suggested_deadline_days"] == baseline[
+        "suggested_deadline_days"
+    ]
+    assert result["backend"] == "test-provider:example-model"
+    assert result["ai_recommendation"]["remediation_steps"] == [
+        "Review the vendor advisory."
+    ]
+    assert provider.calls[0]["system_prompt"] == TRIAGE_SYSTEM_PROMPT
+    assert '"ssvc_assessment"' in provider.calls[0]["payload"]
+
+
+def test_openai_compatible_provider_uses_structured_tool_call():
+    arguments = {
+        "action": "monitor",
+        "rationale": "The supplied SSVC path is Defer.",
+        "remediation_steps": ["Continue monitoring."],
+        "uncertainties": [],
+    }
+    http = FakeHTTPClient({
+        "choices": [{
+            "message": {
+                "tool_calls": [{
+                    "function": {
+                        "name": "triage",
+                        "arguments": __import__("json").dumps(arguments),
+                    },
+                }],
+            },
+        }],
+    })
+    provider = OpenAICompatibleProvider(
+        base_url="http://localhost:11434/v1",
+        client=http,
+    )
+    result = provider.complete(
+        model="local-model",
+        system_prompt=TRIAGE_SYSTEM_PROMPT,
+        payload="{}",
+        tool=TRIAGE_TOOL,
+    )
+
+    assert result == arguments
+    url, request = http.calls[0]
+    assert url == "http://localhost:11434/v1/chat/completions"
+    assert request["json"]["tool_choice"]["function"]["name"] == "triage"
+    assert request["json"]["tools"][0]["function"]["strict"] is True
+    assert "Authorization" not in request["headers"]
+
+
+def test_invalid_provider_output_falls_back_to_rules():
+    finding = _quiet_finding()
+    provider = FakeProvider({
+        "action": "invent_a_priority",
+        "rationale": "invalid",
+        "remediation_steps": [],
+        "uncertainties": [],
+    })
+    run_triage(
+        [finding],
+        AIBackend(model="example-model", provider=provider),
+    )
+    assert finding.triage["backend"] == "rules_fallback"
+    assert "invalid action" in finding.triage["error"]

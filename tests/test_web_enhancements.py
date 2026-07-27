@@ -89,7 +89,17 @@ def _poll_job(opener, base: str, job_id: str) -> dict:
 @pytest.fixture()
 def enhanced_server(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for key in (
+        "PATCHTRIAGE_AI_PROVIDER",
+        "PATCHTRIAGE_AI_API_KEY",
+        "PATCHTRIAGE_AI_BASE_URL",
+        "PATCHTRIAGE_AI_MODEL",
+        "PATCHTRIAGE_AI_SCREEN_MODEL",
+        "PATCHTRIAGE_AI_DEEP_MODEL",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("PATCHTRIAGE_COOKIE_SECURE", raising=False)
@@ -432,7 +442,7 @@ def test_ui_exposes_repository_context_privacy_and_async_contract(
     with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
         page = response.read().decode("utf-8")
     assert 'id="repodialog"' in page
-    assert "Import a public repository" in page
+    assert "Import a repository" in page
     assert "repository code and package managers are never executed" in page
     assert "Advanced context evidence" in page
     assert 'id="privacy-note"' in page

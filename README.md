@@ -45,7 +45,14 @@ The implementation is checked offline against all **72 Deployer paths** and
 all **16 Human Impact combinations** with `patchtriage verify`. See the
 [reviewer validation protocol](docs/VALIDATION.md).
 
-![PatchTriage demo](docs/demo.gif)
+## DEMO
+
+click 
+[![Watch Demo](docs/demo.png)](https://youtu.be/UxSTwKSwf0U)
+
+Or watch directly:
+https://youtu.be/UxSTwKSwf0U
+
 
 ## Quick start with Docker
 
@@ -61,6 +68,13 @@ Open [http://localhost:8765](http://localhost:8765). The equivalent command is:
 
 ```bash
 docker compose up gui
+```
+
+To make the locally running container use the repository access granted to a
+GitHub token:
+
+```bash
+GITHUB_TOKEN=... docker compose up gui
 ```
 
 Stop the console with `./run.sh --stop` or `docker compose down`. Targets,
@@ -103,22 +117,12 @@ patchtriage serve       # GUI
 patchtriage demo        # reproducible offline demo
 patchtriage start       # guided CLI workflow
 patchtriage run --help  # scriptable pipeline
+patchtriage remediate   # create and verify an isolated dependency patch
 patchtriage fleet URL   # import a GitHub org and build one fleet queue
 patchtriage verify      # offline conformance and repeatability proof
 ```
 
-## GUI workflow
 
-1. Add a target that represents one deployed system or service.
-2. Record the target's CERT/CC SSVC context.
-3. Upload vulnerability evidence, import a public repository, or import a
-   whole GitHub organization as a fleet of targets.
-4. Run the assessment. The GUI uses a background job so a reverse proxy does
-   not have to hold one long enrichment request open.
-5. Review vulnerability-specific **Exploitation** and **Automatable** values;
-   confirm them when the evidence-derived value or conservative default needs
-   human review, then rerun.
-6. Review the SSVC decision path and package-level remediation action.
 
 The **Upload evidence** button accepts:
 
@@ -136,26 +140,19 @@ network access; the bundled demo does not.
 The **Import repository** button has two acquisition paths behind the same GUI
 and API contract:
 
-- Public `github.com` URLs use GitHub's Dependency Graph SBOM API. Repository
-  code is not cloned or executed. The hosted anonymous importer deliberately
-  uses no service token, so it cannot cross into private repositories.
-- A local deployment may use `GITHUB_TOKEN` or `GH_TOKEN` to import a private
-  GitHub repository that the operator's token can access. The token is read
-  from the local environment and is never accepted in the URL or browser form.
-- The local Docker GUI can also accept public generic HTTPS Git URLs. It clones
-  into a disposable directory with hooks, submodules, LFS, credentials, and
-  interactive prompts disabled, then uses the pinned OSV-Scanner v2 binary in
+- `github.com` URLs use GitHub's Dependency Graph SBOM API. Repository code is
+  not cloned or executed. A local deployment reads `GITHUB_TOKEN` or `GH_TOKEN`
+  from the environment and uses the repository access granted to that token.
+- The local Docker GUI can also accept generic HTTPS Git URLs. It clones
+  into a disposable directory with hooks, submodules, LFS, and interactive
+  prompts disabled, then uses the pinned OSV-Scanner v2 binary in
   static source-scan mode. A trusted empty scanner configuration prevents the
   repository from supplying ignore rules. Package managers and repository code
   are never run.
-- The hosted/public deployment intentionally disables generic cloning and
-  accepts public GitHub SBOM imports only.
 
-Private GitHub repositories are local-token only. Private generic Git hosts,
-SSH/scp URLs, embedded credentials, and `file://` or `git://` URLs are not
-accepted. A GitHub `tree/<ref>` is retained as provenance, but GitHub's SBOM
-endpoint is repository-wide, so the result is marked partial instead of
-claiming a ref-specific scan.
+A GitHub `tree/<ref>` is retained as provenance, but GitHub's SBOM endpoint is
+repository-wide, so the result is marked partial instead of claiming a
+ref-specific scan.
 
 See [Repository import and coverage model](docs/REPOSITORY_IMPORT.md) for the
 support matrix, threat boundary, coverage states, and deployment controls.
@@ -408,6 +405,70 @@ grype myorg/web-frontend:1.4 -o json > grype.json
 osv-scanner scan source --format json --recursive ./repo > osv.json
 ```
 
+## Apply and verify a dependency patch
+
+`patchtriage remediate` turns a confirmed upgrade action from the JSON report
+into a real repository diff. It clones the local repository's committed
+`HEAD` into an isolated output directory, changes the dependency declaration,
+refreshes a supported lockfile with package lifecycle scripts disabled, runs
+the checks explicitly supplied by the operator, and rescans with OSV-Scanner
+when it is available.
+
+For a local guided workflow, run the command without arguments. It walks
+through the report, local Git repository, upgrade action, verification
+commands, and output directory, shows the execution plan for confirmation,
+then prints the exact Git commands for reviewing or applying the patch:
+
+```bash
+patchtriage remediate
+```
+
+The existing `patchtriage start` wizard also offers this remediation step
+after it creates a JSON and HTML triage report.
+
+```bash
+# 1. Produce findings and the package-level action queue.
+patchtriage run osv.json -o report.json
+
+# 2. Patch the highest-priority confirmed upgrade in an isolated clone.
+patchtriage remediate report.json \
+  --repository ./application \
+  --output-dir ./out/application-remediation \
+  --check "npm test"
+
+# Select another report action when needed.
+patchtriage remediate report.json \
+  --repository ./application \
+  --action-id 'upgrade:application:npm::lodash:4.17.20' \
+  --output-dir ./out/lodash-remediation
+```
+
+The output contains:
+
+- `workspace/`: a Git clone on a `patchtriage/<package>-<version>` branch;
+- `remediation.patch`: the reviewable binary-safe Git diff;
+- `remediation.json`: source commit, action, commands, changed files, scan
+  result, and verification status;
+- `osv-remediation.json`: the post-change scan when OSV-Scanner is available.
+
+Direct dependency editing currently supports npm/pnpm `package.json`, Python
+`requirements*.txt`, PEP 621 `pyproject.toml`, and Poetry dependency sections.
+Lockfile refresh supports `package-lock.json`, `pnpm-lock.yaml`, and `uv.lock`
+when their package-manager executable is installed. Unsupported lockfiles are
+left unchanged and called out in the result. The command never modifies the
+source checkout and never pushes, merges, or deploys a change.
+
+Docker can work with a repository mounted from the host:
+
+```bash
+docker run --rm \
+  -v "$PWD/application:/repo" \
+  -v "$PWD/out:/out" \
+  patchtriage remediate /out/report.json \
+    --repository /repo \
+    --output-dir /out/application-remediation
+```
+
 ## Evidence connectors
 
 Core enrichment uses EPSS, CISA KEV, and optionally NVD. Vendor connectors are
@@ -421,26 +482,54 @@ selected from package and distribution metadata by default.
 | Debian Security Tracker | Distribution release status and fixed versions |
 | GitHub GHSA | Advisory, ecosystem packages, patched version, and vulnerable functions |
 
-The connectors work without credentials. `GITHUB_TOKEN`/`GH_TOKEN` and
-`NVD_API_KEY` only raise public API rate limits. Connector failures are
-recorded per finding and do not abort the assessment.
+The public evidence connectors work without credentials. In a local
+deployment, `GITHUB_TOKEN`/`GH_TOKEN` supplies the repository access granted
+to that token and raises GitHub API rate limits; `NVD_API_KEY` raises the NVD
+rate limit. Connector failures are recorded per finding and do not abort the
+assessment.
 
 ## Optional AI explanations
 
-Install the additional dependency and provide an Anthropic API key:
+The `ai` backend is provider-neutral. Choose exactly where finding evidence is
+sent; PatchTriage never switches providers implicitly when more than one is
+configured.
+
+Anthropic:
 
 ```bash
-python -m pip install -e ".[ai]"
+python -m pip install -e ".[anthropic]"
+export PATCHTRIAGE_AI_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=...
 
-patchtriage run trivy.json --triage claude --html report.html
+patchtriage run trivy.json --triage ai --html report.html
 patchtriage run trivy.json --triage cascade --html report.html
 ```
 
+OpenAI:
+
+```bash
+export PATCHTRIAGE_AI_PROVIDER=openai
+export OPENAI_API_KEY=...
+export PATCHTRIAGE_AI_MODEL=<model-id>
+
+patchtriage run trivy.json --triage ai --html report.html
+```
+
+OpenAI-compatible gateways and local runtimes such as Ollama:
+
+```bash
+export PATCHTRIAGE_AI_PROVIDER=ollama
+export PATCHTRIAGE_AI_BASE_URL=http://localhost:11434/v1
+export PATCHTRIAGE_AI_MODEL=<local-model-id>
+
+patchtriage run trivy.json --triage ai --html report.html
+```
+
 - `rules`: deterministic SSVC only; default and suitable for CI.
-- `claude`: deterministic SSVC plus an AI-written explanation.
+- `ai`: deterministic SSVC plus a provider-generated explanation.
 - `cascade`: screens every result and escalates only urgent, uncertain, or
   audit-failing explanations to the larger configured model.
+- `claude`: deprecated compatibility alias for `ai --provider anthropic`.
 
 If an API call fails, the finding falls back to deterministic output. The
 audit rejects outcome, action, deadline, or signal claims that conflict with
@@ -455,6 +544,7 @@ scan JSON / SBOM
 ingest -> deduplicate -> apply target context -> enrich threat/vendor evidence
         -> SSVC Deployer decision -> machine audit -> remediation plan
         -> JSON + self-contained HTML report
+        -> isolated dependency patch -> checks + rescan -> reviewable diff
 ```
 
 Aliases such as CVE and GHSA are merged conservatively. Correlation keeps the
@@ -525,10 +615,14 @@ reported and disabled rather than implemented as a separate interface.
 
 ## Limits
 
-- PatchTriage does not apply patches.
+- Automatic patching currently covers supported direct npm and Python
+  dependency declarations; arbitrary source-level vulnerability fixes are not
+  generated.
+- Remediation creates an isolated review workspace and patch artifact. It does
+  not push, merge, deploy, or modify the source checkout.
 - It is not a replacement for a vulnerability scanner.
 - No tool can correctly scan every repository URL or ecosystem. Unsupported,
-  inaccessible, private, or insufficiently described inputs fail explicitly or
+  inaccessible, or insufficiently described inputs fail explicitly or
   produce `coverage_incomplete`; they are never presented as a clean result.
 - An empty result is not proof that a target is secure.
 - SSVC depends on accurate organizational context and current threat evidence.

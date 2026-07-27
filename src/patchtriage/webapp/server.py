@@ -35,6 +35,7 @@ from ..repository import (
     normalize_repository_url,
 )
 from ..repository_local import scan_public_repository
+from ..triage.providers import has_ai_configuration, resolve_provider_name
 from .page import INDEX_HTML
 from .runner import MAX_WEB_SSVC_INPUTS, run_target
 
@@ -69,8 +70,11 @@ except PackageNotFoundError:
 
 def _validate_backend(backend: str) -> str:
     allowed = {"rules"}
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        allowed.update(("claude", "cascade"))
+    if has_ai_configuration():
+        allowed.update(("ai", "cascade"))
+        # Existing API clients may still send the pre-0.7 backend name.
+        if resolve_provider_name() == "anthropic":
+            allowed.add("claude")
     if backend not in allowed:
         raise RequestError("backend is not available")
     return backend
@@ -386,12 +390,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self._send(INDEX_HTML.encode("utf-8"))
         if path == "/api/config":
-            has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-            backends = ["rules"] + (["claude", "cascade"] if has_key else [])
+            has_ai = has_ai_configuration()
+            backends = ["rules"] + (["ai", "cascade"] if has_ai else [])
             generic_repositories = _generic_repository_enabled()
             return self._send_json({
                 "backends": backends,
-                "has_key": has_key,
+                "has_key": has_ai,
+                "has_ai": has_ai,
+                "ai_provider": resolve_provider_name() if has_ai else None,
                 "capabilities": ["offline-demo", "ssvc-deployer",
                                  "epss-baseline", "kev-baseline",
                                  "reachability", "runtime-context",
