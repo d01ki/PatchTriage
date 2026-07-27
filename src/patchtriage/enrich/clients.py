@@ -5,6 +5,7 @@ Authoritative exploitation and vendor sources, all free, no API key required
 
   * EPSS  (FIRST.org)      probability a CVE is exploited in the next 30 days
   * CISA KEV               catalog of vulnerabilities known-exploited in the wild
+  * CISA Vulnrichment      CISA's own SSVC decision points on the CVE record
   * NVD                    official CVSS score/vector + CWE
   * Vendor feeds           MSRC / RHSA / Ubuntu USN / Debian / GHSA
 
@@ -38,8 +39,25 @@ EPSS_URL = "https://api.first.org/data/v1/epss"
 KEV_URL = ("https://www.cisa.gov/sites/default/files/feeds/"
            "known_exploited_vulnerabilities.json")
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+# Official CVE Services record API. CISA publishes its Vulnrichment SSVC
+# decision points onto the CVE record as an Authorized Data Publisher (ADP),
+# so the record itself -- not a mirror of it -- is the authoritative source.
+CVE_RECORD_URL = "https://cveawg.mitre.org/api/cve"
 
 _EXPLOIT_REFERENCE_DOMAINS = ("exploit-db.com", "packetstormsecurity.com")
+
+# The CVE ADP short name CISA publishes Vulnrichment under. Any other
+# publisher's SSVC block is ignored: "authoritative" is the whole reason
+# these values outrank PatchTriage's own heuristics.
+_CISA_ADP_SHORT_NAME = "cisa-adp"
+
+# Allowed values per SSVC decision point, exactly as published in the CVE
+# record. Unknown values are dropped rather than guessed at.
+_VULNRICHMENT_POINTS = {
+    "Exploitation": ("none", "poc", "active"),
+    "Automatable": ("yes", "no"),
+    "Technical Impact": ("partial", "total"),
+}
 
 # One lock is shared by all JSON caches in this module and by the OSV SBOM
 # resolver. It prevents in-process web worker threads from interleaving
@@ -355,6 +373,98 @@ def fetch_nvd(cve: str, client: httpx.Client, api_key: str | None = None) -> dic
     return entry
 
 
+# ------------------------------------------------------- CISA Vulnrichment
+def parse_vulnrichment_ssvc(record: Any) -> dict:
+    """Extract CISA's SSVC decision points from a CVE record.
+
+    Returns ``{}`` when the record carries no CISA-ADP SSVC block, which is
+    the common case: roughly half of all CVEs are not yet enriched. Callers
+    must treat that as "not assessed by CISA", never as a benign verdict.
+    """
+    if not isinstance(record, dict):
+        return {}
+    containers = record.get("containers")
+    if not isinstance(containers, dict):
+        return {}
+    for container in containers.get("adp") or []:
+        if not isinstance(container, dict):
+            continue
+        provider = container.get("providerMetadata")
+        short_name = (provider or {}).get("shortName") if isinstance(
+            provider, dict) else None
+        if not isinstance(short_name, str):
+            continue
+        if short_name.strip().casefold() != _CISA_ADP_SHORT_NAME:
+            continue
+        for metric in container.get("metrics") or []:
+            if not isinstance(metric, dict):
+                continue
+            other = metric.get("other")
+            if not isinstance(other, dict) or other.get("type") != "ssvc":
+                continue
+            content = other.get("content")
+            if not isinstance(content, dict):
+                continue
+            parsed: dict[str, str] = {}
+            for option in content.get("options") or []:
+                if not isinstance(option, dict):
+                    continue
+                for name, allowed in _VULNRICHMENT_POINTS.items():
+                    value = option.get(name)
+                    if isinstance(value, str) and value.strip().casefold() in allowed:
+                        parsed[name] = value.strip().casefold()
+            if not parsed:
+                continue
+            for key, source in (("role", "role"), ("version", "version"),
+                                ("timestamp", "timestamp")):
+                value = content.get(source)
+                if isinstance(value, str):
+                    parsed[key] = value
+            return parsed
+    return {}
+
+
+def fetch_vulnrichment(cve: str, client: httpx.Client) -> dict:
+    """Fetch one CVE record's CISA SSVC decision points, with a disk cache.
+
+    The cached entry always records that a lookup *happened*: an enriched CVE
+    caches its decision points, and an un-enriched one caches an explicit
+    ``{"assessed": False}``. Without that marker a cache hit would be
+    indistinguishable from "never looked", which is exactly the ambiguity the
+    SSVC evidence model is meant to remove.
+    """
+    cache = _load_entry_cache("vulnrichment.json", max_age_hours=24 * 7)
+    cached = cache.get(cve)
+    if isinstance(cached, dict) and cached:
+        return cached
+    response = client.get(
+        f"{CVE_RECORD_URL}/{cve}",
+        headers={"Accept": "application/json"},
+        timeout=30,
+        follow_redirects=False,
+    )
+    if response.status_code == 404:
+        entry = {"assessed": False, "reason": "no published CVE record"}
+        _merge_entry_cache("vulnrichment.json", {cve: entry})
+        return entry
+    response.raise_for_status()
+    parsed = parse_vulnrichment_ssvc(response.json())
+    entry = {"assessed": True, **parsed} if parsed else {
+        "assessed": False, "reason": "CVE record carries no CISA SSVC assessment"}
+    _merge_entry_cache("vulnrichment.json", {cve: entry})
+    return entry
+
+
+def _apply_vulnrichment(enrichment: Any, entry: dict) -> None:
+    """Copy validated SSVC decision points onto a finding's enrichment."""
+    enrichment.ssvc_exploitation = entry.get("Exploitation")
+    enrichment.ssvc_automatable = entry.get("Automatable")
+    enrichment.ssvc_technical_impact = entry.get("Technical Impact")
+    enrichment.ssvc_role = entry.get("role", "") or ""
+    enrichment.ssvc_version = entry.get("version", "") or ""
+    enrichment.ssvc_timestamp = entry.get("timestamp", "") or ""
+
+
 def _exploit_reference_urls(nvd_entry: dict) -> list[str]:
     """Prefer NVD's structured Exploit tag, then narrow trusted host hints."""
     records = nvd_entry.get("reference_records") or []
@@ -395,7 +505,8 @@ def _is_known_exploit_reference(url: str) -> bool:
 def enrich(findings: list[Finding], nvd_api_key: str | None = None,
            use_nvd: bool = True, progress=None,
            vendor_sources: str | list[str] | None = None,
-           github_token: str | None = None) -> list[Finding]:
+           github_token: str | None = None,
+           use_vulnrichment: bool = True) -> list[Finding]:
     """Attach EPSS / KEV / NVD and optional vendor records in place."""
     cves = sorted({f.vuln_id for f in findings if f.vuln_id.startswith("CVE-")})
     now = datetime.now(timezone.utc)
@@ -424,7 +535,7 @@ def enrich(findings: list[Finding], nvd_api_key: str | None = None,
             if not f.vuln_id.startswith("CVE-"):
                 e.retrieval_status.update({
                     "epss": "not_applicable", "kev": "not_applicable",
-                    "nvd": "not_applicable",
+                    "nvd": "not_applicable", "vulnrichment": "not_applicable",
                 })
                 continue
             if epss_error:
@@ -483,6 +594,28 @@ def enrich(findings: list[Finding], nvd_api_key: str | None = None,
                     e.sources.append("nvd")
             else:
                 e.retrieval_status["nvd"] = "disabled"
+            if use_vulnrichment:
+                try:
+                    entry = fetch_vulnrichment(f.vuln_id, client)
+                except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                    e.retrieval_status["vulnrichment"] = "failed"
+                    e.retrieval_errors.append(
+                        f"CISA Vulnrichment: {type(exc).__name__}: {exc}")
+                else:
+                    assessed = bool(entry.get("assessed")) and any(
+                        key in entry for key in _VULNRICHMENT_POINTS)
+                    if assessed:
+                        _apply_vulnrichment(e, entry)
+                        e.retrieval_status["vulnrichment"] = "found"
+                        # CISA's published Exploitation verdict is a completed
+                        # exploit-evidence search by an authoritative source.
+                        if "cisa-vulnrichment" not in e.exploit_sources_checked:
+                            e.exploit_sources_checked.append("cisa-vulnrichment")
+                    else:
+                        e.retrieval_status["vulnrichment"] = "not_found"
+                    e.sources.append("vulnrichment")
+            else:
+                e.retrieval_status["vulnrichment"] = "disabled"
             if progress:
                 progress(i + 1, len(findings))
         if vendor_sources:
@@ -496,7 +629,8 @@ def enrich(findings: list[Finding], nvd_api_key: str | None = None,
 
 
 def enrich_from_snapshot(findings: list[Finding], epss: dict, kev: dict,
-                         nvd: dict | None = None) -> list[Finding]:
+                         nvd: dict | None = None,
+                         vulnrichment: dict | None = None) -> list[Finding]:
     """Attach bundled deterministic data without network or shared cache.
 
     Used by the browser's one-click Demo. Keeping this path explicit
@@ -504,6 +638,7 @@ def enrich_from_snapshot(findings: list[Finding], epss: dict, kev: dict,
     tiny demo catalog from contaminating real enrichment runs.
     """
     nvd = nvd or {}
+    vulnrichment = vulnrichment or {}
     now = datetime.now(timezone.utc)
     for f in findings:
         e = f.enrichment
@@ -511,7 +646,7 @@ def enrich_from_snapshot(findings: list[Finding], epss: dict, kev: dict,
         if not f.vuln_id.startswith("CVE-"):
             e.retrieval_status.update({
                 "epss": "not_applicable", "kev": "not_applicable",
-                "nvd": "not_applicable",
+                "nvd": "not_applicable", "vulnrichment": "not_applicable",
             })
             continue
         row = epss.get(f.vuln_id) or {}
@@ -537,4 +672,15 @@ def enrich_from_snapshot(findings: list[Finding], epss: dict, kev: dict,
         if nvd_row and "nvd:snapshot" not in e.exploit_sources_checked:
             e.exploit_sources_checked.append("nvd:snapshot")
         e.sources.append("nvd:snapshot")
+        vulnrichment_row = vulnrichment.get(f.vuln_id) or {}
+        assessed = bool(vulnrichment_row.get("assessed")) and any(
+            key in vulnrichment_row for key in _VULNRICHMENT_POINTS)
+        if assessed:
+            _apply_vulnrichment(e, vulnrichment_row)
+            e.retrieval_status["vulnrichment"] = "found"
+            if "cisa-vulnrichment:snapshot" not in e.exploit_sources_checked:
+                e.exploit_sources_checked.append("cisa-vulnrichment:snapshot")
+        else:
+            e.retrieval_status["vulnrichment"] = "not_found"
+        e.sources.append("vulnrichment:snapshot")
     return findings

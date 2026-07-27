@@ -76,6 +76,21 @@ def priority_evidence(finding: Finding) -> list[dict[str, str]]:
                 f"({confidence} confidence)"
             ),
         })
+    # Technical Impact is not a Deployer input, so it is shown as supporting
+    # evidence rather than as one of the decision points above.
+    technical = ssvc.get("technical_impact") or {}
+    if technical:
+        assessed = technical.get("value") not in (None, "unknown")
+        checks.append({
+            "label": "Technical Impact",
+            "status": "confirmed" if assessed else "unknown",
+            "value": (
+                f"{technical.get('label', 'Unknown')} · "
+                + ("; ".join(technical.get("evidence") or [])
+                   or "not published for this CVE")
+                + " (not an input to the Deployer decision)"
+            ),
+        })
     has_fix = bool(finding.package.fixed_version)
     checks.append(
         {"label": "Fix readiness", "status": "confirmed" if has_fix else "attention",

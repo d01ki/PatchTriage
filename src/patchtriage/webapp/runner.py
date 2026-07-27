@@ -129,7 +129,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         data = resources.files("patchtriage") / "data"
         snapshots = {
             name: json.loads((data / f"demo_{name}.json").read_text(encoding="utf-8"))
-            for name in ("epss", "kev", "nvd")
+            for name in ("epss", "kev", "nvd", "vulnrichment")
         }
         enrich_from_snapshot(findings, **snapshots)
     else:

@@ -160,6 +160,39 @@ claiming a ref-specific scan.
 See [Repository import and coverage model](docs/REPOSITORY_IMPORT.md) for the
 support matrix, threat boundary, coverage states, and deployment controls.
 
+## Authoritative decision points: CISA Vulnrichment
+
+The hardest SSVC inputs to answer are the vulnerability-specific ones. CISA
+publishes them itself: through the **Vulnrichment** program it acts as an
+Authorized Data Publisher on the CVE record, adding **Exploitation**,
+**Automatable**, and **Technical Impact**. PatchTriage reads those decision
+points straight from the official CVE record and prefers them over its own
+heuristics, because "CISA assessed this" outranks "we inferred it".
+
+What that changes, measured on a 12-CVE mix of KEV headliners and quiet
+library CVEs:
+
+| | Before | With Vulnrichment |
+|---|---:|---:|
+| Findings needing analyst confirmation | 12 / 12 | **3 / 12** |
+| Automatable answered authoritatively | 0 | **9** |
+| Corrected *down* from the conservative "assume Yes" | — | **4** |
+
+That last row matters most: those four findings were being over-prioritized
+by the conservative default. The bundled offline demo shows the same effect —
+CVE-2023-4911 is KEV-listed, but CISA publishes Automatable = No for it
+(local privilege escalation is not automatable at scale), so it lands on
+**Out-of-Cycle** instead of Immediate.
+
+Roughly half of all CVEs carry a Vulnrichment assessment. The rest keep the
+existing honest behavior: the official conservative default, visibly flagged
+for confirmation. Absence of an assessment is never read as absence of risk,
+and a local exploit reference that contradicts a published `none` is surfaced
+as a conflict rather than silently dropped.
+
+Cached for a week on disk; `--no-vulnrichment` disables the lookup, and the
+offline demo ships a bundled snapshot so it still needs no network.
+
 ## Fleet: assess an organization, not one repository
 
 One deployed system is a *target*; an organization's repositories are a
@@ -217,14 +250,15 @@ its failure, not the vulnerability itself.
 The SSVC engine evaluates the remaining decision points as follows:
 
 - **Exploitation** is derived from authoritative threat evidence. A CISA KEV
-  listing is Active; public exploit evidence can establish Public PoC. The GUI
-  lets an analyst confirm the value for each finding. An analyst input cannot
-  downgrade authoritative CISA KEV Active evidence; a conflicting input is
-  kept visible and flagged for confirmation.
-- **Automatable** is vulnerability-specific. PatchTriage derives it per
-  finding from CVSS v4 `AU`. If it is unavailable, the official conservative
-  default is Yes and the GUI asks an analyst to confirm or replace the value.
-  It is intentionally not a target-wide field.
+  listing is Active; CISA's published Vulnrichment assessment is used next;
+  public exploit evidence can establish Public PoC. The GUI lets an analyst
+  confirm the value for each finding. An analyst input cannot downgrade
+  authoritative CISA KEV Active evidence; a conflicting input is kept visible
+  and flagged for confirmation.
+- **Automatable** is vulnerability-specific. PatchTriage prefers CISA's
+  published Vulnrichment value, then CVSS v4 `AU`. If neither is available,
+  the official conservative default is Yes and the GUI asks an analyst to
+  confirm or replace the value. It is intentionally not a target-wide field.
 - **Human Impact** is derived by the published CERT/CC table from the target's
   Mission Impact and Safety Impact.
 

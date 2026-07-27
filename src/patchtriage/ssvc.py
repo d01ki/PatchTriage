@@ -13,6 +13,7 @@ converted into an observed exploitation state.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +64,19 @@ class HumanImpact(str, Enum):
     VERY_HIGH = "very_high"
 
 
+class TechnicalImpact(str, Enum):
+    """Control an adversary gains over the component after exploitation.
+
+    Not an input to the CERT/CC Deployer tree, which uses Human Impact
+    instead. It is modeled because CISA publishes it authoritatively through
+    Vulnrichment and because CISA BOD 26-04 prioritizes on it.
+    """
+
+    PARTIAL = "partial"
+    TOTAL = "total"
+    UNKNOWN = "unknown"
+
+
 class DeployerDecision(str, Enum):
     DEFER = "defer"
     SCHEDULED = "scheduled"
@@ -91,10 +105,31 @@ _LABELS = {
     HumanImpact.MEDIUM.value: "Medium",
     HumanImpact.HIGH.value: "High",
     HumanImpact.VERY_HIGH.value: "Very High",
+    TechnicalImpact.PARTIAL.value: "Partial",
+    TechnicalImpact.TOTAL.value: "Total",
+    TechnicalImpact.UNKNOWN.value: "Unknown",
     DeployerDecision.DEFER.value: "Defer",
     DeployerDecision.SCHEDULED.value: "Scheduled",
     DeployerDecision.OUT_OF_CYCLE.value: "Out-of-Cycle",
     DeployerDecision.IMMEDIATE.value: "Immediate",
+}
+
+# CISA publishes Vulnrichment decision points with its own spelling. Mapping
+# them explicitly keeps the wire format out of the decision logic.
+_VULNRICHMENT_EXPLOITATION = {
+    "none": Exploitation.NONE,
+    "poc": Exploitation.PUBLIC_POC,
+    "active": Exploitation.ACTIVE,
+}
+
+_VULNRICHMENT_AUTOMATABLE = {
+    "yes": Automatable.YES,
+    "no": Automatable.NO,
+}
+
+_VULNRICHMENT_TECHNICAL_IMPACT = {
+    "partial": TechnicalImpact.PARTIAL,
+    "total": TechnicalImpact.TOTAL,
 }
 
 
@@ -118,6 +153,10 @@ class SSVCAssessment(BaseModel):
     mission_impact: DecisionPoint
     safety_impact: DecisionPoint
     human_impact: DecisionPoint
+    # Supplemental, never an input to `decision`: the CERT/CC Deployer tree
+    # takes Human Impact, not Technical Impact. Recorded for evidence and for
+    # the CISA BOD 26-04 model, which does prioritize on it.
+    technical_impact: Optional[DecisionPoint] = None
     decision: DeployerDecision
     decision_label: str
     priority: str
@@ -279,6 +318,31 @@ def _infer_exploitation(finding: Finding) -> DecisionPoint:
             [f"Exploitation confirmed as {_LABELS[value.value]}"],
             inferred=False,
         )
+    published = _VULNRICHMENT_EXPLOITATION.get(
+        str(e.ssvc_exploitation or "").casefold())
+    if published is not None:
+        evidence = [
+            f"CISA Vulnrichment publishes Exploitation as "
+            f"{_LABELS[published.value]}"
+        ]
+        if e.ssvc_timestamp:
+            evidence.append(f"CISA assessment timestamp {e.ssvc_timestamp}")
+        if published is Exploitation.NONE and e.exploit_references:
+            # Do not let an authoritative "none" silently bury contradicting
+            # local evidence; surface both and ask for a human decision.
+            evidence.append(
+                f"{len(e.exploit_references)} public exploit reference(s) were "
+                "also found and disagree with the published assessment"
+            )
+            return _point(
+                "E", "1.1.0", Exploitation.PUBLIC_POC, Confidence.MEDIUM,
+                "public exploit references (conflicts with CISA Vulnrichment)",
+                evidence, inferred=True, needs_confirmation=True,
+            )
+        return _point(
+            "E", "1.1.0", published, Confidence.HIGH,
+            "CISA Vulnrichment", evidence, inferred=True,
+        )
     if e.exploit_references:
         return _point(
             "E", "1.1.0", Exploitation.PUBLIC_POC, Confidence.MEDIUM,
@@ -375,7 +439,23 @@ def _infer_automatable(finding: Finding) -> DecisionPoint:
             inferred=False,
         )
 
-    vector = finding.enrichment.nvd_cvss_vector
+    enrichment = finding.enrichment
+    published = _VULNRICHMENT_AUTOMATABLE.get(
+        str(enrichment.ssvc_automatable or "").casefold())
+    if published is not None:
+        evidence = [
+            f"CISA Vulnrichment publishes Automatable as "
+            f"{_LABELS[published.value]}"
+        ]
+        if enrichment.ssvc_timestamp:
+            evidence.append(
+                f"CISA assessment timestamp {enrichment.ssvc_timestamp}")
+        return _point(
+            "A", "2.0.0", published, Confidence.HIGH,
+            "CISA Vulnrichment", evidence, inferred=True,
+        )
+
+    vector = enrichment.nvd_cvss_vector
     metrics = _cvss_metrics(vector)
     if metrics.get("AU") in ("Y", "N"):
         value = Automatable.YES if metrics["AU"] == "Y" else Automatable.NO
@@ -389,6 +469,36 @@ def _infer_automatable(finding: Finding) -> DecisionPoint:
         "SSVC conservative default",
         ["Automation evidence is unknown; SSVC recommends assuming Yes"],
         needs_confirmation=True,
+    )
+
+
+def _infer_technical_impact(finding: Finding) -> DecisionPoint:
+    """Record CISA's published Technical Impact, or an explicit Unknown.
+
+    This point is supplemental: the CERT/CC Deployer tree does not consume
+    it, so an Unknown here never changes a deployment decision. It is
+    recorded as evidence and as the input CISA BOD 26-04 prioritizes on.
+    """
+    enrichment = finding.enrichment
+    published = _VULNRICHMENT_TECHNICAL_IMPACT.get(
+        str(enrichment.ssvc_technical_impact or "").casefold())
+    if published is not None:
+        evidence = [
+            f"CISA Vulnrichment publishes Technical Impact as "
+            f"{_LABELS[published.value]}"
+        ]
+        if enrichment.ssvc_timestamp:
+            evidence.append(
+                f"CISA assessment timestamp {enrichment.ssvc_timestamp}")
+        return _point(
+            "TI", "2.0.0", published, Confidence.HIGH,
+            "CISA Vulnrichment", evidence, inferred=True,
+        )
+    return _point(
+        "TI", "2.0.0", TechnicalImpact.UNKNOWN, Confidence.LOW,
+        "not assessed",
+        ["No published Technical Impact assessment was found for this CVE"],
+        inferred=True,
     )
 
 
@@ -466,6 +576,7 @@ def assess(finding: Finding) -> SSVCAssessment:
     exploitation = _infer_exploitation(finding)
     exposure = _infer_system_exposure(finding)
     automatable = _infer_automatable(finding)
+    technical = _infer_technical_impact(finding)
     mission = _infer_mission_impact(finding)
     safety = _infer_safety_impact(finding)
     human_value = derive_human_impact(
@@ -531,6 +642,7 @@ def assess(finding: Finding) -> SSVCAssessment:
         mission_impact=mission,
         safety_impact=safety,
         human_impact=human,
+        technical_impact=technical,
         decision=decision,
         decision_label=_LABELS[decision.value],
         priority=priority,

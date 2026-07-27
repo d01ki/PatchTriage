@@ -296,13 +296,18 @@ def test_offline_demo_runs_end_to_end(server):
     assert summary["comparison"]["urgent"] == {
         "total": 1, "cvss": 0, "epss": 1, "kev": 1, "ssvc": 1,
     }
+    # CVE-2023-4911 is KEV-listed, but CISA publishes Automatable = No for it
+    # (local privilege escalation is not automatable at scale). The demo
+    # therefore lands on Out-of-Cycle rather than the Immediate produced by
+    # the old conservative "assume Yes" default: an authoritative input
+    # correcting an over-prioritization is the point of the Vulnrichment feed.
     assert summary["outcomes"] == {
-        "immediate": 1, "out_of_cycle": 0, "scheduled": 2, "defer": 0,
+        "immediate": 0, "out_of_cycle": 1, "scheduled": 2, "defer": 0,
     }
-    assert summary["top_ssvc_decision"] == "Immediate"
+    assert summary["top_ssvc_decision"] == "Out-of-Cycle"
     assert summary["ssvc_confirmation_fields"] == ["automatable"]
-    assert summary["top_deadline_days"] == 3
-    assert summary["explanation"]["outcome_label"] == "Immediate"
+    assert summary["top_deadline_days"] == 14
+    assert summary["explanation"]["outcome_label"] == "Out-of-Cycle"
     assert summary["explanation"]["basis"].startswith(
         "The SSVC Deployer path"
     )
@@ -311,7 +316,9 @@ def test_offline_demo_runs_end_to_end(server):
         "mission_impact": "mef_failure", "safety_impact": "critical",
         "context_sources": ["OpenTelemetry", "Falco"],
     }
-    assert summary["explanation"]["ssvc"]["decision"] == "immediate"
+    assert summary["explanation"]["ssvc"]["decision"] == "out_of_cycle"
+    assert (summary["explanation"]["ssvc"]["automatable"]["source"]
+            == "CISA Vulnrichment")
     assert summary["explanation"]["checks"][0]["status"] == "confirmed"
     assert summary["explanation"]["ssvc"]["supplemental"]["runtime_observed"] is True
     assert len(summary["ssvc_inputs"]) == 3

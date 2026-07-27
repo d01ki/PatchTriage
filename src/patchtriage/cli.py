@@ -68,7 +68,8 @@ def _load_config() -> None:
 
 def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
               triage_backend, model, limit, escalation_model=None, jobs=4,
-              batch=False, vendor_sources="auto", github_token=None):
+              batch=False, vendor_sources="auto", github_token=None,
+              use_vulnrichment=True):
     # Layer 1 - ingest
     raw = []
     for f in files:
@@ -114,7 +115,8 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
     source_label = " + vendor advisories" if vendor_sources else ""
     with console.status(f"enriching with EPSS / CISA KEV / NVD{source_label}..."):
         enrich(findings, nvd_api_key=nvd_api_key, use_nvd=use_nvd,
-               vendor_sources=vendor_sources, github_token=github_token)
+               vendor_sources=vendor_sources, github_token=github_token,
+               use_vulnrichment=use_vulnrichment)
 
     # Layer 5 - deterministic SSVC screening comes before --limit. Scanner
     # severity alone must never exclude a low-CVSS KEV or context-urgent item.
@@ -214,6 +216,10 @@ def run(
         help="eBPF/Falco/OpenTelemetry observed the component or path at runtime"),
     no_nvd: bool = typer.Option(
         False, "--no-nvd", help="Skip NVD (faster; EPSS/KEV only)"),
+    no_vulnrichment: bool = typer.Option(
+        False, "--no-vulnrichment",
+        help="Skip CISA Vulnrichment SSVC decision points (Exploitation, "
+             "Automatable, Technical Impact)"),
     nvd_api_key: Optional[str] = typer.Option(None, envvar="NVD_API_KEY"),
     vendor_sources: str = typer.Option(
         "auto", help="Vendor advisories: auto|all|msrc,rhsa,usn,debian,ghsa"),
@@ -259,7 +265,8 @@ def run(
         files, fmt, override, assets, not no_nvd, nvd_api_key, triage, model,
         limit, escalation_model=escalation_model, jobs=jobs, batch=batch,
         vendor_sources=None if no_vendor_advisories else vendor_sources,
-        github_token=github_token or os.environ.get("GH_TOKEN"))
+        github_token=github_token or os.environ.get("GH_TOKEN"),
+        use_vulnrichment=not no_vulnrichment)
     _emit(findings, subset, actions, eval_rows, output, html)
 
 
@@ -564,7 +571,8 @@ def demo(
     demo_cache.mkdir(parents=True, exist_ok=True)
     for src, dst in (("demo_epss.json", "epss.json"),
                      ("demo_kev.json", "kev.json"),
-                     ("demo_nvd.json", "nvd.json")):
+                     ("demo_nvd.json", "nvd.json"),
+                     ("demo_vulnrichment.json", "vulnrichment.json")):
         (demo_cache / dst).write_text((data / src).read_text(encoding="utf-8"),
                                       encoding="utf-8")
     previous_cache_dir = os.environ.get("PATCHTRIAGE_CACHE_DIR")
