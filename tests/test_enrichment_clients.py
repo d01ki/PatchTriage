@@ -193,14 +193,26 @@ def test_enrichment_source_outages_are_isolated_and_visible(monkeypatch):
         clients, "fetch_nvd",
         lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad NVD")),
     )
+    monkeypatch.setattr(
+        clients, "fetch_vulnrichment",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ValueError("bad Vulnrichment")),
+    )
     clients.enrich([finding], vendor_sources=None)
     enrichment = finding.enrichment
     assert enrichment.in_cisa_kev is True
     assert enrichment.retrieval_status == {
         "epss": "failed", "kev": "listed", "nvd": "failed",
+        "vulnrichment": "failed",
     }
     assert any(error.startswith("EPSS:") for error in enrichment.retrieval_errors)
     assert any(error.startswith("NVD:") for error in enrichment.retrieval_errors)
+    assert any(error.startswith("CISA Vulnrichment:")
+               for error in enrichment.retrieval_errors)
+    # A failed lookup must never leave the finding looking assessed.
+    assert enrichment.ssvc_exploitation is None
+    assert enrichment.ssvc_automatable is None
+    assert enrichment.ssvc_technical_impact is None
 
 
 def test_stale_kev_catalog_confirms_only_positive_matches(monkeypatch):
@@ -222,7 +234,8 @@ def test_stale_kev_catalog_confirms_only_positive_matches(monkeypatch):
         ),
     )
 
-    clients.enrich([listed, absent], use_nvd=False, vendor_sources=None)
+    clients.enrich([listed, absent], use_nvd=False, vendor_sources=None,
+                   use_vulnrichment=False)
 
     assert listed.enrichment.in_cisa_kev is True
     assert listed.enrichment.retrieval_status["kev"] == "listed_stale"

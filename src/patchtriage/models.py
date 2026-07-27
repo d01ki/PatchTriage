@@ -143,6 +143,16 @@ class Enrichment(BaseModel):
     # EPSS result, or vendor advisory does not prove that public exploit
     # evidence was searched.
     exploit_sources_checked: list[str] = Field(default_factory=list)
+    # CISA Vulnrichment SSVC decision points, published by CISA as an
+    # Authorized Data Publisher on the CVE record itself. These are
+    # authoritative assessments rather than heuristics -- but only about half
+    # of all CVEs carry them, so absence is routine and never means "no risk".
+    ssvc_exploitation: Optional[str] = None       # none | poc | active
+    ssvc_automatable: Optional[str] = None        # yes | no
+    ssvc_technical_impact: Optional[str] = None   # partial | total
+    ssvc_role: str = ""                           # e.g. "CISA Coordinator"
+    ssvc_version: str = ""                        # published decision model version
+    ssvc_timestamp: str = ""                      # when CISA published the assessment
     retrieval_status: dict[str, str] = Field(default_factory=dict)
     retrieval_errors: list[str] = Field(default_factory=list)
     exploit_lookup_errors: list[str] = Field(default_factory=list)
