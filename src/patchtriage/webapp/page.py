@@ -152,6 +152,7 @@ INDEX_HTML = r"""<!doctype html>
   <div class="kpi"><div class="value" id="k-kev">0</div><div class="label">known exploited</div></div>
   <div class="kpi"><div class="value" id="k-immediate">0</div><div class="label">Immediate decisions</div></div>
   <div class="kpi"><div class="value" id="k-audit">—</div><div class="label">decisions verified</div></div>
+  <div class="kpi" title="Share of Exploitation and Automatable values taken from a published or analyst-confirmed source instead of a conservative assumption."><div class="value" id="k-authoritative">—</div><div class="label">inputs from authority</div></div>
 </section>
 
 <section class="workspace" id="workspace">
@@ -330,6 +331,9 @@ function updateKpis(){
   document.getElementById("k-kev").textContent=values.reduce((n,r)=>n+r.kev,0);
   document.getElementById("k-immediate").textContent=values.reduce((n,r)=>n+r.outcomes.immediate,0);
   document.getElementById("k-audit").textContent=totalFindings?Math.round(verified/totalFindings*100)+"%":"—";
+  const points=values.reduce((n,r)=>n+((r.decision_quality||{}).points_total||0),0);
+  const authoritative=values.reduce((n,r)=>n+((r.decision_quality||{}).authoritative||0),0);
+  document.getElementById("k-authoritative").textContent=points?Math.round(authoritative/points*100)+"%":"—";
 }
 function compareBlock(summary){
   const c=summary.comparison;if(!c)return `<div class="emptyresult"><b>No findings to compare</b><span>${esc(summary.result_message||"The attached evidence contained no vulnerability records.")}</span></div>`;
@@ -420,10 +424,26 @@ function renderResult(summary){
       <span class="metric">SSVC ${esc(summary.top_ssvc_decision||"not evaluated")}</span>
       ${(summary.ssvc_confirmation_fields||[]).length?`<span class="metric alert">confirm ${esc(summary.ssvc_confirmation_fields.map(v=>String(v).replaceAll("_"," ")).join(", "))}</span>`:""}
     </div>
+    ${qualityBlock(summary)}
     <div class="confirmbar">Target context used · ${esc(contextText)}</div>
     <div class="resultbody"><div class="compare">${compareBlock(summary)}</div><div class="explain">${explainBlock(summary)}</div></div>
     ${ssvcInputBlock(summary)}
   </article>`;
+}
+function qualityBlock(summary){
+  const q=summary.decision_quality;
+  if(!q||!q.points_total)return "";
+  const sources=Object.entries(q.sources||{}).map(([name,count])=>
+    `<span class="metric ${name.startsWith("CISA")||name.startsWith("analyst")?"audit":""}">${esc(name)} ${count}</span>`).join("");
+  const deEscalated=q.de_escalated
+    ? `<span class="metric audit" title="A published CISA assessment was less urgent than the conservative default PatchTriage would otherwise apply. Without it these findings would have been over-prioritized.">${q.de_escalated} de-escalated by CISA assessment</span>`
+    : "";
+  return `<div class="metricrow">
+    <span class="metric"><b>${q.authoritative}/${q.points_total}</b> decision inputs from authority (${q.authoritative_pct}%)</span>
+    <span class="metric ${q.assumed?"alert":""}">${q.assumed} assumed by conservative default</span>
+    <span class="metric ${q.needs_confirmation?"alert":""}">${q.needs_confirmation} finding(s) need confirmation</span>
+    ${deEscalated}${sources}
+  </div>`;
 }
 function renderResults(){
   const results=document.getElementById("results");

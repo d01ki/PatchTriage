@@ -42,10 +42,80 @@ PRIORITY_DEFINITIONS: dict[str, dict[str, str]] = {
 }
 
 
+# Sources that represent someone's published or recorded judgement rather
+# than a PatchTriage fallback. A decision resting on one of these is
+# defensible without further human work.
+_AUTHORITATIVE_SOURCES = (
+    "CISA KEV",
+    "CISA Vulnrichment",
+    "analyst-confirmed SSVC input",
+    "asset inventory",
+    "CVSS v4 Automatable",
+)
+
+
 def priority_definition(priority: str | None) -> dict[str, str]:
     """Return a safe copy of the human definition for a priority code."""
     code = priority if priority in PRIORITY_DEFINITIONS else "P4"
     return {"code": code, **PRIORITY_DEFINITIONS[code]}
+
+
+def _point_source(finding: Finding, name: str) -> str:
+    point = ((finding.triage or {}).get("ssvc") or {}).get(name) or {}
+    return str(point.get("source") or "")
+
+
+def decision_quality(findings: list[Finding]) -> dict:
+    """Summarize how much of this run rests on authority vs assumption.
+
+    Only the two vulnerability-specific points are counted. System Exposure,
+    Mission Impact and Safety Impact describe the deployer's own environment,
+    so "the operator told us" is the only possible source and including them
+    would inflate the number.
+
+    ``de_escalated`` counts findings where a published assessment is *less*
+    urgent than the conservative default PatchTriage would otherwise apply.
+    Those are the findings that were being over-prioritized, which is the
+    part of an authoritative feed that is easy to miss.
+    """
+    counted = ("exploitation", "automatable")
+    sources: dict[str, int] = {}
+    authoritative = 0
+    de_escalated = 0
+    needs_confirmation = 0
+
+    for finding in findings:
+        ssvc = (finding.triage or {}).get("ssvc") or {}
+        if not ssvc:
+            continue
+        if ssvc.get("needs_confirmation"):
+            needs_confirmation += 1
+        for name in counted:
+            source = _point_source(finding, name)
+            if not source:
+                continue
+            sources[source] = sources.get(source, 0) + 1
+            if source in _AUTHORITATIVE_SOURCES:
+                authoritative += 1
+        automatable = ssvc.get("automatable") or {}
+        if (automatable.get("source") == "CISA Vulnrichment"
+                and automatable.get("value") == "no"):
+            de_escalated += 1
+
+    assessed = [f for f in findings if (f.triage or {}).get("ssvc")]
+    points_total = len(assessed) * len(counted)
+    return {
+        "findings": len(assessed),
+        "points_total": points_total,
+        "authoritative": authoritative,
+        "assumed": points_total - authoritative,
+        "authoritative_pct": (
+            round(authoritative / points_total * 100, 1) if points_total else 0.0
+        ),
+        "needs_confirmation": needs_confirmation,
+        "de_escalated": de_escalated,
+        "sources": dict(sorted(sources.items(), key=lambda item: -item[1])),
+    }
 
 
 def priority_display(priority: str | None) -> str:
