@@ -14,6 +14,7 @@ from ..ingest.parsers import load_file_with_metadata
 from ..models import Asset
 from ..plan import build_plan
 from ..presentation import (
+    decision_quality,
     evaluation_outcome,
     priority_basis,
     priority_definition,
@@ -296,6 +297,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         "vendor_errors": vendor_errors,
         "enrichment_errors": enrichment_errors,
         "actions": len(actions),
+        "decision_quality": decision_quality(findings),
         "audit_verified": audit["verified"],
         "audit_flagged": len(audit["flagged"]),
         "audit_rate": round(audit["verified"] / len(findings) * 100, 1)

@@ -187,6 +187,7 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
 def _emit(findings, subset, actions, eval_rows, output, html):
     _print_actions(actions)
     _print_eval(eval_rows)
+    _print_decision_quality(subset)
     if html:
         html_path = Path(html)
         html_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1245,6 +1246,33 @@ def fleet(
             json.dumps({"import": report, "rollup": rollup}, indent=2),
             encoding="utf-8")
         console.print(f"fleet JSON rollup: [bold]{output.resolve()}[/bold]")
+
+
+def _print_decision_quality(findings) -> None:
+    """Say plainly how much of this run rests on authority vs assumption."""
+    from .presentation import decision_quality
+
+    quality = decision_quality(list(findings))
+    if not quality["points_total"]:
+        return
+    console.print(
+        f"\n[bold]Decision quality:[/bold] {quality['authoritative']}/"
+        f"{quality['points_total']} vulnerability-specific inputs "
+        f"({quality['authoritative_pct']}%) came from a published or "
+        f"analyst-confirmed source; {quality['assumed']} used SSVC's "
+        f"conservative default."
+    )
+    if quality["de_escalated"]:
+        console.print(
+            f"  [green]{quality['de_escalated']}[/green] finding(s) were "
+            "de-escalated by a published CISA assessment (they would "
+            "otherwise have been over-prioritized)."
+        )
+    if quality["needs_confirmation"]:
+        console.print(
+            f"  [yellow]{quality['needs_confirmation']}[/yellow] finding(s) "
+            "need analyst confirmation."
+        )
 
 
 def _print_actions(actions) -> None:

@@ -15,6 +15,7 @@ from ..models import Finding
 from ..plan import Action
 from ..presentation import (
     PRIORITY_DEFINITIONS,
+    decision_quality,
     evaluation_outcome,
     priority_basis,
     priority_definition,
@@ -113,6 +114,37 @@ def render_html(findings: list[Finding], actions: list[Action],
     <p class="lede"><b>Status: {_esc(coverage_status)}</b> · {_esc(boundary)}</p>
     {f'<p class="mono small">{" · ".join(coverage_details)}</p>' if coverage_details else ''}
     {f'<ul class="warnings">{warning_html}</ul>' if warning_html else ''}
+  </section>"""
+
+    quality = decision_quality(findings)
+    quality_html = ""
+    if quality["points_total"]:
+        de_escalated = (
+            f'<li><b>{quality["de_escalated"]}</b> finding(s) were de-escalated '
+            "by a published CISA assessment that is less urgent than the "
+            "conservative default; without it they would have been "
+            "over-prioritized.</li>"
+            if quality["de_escalated"] else ""
+        )
+        source_rows = "".join(
+            f"<li>{_esc(name)}: <b>{count}</b></li>"
+            for name, count in quality["sources"].items()
+        )
+        quality_html = f"""
+  <section>
+    <h2>Decision quality</h2>
+    <p class="lede">
+      <b>{quality['authoritative']} of {quality['points_total']}</b>
+      vulnerability-specific decision inputs
+      ({quality['authoritative_pct']}%) came from a published or
+      analyst-confirmed source; <b>{quality['assumed']}</b> rest on SSVC's
+      conservative default and <b>{quality['needs_confirmation']}</b>
+      finding(s) are flagged for confirmation.
+    </p>
+    <ul class="warnings">{de_escalated}{source_rows}</ul>
+    <p class="small">Only Exploitation and Automatable are counted. System
+    Exposure, Mission Impact and Safety Impact describe your environment, so
+    the operator is their only possible source.</p>
   </section>"""
 
     explain_html = ""
@@ -501,6 +533,7 @@ def render_html(findings: list[Finding], actions: list[Action],
     <div class="card"><div class="v">{len(actions)}</div><div class="l">actions close everything</div></div>
     <div class="card"><div class="v">{total}</div><div class="l">unique findings</div></div>
   </div>
+  {quality_html}
   <div class="priorityguide" aria-label="SSVC outcome meanings">{priority_guide}</div>
 
   {explain_html}
