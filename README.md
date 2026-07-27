@@ -336,6 +336,27 @@ PatchTriage separates these states:
   detected, or the original scanner/provider scope could not be independently
   verified.
 
+A bounded result says exactly what was and was not checked, names the skipped
+components, and gives the remedy — because "no findings" is the most
+dangerous thing a scanner can display:
+
+```text
+10 of 21 component(s) were checked against OSV and none had a known
+vulnerability. 11 component(s) could not be checked because the source lists
+them without a resolved version: uvicorn, pytest, rich, fastapi, httpx and 6
+more. Everything that could be checked was CI/workflow tooling, so no
+application dependency was actually assessed. Commit a lockfile (uv.lock,
+poetry.lock, package-lock.json, pinned requirements.txt) or upload scanner
+output for full coverage.
+```
+
+That last warning matters most. **GitHub's Dependency Graph lists a
+repository's dependencies without resolved versions when no lockfile is
+committed**, and OSV cannot match a range. The entries that remain checkable
+are then the GitHub Actions in your workflows — so a repository import can
+report zero findings having examined nothing you actually ship. PatchTriage
+says so rather than letting the empty result read as a clean bill of health.
+
 Neither state is an SSVC Defer decision or proof that the target is secure.
 Every non-`complete` status is highlighted in both the GUI and downloadable
 HTML report. The result records total, queryable, queried, skipped, and failed

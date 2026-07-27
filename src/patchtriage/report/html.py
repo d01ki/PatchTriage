@@ -97,6 +97,25 @@ def render_html(findings: list[Finding], actions: list[Action],
                     f"{_esc(label)}: {_esc(coverage.get(key))}")
         warnings = list(coverage_warnings or [])
         warnings.extend(str(error) for error in (coverage.get("errors") or []))
+        # Name the skipped components. A bare count cannot distinguish
+        # "one dev tool was skipped" from "every dependency you ship was".
+        skipped_names = [
+            str(name) for name in (coverage.get("unqueryable_names") or [])]
+        if skipped_names:
+            shown = ", ".join(skipped_names[:10])
+            more = (f" and {len(skipped_names) - 10} more"
+                    if len(skipped_names) > 10 else "")
+            warnings.append(f"Not checked: {shown}{more}")
+        checked_ecosystems = [
+            str(eco).lower()
+            for eco in (coverage.get("queried_ecosystems") or [])
+        ]
+        if (coverage.get("queried_components") and checked_ecosystems
+                and all(eco in {"githubactions", "github"}
+                        for eco in checked_ecosystems)):
+            warnings.append(
+                "Every component that could be checked was CI/workflow "
+                "tooling, so no application dependency was assessed.")
         warning_html = "".join(
             f"<li>{_esc(warning)}</li>" for warning in dict.fromkeys(warnings)
             if warning

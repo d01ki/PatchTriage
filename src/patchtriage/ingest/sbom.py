@@ -45,6 +45,14 @@ class OsvCoverage:
     vulnerability_details_resolved: int = 0
     vulnerability_details_failed: int = 0
     errors: list[str] = field(default_factory=list)
+    # Which components were skipped, and which ecosystems were actually
+    # checked. A bare count hides the case that matters most: an SBOM whose
+    # only checkable entries are CI actions, while every application
+    # dependency is skipped for want of a resolved version. "0 findings"
+    # then means "nothing you depend on was examined".
+    unqueryable_names: list[str] = field(default_factory=list)
+    queried_ecosystems: list[str] = field(default_factory=list)
+    unqueryable_ecosystems: list[str] = field(default_factory=list)
 
     @property
     def complete(self) -> bool:
@@ -66,6 +74,9 @@ class OsvCoverage:
             "vulnerability_details_resolved": self.vulnerability_details_resolved,
             "vulnerability_details_failed": self.vulnerability_details_failed,
             "errors": list(self.errors),
+            "unqueryable_names": list(self.unqueryable_names),
+            "queried_ecosystems": list(self.queried_ecosystems),
+            "unqueryable_ecosystems": list(self.unqueryable_ecosystems),
         }
 
 
@@ -281,10 +292,17 @@ def _query_ids(components: list[Package], client: httpx.Client,
     ids: list[list[str]] = [[] for _ in queries]
     idx = [i for i, q in enumerate(queries) if q is not None]
     payload = [queries[i] for i in idx]
+    skipped = [c for i, c in enumerate(components) if queries[i] is None]
+    checked = [c for i, c in enumerate(components) if queries[i] is not None]
     coverage = OsvCoverage(
         total_components=len(components),
         queryable_components=len(payload),
         unqueryable_components=len(components) - len(payload),
+        unqueryable_names=[c.name for c in skipped if c.name][:50],
+        queried_ecosystems=sorted(
+            {c.ecosystem for c in checked if c.ecosystem}),
+        unqueryable_ecosystems=sorted(
+            {c.ecosystem for c in skipped if c.ecosystem}),
     )
     if coverage.unqueryable_components:
         coverage.errors.append(

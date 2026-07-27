@@ -303,7 +303,10 @@ def test_empty_scan_is_reported_as_no_vulnerabilities(server):
     assert summary["total"] == 0
     assert summary["actions"] == 0
     assert summary["result_state"] == "coverage_incomplete"
-    assert "provider-reported" in summary["result_message"]
+    # An empty scanner result carries no component inventory, so the message
+    # can only state the boundary: the provider chose the scope.
+    assert "not independently verified" in summary["result_message"]
+    assert "provider" in summary["result_message"]
     assert summary["source"]["coverage_status"] == "provider_reported"
     assert summary["top_ssvc_decision"] == ""
     assert summary["comparison"] is None

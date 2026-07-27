@@ -57,6 +57,68 @@ def _combine_coverage(declared: dict, observed: dict,
     return coverage
 
 
+def _result_message(findings: list, actions: list, incomplete: bool,
+                    coverage_status: str, coverage: dict) -> str:
+    """Say what was actually checked, not just that coverage was bounded.
+
+    "No findings" is the most dangerous result a scanner can show, because it
+    reads as safety. When components were skipped it has to say which ones
+    and why, otherwise a run that checked only CI actions -- while every
+    application dependency went unqueryable for want of a resolved version --
+    looks identical to a genuinely clean repository.
+    """
+    total = int(coverage.get("total_components") or 0)
+    checked = int(coverage.get("queried_components") or 0)
+    skipped = int(coverage.get("unqueryable_components") or 0)
+    names = [str(name) for name in (coverage.get("unqueryable_names") or [])]
+    checked_ecosystems = [
+        str(eco) for eco in (coverage.get("queried_ecosystems") or [])]
+
+    if findings:
+        if incomplete and actions:
+            return ("Assessment completed, but evidence coverage is bounded: "
+                    f"{checked} of {total} component(s) could be checked."
+                    if total else
+                    "Assessment completed with bounded or incomplete "
+                    "evidence coverage.")
+        if not actions:
+            return ("Assessment completed, but no remediation action could "
+                    "be built.")
+        return ""
+
+    if skipped and total:
+        examples = ", ".join(names[:5])
+        more = f" and {len(names) - 5} more" if len(names) > 5 else ""
+        detail = (
+            f"{checked} of {total} component(s) were checked against OSV and "
+            f"none had a known vulnerability. {skipped} component(s) could "
+            "not be checked because the source lists them without a resolved "
+            "version"
+        )
+        if examples:
+            detail += f": {examples}{more}"
+        if checked and not any(
+                eco.lower() not in {"githubactions", "github"}
+                for eco in checked_ecosystems):
+            detail += (
+                ". Everything that could be checked was CI/workflow tooling, "
+                "so no application dependency was actually assessed"
+            )
+        return detail + (
+            ". Commit a lockfile (uv.lock, poetry.lock, package-lock.json, "
+            "pinned requirements.txt) or upload scanner output for full "
+            "coverage."
+        )
+    if coverage_status == "provider_reported":
+        return ("No findings were reported. The evidence scope is what the "
+                "provider chose to report and was not independently "
+                "verified.")
+    if incomplete:
+        return ("No findings were reported, but dependency or selector "
+                "coverage is incomplete.")
+    return "The attached evidence reported no vulnerability findings."
+
+
 def asset_from_target(target: dict) -> Asset:
     """Build the exact asset context consumed by the SSVC engine.
 
@@ -340,20 +402,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "assessed_incomplete" if incomplete and actions else
             "assessed" if actions else "no_plan"
         ),
-        "result_message": (
-            "No findings were reported, but the evidence scope is only "
-            "provider-reported and was not independently verified."
-            if not findings and coverage_status == "provider_reported" else
-            "No findings were reported, but dependency or selector coverage "
-            "is incomplete."
-            if not findings and incomplete else
-            "The attached evidence reported no vulnerability findings."
-            if not findings else
-            "Assessment completed with bounded or incomplete evidence coverage."
-            if incomplete and actions else
-            "Assessment completed, but no remediation action could be built."
-            if not actions else ""
-        ),
+        "result_message": _result_message(
+            findings, actions, incomplete, coverage_status, run_coverage),
         "source": {
             "kind": target.get("source_kind") or "upload",
             "format": target.get("source_format", ""),
