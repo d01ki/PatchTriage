@@ -40,7 +40,14 @@ _ECOSYSTEM_ALIASES = {
     "deb": "debian",
     "gem": "rubygems",
     "go": "golang",
+    # Java coordinates arrive under several scanner spellings: Trivy reports
+    # "jar"/"pom"/"gradle", Grype "java-archive". They all identify the same
+    # Maven groupId:artifactId, so they must share one dedup ecosystem.
+    "gradle": "maven",
+    "jar": "maven",
     "java": "maven",
+    "javaarchive": "maven",
+    "pom": "maven",
     "node": "npm",
     "nodejs": "npm",
     "nuget": "nuget",

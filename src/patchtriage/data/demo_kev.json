@@ -1,3 +1,14 @@
-{"CVE-2023-4911": {"cveID": "CVE-2023-4911",
-  "vulnerabilityName": "GNU C Library Buffer Overflow (Looney Tunables)",
-  "knownRansomwareCampaignUse": "Known", "dueDate": "2023-12-12"}}
+{
+  "CVE-2022-22965": {
+    "cveID": "CVE-2022-22965",
+    "dueDate": "2022-04-25",
+    "knownRansomwareCampaignUse": "Known",
+    "vulnerabilityName": "Spring Framework JDK 9+ Remote Code Execution Vulnerability"
+  },
+  "CVE-2023-4911": {
+    "cveID": "CVE-2023-4911",
+    "dueDate": "2023-12-12",
+    "knownRansomwareCampaignUse": "Known",
+    "vulnerabilityName": "GNU C Library Buffer Overflow (Looney Tunables)"
+  }
+}

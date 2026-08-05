@@ -1,6 +1,42 @@
 """The single-page GUI. Self-contained: inline CSS + JS, no external assets."""
 
-INDEX_HTML = r"""<!doctype html>
+import json
+
+from ..ssvc import (
+    HumanImpact,
+    MissionImpact,
+    SafetyImpact,
+    SystemExposure,
+    derive_human_impact,
+    label_for,
+)
+
+
+def _human_impact_matrix() -> dict[str, str]:
+    """Serialize the official Human Impact table for the form preview.
+
+    Generated from the engine rather than retyped in JavaScript: the preview
+    under the Mission and Safety questions must show the same value the
+    deterministic backend will produce.
+    """
+    return {
+        f"{safety.value}|{mission.value}": derive_human_impact(
+            mission, safety).value
+        for safety in SafetyImpact
+        for mission in MissionImpact
+    }
+
+
+def _decision_point_labels() -> dict[str, str]:
+    """Official value labels the form renders, keyed by stored value."""
+    return {
+        value.value: label_for(value.value)
+        for group in (SystemExposure, MissionImpact, SafetyImpact, HumanImpact)
+        for value in group
+    }
+
+
+_TEMPLATE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0a0d14">
@@ -68,6 +104,24 @@ INDEX_HTML = r"""<!doctype html>
   input[type=text],select{width:100%;border:1px solid #cfd5e2;border-radius:5px;padding:9px 10px;background:#fff;color:#171b25}
   .contextintro{border:1px solid #cfd7e8;background:#f7f8fc;border-radius:6px;padding:12px;display:grid;gap:7px}.contexttitle{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.contexttitle strong{font-size:14px}.standardtag{display:inline-flex;border:1px solid #b9c5ed;border-radius:20px;background:#edf1ff;color:#3048a8;padding:3px 7px;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.04em;text-transform:uppercase}.contextintro span,.contextintro a{font-size:13px;color:#667183;line-height:1.45}.contextintro a{color:#4053ba;font-weight:700;text-decoration:none}.contextintro a:hover{text-decoration:underline}.patchtriagenote{border-left:3px solid #e6a32d;background:#fff8e8;padding:8px 9px;color:#66502b!important}.patchtriagenote b{color:#5a4015}
   .fieldlabel{display:grid;gap:5px;color:#697386;font-size:13px;font-weight:750;text-transform:uppercase;letter-spacing:.045em}.fieldtitle{display:flex;align-items:center;justify-content:space-between;gap:7px}.fieldlabel select,.fieldlabel input{font-size:14px;text-transform:none;letter-spacing:0}.fieldhelp{color:#70798a;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.45}.fieldhelp b{color:#4f596a}.formactions{display:flex;gap:7px}.formactions .btn{flex:1}
+  .ssvcblock{border:1px solid #cfd7e8;background:#f6f8fd;border-radius:8px;padding:12px;display:grid;gap:10px}
+  .ssvchead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.ssvchead>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.ssvchead strong{font-size:14px}
+  .ssvcprogress{font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.04em;text-transform:uppercase;color:#8a6412;background:#fff3d8;border:1px solid #e8cf94;border-radius:20px;padding:4px 8px;white-space:nowrap}
+  .ssvcprogress.done{color:#1c6b45;background:#e6f6ee;border-color:#a4d8bf}
+  .ssvcabout{font-size:12.5px;color:#667183}.ssvcabout>summary{cursor:pointer;font-weight:750;color:#4053ba;list-style:none}.ssvcabout>summary::-webkit-details-marker{display:none}.ssvcabout>summary:before{content:"? ";font-weight:800}.ssvcabout .aboutbody{display:grid;gap:6px;margin-top:7px;line-height:1.5}.ssvcabout a{color:#4053ba;font-weight:700;text-decoration:none}.ssvcabout a:hover{text-decoration:underline}
+  .ssvcfield{background:#fff;border:1px solid #dde3f0;border-left:3px solid #dde3f0;border-radius:7px;padding:10px 11px;display:grid;gap:7px}
+  .ssvcfield.pending{border-left-color:#e6a32d}.ssvcfield.set{border-left-color:#4053ba}
+  .fieldhead{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .fieldnum{flex:none;width:19px;height:19px;border-radius:50%;background:#39456b;color:#fff;font:750 11px/19px "SFMono-Regular",Consolas,monospace;text-align:center}
+  .ssvcfield.set .fieldnum{background:#4053ba}
+  .fieldname{font-weight:800;font-size:14px;color:#232a3a;letter-spacing:-.01em}
+  .fieldq{margin:0;font-size:12.5px;color:#69738a;line-height:1.5}
+  .fieldnow{font-size:12.5px;line-height:1.5;color:#5b6577;border-left:2px solid #e2e7f2;padding-left:9px}.fieldnow b{color:#232a3a}
+  .fieldnow.fallback{border:1px solid #e8cf94;border-left:3px solid #e6a32d;background:#fff8e8;color:#6b5324;padding:7px 9px;border-radius:0 5px 5px 0}.fieldnow.fallback b{color:#5a4015}
+  .derived{border:1px dashed #b9c5ed;background:#fff;border-radius:7px;padding:10px 11px;display:grid;gap:6px}
+  .derivedlabel{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;color:#4053ba}
+  .derivedvalue{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.derivedvalue b{font-size:19px;color:#232a3a;letter-spacing:-.01em}.derivedvalue span{font-size:12.5px;color:#69738a}
+  .derivednote{font-size:12px;color:#78819a;line-height:1.5}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:flex;flex-direction:column;gap:9px}
   .privacy{border:1px solid #efc46d;background:#fff7e2;color:#725016;border-radius:6px;padding:10px 11px;font-size:12.5px;line-height:1.45}
@@ -128,7 +182,7 @@ INDEX_HTML = r"""<!doctype html>
       <div class="node"><span class="nodecode">02 / THREAT</span><strong>Exploitation state</strong><small>Active · Public PoC · None · EPSS watch signal</small></div>
       <div class="arrow">→</div>
       <div class="node"><span class="nodecode">03 / STAKEHOLDER</span><strong>SSVC factors</strong><small>Exposure · Automatable · Human impact</small></div>
-      <div class="decision"><div><b>Upgrade libc6 on web-frontend</b><br><span>Active · Open · Automatable · High human impact → Immediate</span></div><div class="outcome-now">Immediate</div></div>
+      <div class="decision"><div><b>Upgrade spring-beans on web-frontend</b><br><span>Active · Open · Automatable · High human impact → Immediate</span></div><div class="outcome-now">Immediate</div></div>
     </div>
   </div>
 </section>
@@ -163,30 +217,50 @@ INDEX_HTML = r"""<!doctype html>
       <details class="add lightpanel" id="targetform">
         <summary id="form-title">Add a target</summary>
         <div class="form">
-          <div class="contextintro">
-            <div class="contexttitle"><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC standard</span></div>
-            <span>Official categorical patch-priority inputs—not a numeric risk score. Mission Impact + Safety Impact derive Human Impact; Exploitation and Automatable are reviewed per vulnerability.</span>
-            <span class="patchtriagenote"><b>PatchTriage-only:</b> “Not assessed” stores missing context and uses the displayed CERT/CC-recommended fallback until confirmed.</span>
-            <span>Session data is isolated and expires from the server after six hours.</span>
-            <a href="https://certcc.github.io/SSVC/howto/deployer_tree/" target="_blank" rel="noopener">View the official CERT/CC SSVC Deployer model and definitions ↗</a>
-          </div>
           <input type="text" id="f-name" maxlength="120" placeholder="System name" aria-label="System name">
           <input type="text" id="f-url" placeholder="Reference URL (optional; this field is not scanned)" aria-label="Reference link URL">
-          <label class="fieldlabel"><span class="fieldtitle">System Exposure <span class="standardtag">SSVC EXP 1.0.1</span></span>
-            <span class="fieldhelp"><b>Question:</b> How accessible is the affected system or service to an attacker?</span>
-            <select id="f-exposure"><option value="unknown" selected>Not assessed — default: Open</option><option value="open">Open — Internet or widely accessible network</option><option value="controlled">Controlled — access restrictions reliably interrupt attacks</option><option value="small">Small — local service or highly controlled network</option></select>
-          </label>
-          <label class="fieldlabel"><span class="fieldtitle">Mission Impact <span class="standardtag">SSVC MI 2.0.0</span></span>
-            <span class="fieldhelp"><b>Question:</b> What happens to the essential functions your organization must continue? MEF means Mission Essential Function.</span>
-            <select id="f-mission"><option value="unknown" selected>Not assessed — default: Support Crippled</option><option value="degraded">Degraded — little impact or non-essential degradation</option><option value="mef_support_crippled">MEF Support Crippled — essential functions continue temporarily</option><option value="mef_failure">MEF Failure — one essential function fails too long</option><option value="mission_failure">Mission Failure — multiple or all essential functions fail</option></select>
-          </label>
-          <label class="fieldlabel"><span class="fieldtitle">Safety Impact <span class="standardtag">SSVC SI 2.0.1</span></span>
-            <span class="fieldhelp"><b>Question:</b> What is the highest credible impact across physical harm, operator or system resilience, environment, financial, or psychological well-being?</span>
-            <select id="f-safety"><option value="unknown" selected>Not assessed — default: Marginal</option><option value="negligible">Negligible — minor injury or small safety-margin reduction</option><option value="marginal">Marginal — major injury or safety capability failure</option><option value="critical">Critical — loss of life or recoverable system damage</option><option value="catastrophic">Catastrophic — multiple deaths or total system loss</option></select>
-          </label>
+          <div class="ssvcblock">
+            <div class="ssvchead">
+              <div><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC</span></div>
+              <span class="ssvcprogress" id="ssvc-progress">0 of 3 answered</span>
+            </div>
+            <details class="ssvcabout">
+              <summary>What are these three questions?</summary>
+              <div class="aboutbody">
+                <span>They are the official SSVC decision points that describe <b>your deployment</b>, not the vulnerability. They are categories, not a numeric risk score.</span>
+                <span>Leave one on <b>Not assessed</b> and PatchTriage stores it as missing, applies the conservative CERT/CC fallback shown under the question, and flags the decision for confirmation.</span>
+                <span>Session data is isolated and expires from the server after six hours.</span>
+                <a href="https://certcc.github.io/SSVC/howto/deployer_tree/" target="_blank" rel="noopener">Official CERT/CC SSVC Deployer model and definitions ↗</a>
+              </div>
+            </details>
+            <label class="ssvcfield" id="fw-exposure">
+              <span class="fieldhead"><span class="fieldnum">1</span><span class="fieldname">System Exposure</span><span class="standardtag">EXP 1.0.1</span></span>
+              <span class="fieldq">How reachable is this system from where an attacker stands?</span>
+              <select id="f-exposure"><option value="unknown" selected>Not assessed</option><option value="open">Open</option><option value="controlled">Controlled</option><option value="small">Small</option></select>
+              <span class="fieldnow" id="d-exposure"></span>
+            </label>
+            <label class="ssvcfield" id="fw-mission">
+              <span class="fieldhead"><span class="fieldnum">2</span><span class="fieldname">Mission Impact</span><span class="standardtag">MI 2.0.0</span></span>
+              <span class="fieldq">If this system fails, what happens to the work your organization must keep doing? A MEF is a Mission Essential Function.</span>
+              <select id="f-mission"><option value="unknown" selected>Not assessed</option><option value="degraded">Degraded</option><option value="mef_support_crippled">MEF Support Crippled</option><option value="mef_failure">MEF Failure</option><option value="mission_failure">Mission Failure</option></select>
+              <span class="fieldnow" id="d-mission"></span>
+            </label>
+            <label class="ssvcfield" id="fw-safety">
+              <span class="fieldhead"><span class="fieldnum">3</span><span class="fieldname">Safety Impact</span><span class="standardtag">SI 2.0.1</span></span>
+              <span class="fieldq">What is the worst credible harm to people — physical, operational, environmental, financial or psychological?</span>
+              <select id="f-safety"><option value="unknown" selected>Not assessed</option><option value="negligible">Negligible</option><option value="marginal">Marginal</option><option value="critical">Critical</option><option value="catastrophic">Catastrophic</option></select>
+              <span class="fieldnow" id="d-safety"></span>
+            </label>
+            <div class="derived">
+              <span class="derivedlabel">Derived · Human Impact <span class="standardtag">HI 2.0.2</span></span>
+              <span class="derivedvalue"><b id="d-human">—</b><span id="d-humanpath"></span></span>
+              <span class="derivednote">Questions 2 and 3 combine through the published Human Impact table — PatchTriage never adds them up. The two remaining decision points, <b>Exploitation</b> and <b>Automatable</b>, belong to the vulnerability rather than the system, so they come from CISA KEV and Vulnrichment per finding.</span>
+            </div>
+          </div>
           <details class="advanced">
             <summary>Advanced context evidence</summary>
             <div class="advancedgrid">
+              <span class="fieldhelp">Supporting evidence. These are PatchTriage fields, not SSVC decision points: they never override the three answers above, but they are recorded with the decision and used as a fallback when System Exposure is left unassessed.</span>
               <label class="fieldlabel">Criticality<select id="f-criticality"><option value="unknown">Unknown</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
               <div class="row2"><label class="fieldlabel">Internet exposed<select id="f-internet"><option value="unknown">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label><label class="fieldlabel">Code reachable<select id="f-reachable"><option value="unknown">Unknown</option><option value="true">Observed / confirmed</option><option value="false">Not reachable</option></select></label></div>
               <label class="fieldlabel">Runtime observed<select id="f-runtime"><option value="unknown">Unknown</option><option value="true">Observed at runtime</option><option value="false">Not observed</option></select></label>
@@ -194,7 +268,7 @@ INDEX_HTML = r"""<!doctype html>
             </div>
           </details>
           <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
-          <div class="hint">Choose a specific SSVC value when the context is known. Any temporary fallback remains visibly flagged for confirmation.</div>
+          <div class="hint">Answer what you know. Anything left on “Not assessed” still produces a decision — it just carries the conservative fallback and stays flagged for confirmation, and you can revisit it later with <b>Review context</b>.</div>
         </div>
       </details>
       <div style="margin:8px 0"><button class="btn small" id="fleet-open" title="Import every recently active repository of a GitHub account as targets">Import organization…</button></div>
@@ -243,6 +317,8 @@ INDEX_HTML = r"""<!doctype html>
 <dialog id="fleetdialog"><div class="dialogbody"><h3>Import an organization</h3><p>Every recently pushed public repository of the account becomes a target with its GitHub Dependency Graph SBOM attached — the same no-clone, no-execution path as a single repository import. Forks and archived repositories are skipped. Each target starts with the official conservative SSVC defaults; review its context before trusting the decision.</p><label class="fieldlabel">Organization or user URL<input type="text" id="fleet-url" placeholder="https://github.com/your-org"></label><label class="fieldlabel">Repository limit<input type="number" id="fleet-limit" min="1" value="10"></label><div class="dialogactions"><button class="btn" id="fleet-cancel">Cancel</button><button class="btn primary" id="fleet-import">Import repositories</button></div></div></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
+const SSVC_LABELS=__SSVC_LABELS__;
+const HUMAN_IMPACT=__HUMAN_IMPACT__;
 let CFG={backends:["rules"],has_ai:false,ai_provider:null};
 let TARGETS=[];let RESULTS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
 
@@ -507,11 +583,61 @@ document.getElementById("results").onclick=event=>{
   if(event.target.closest(".demo-trigger"))launchDemo();
   const save=event.target.closest(".save-ssvc-inputs");if(save)saveSsvcInputs(save.closest(".result"));
 };
+const SSVC_FIELDS=[
+  {key:"exposure",select:"f-exposure",fallback:"open",
+   values:{
+     open:"Reachable from the internet, or from a network so broad that access cannot plausibly be restricted.",
+     controlled:"Networked, but access controls in front of it reliably interrupt an attack — a VPN, an allow-list, an authenticating proxy.",
+     small:"Local-only or highly controlled: a handful of accounts on a segmented network can reach it."}},
+  {key:"mission",select:"f-mission",fallback:"mef_support_crippled",
+   values:{
+     degraded:"Little to no mission impact. What degrades is not essential work.",
+     mef_support_crippled:"Activities that support an essential function are crippled, but the essential function itself keeps running for now.",
+     mef_failure:"One mission essential function fails, for longer than the organization can tolerate.",
+     mission_failure:"Several or all mission essential functions fail — the organization cannot deliver its mission."}},
+  {key:"safety",select:"f-safety",fallback:"marginal",
+   values:{
+     negligible:"Minor injury at worst, or a small reduction in a safety margin that operators absorb without extra effort.",
+     marginal:"Major injury, or a safety-critical capability fails and operators must actively work around it.",
+     critical:"Loss of a life is credible, or the system takes serious but recoverable damage.",
+     catastrophic:"Multiple deaths, or total loss of the system or its environment."}}];
+const SSVC_FALLBACK_NOTE={
+  exposure:"SSVC treats unknown exposure as the most dangerous case.",
+  mission:"SSVC treats unknown mission impact as support for essential work already being crippled.",
+  safety:"SSVC treats unknown safety impact as a major-injury case."};
+function ssvcLabel(id){const select=document.getElementById(id),option=select.options[select.selectedIndex];return option?option.textContent:"";}
+function syncSsvcContext(){
+  let answered=0;
+  for(const field of SSVC_FIELDS){
+    const select=document.getElementById(field.select),wrap=document.getElementById("fw-"+field.key),
+          note=document.getElementById("d-"+field.key),value=select.value,assessed=value!=="unknown";
+    if(assessed)answered++;
+    wrap.classList.toggle("set",assessed);wrap.classList.toggle("pending",!assessed);
+    note.classList.toggle("fallback",!assessed);
+    note.innerHTML=assessed
+      ?"<b>"+esc(ssvcLabel(field.select))+".</b> "+esc(field.values[value]||"")
+      :"<b>Falls back to "+esc(SSVC_LABELS[field.fallback]||field.fallback)+".</b> "
+        +esc(SSVC_FALLBACK_NOTE[field.key])+" The decision is still produced, and flagged for confirmation.";
+  }
+  const progress=document.getElementById("ssvc-progress");
+  progress.textContent=answered+" of 3 answered";
+  progress.classList.toggle("done",answered===3);
+  const mission=document.getElementById("f-mission").value,safety=document.getElementById("f-safety").value,
+        effectiveMission=mission==="unknown"?"mef_support_crippled":mission,
+        effectiveSafety=safety==="unknown"?"marginal":safety,
+        human=HUMAN_IMPACT[effectiveSafety+"|"+effectiveMission],
+        assumed=mission==="unknown"||safety==="unknown";
+  document.getElementById("d-human").textContent=SSVC_LABELS[human]||"—";
+  document.getElementById("d-humanpath").textContent=
+    SSVC_LABELS[effectiveMission]+" mission + "+SSVC_LABELS[effectiveSafety]+" safety"
+    +(assumed?" (partly assumed)":"");
+}
+SSVC_FIELDS.forEach(field=>document.getElementById(field.select).addEventListener("change",syncSsvcContext));
 function optionalBool(id){const value=document.getElementById(id).value;return value==="unknown"?null:value==="true";}
 function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean)};}
-function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime"].forEach(id=>document.getElementById(id).value="unknown");}
+function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
 function boolChoice(value){return value===true?"true":value===false?"false":"unknown";}
-function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
+function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
 document.getElementById("add").onclick=async()=>{
   const name=document.getElementById("f-name").value.trim();if(!editingTarget&&!name){notify("Give the target a system name.",true);return;}
   try{
@@ -572,6 +698,13 @@ document.getElementById("filepick").onchange=async event=>{
 };
 document.getElementById("runall").onclick=()=>runTargets(TARGETS.filter(t=>t.source_file).map(t=>t.id));
 
-async function boot(){await Promise.all([loadConfig(),loadTargets()]);await loadSummaries();await resumeActiveJobs();}
+async function boot(){syncSsvcContext();await Promise.all([loadConfig(),loadTargets()]);await loadSummaries();await resumeActiveJobs();}
 boot().catch(error=>notify(error.message,true));
 </script></body></html>"""
+
+
+INDEX_HTML = (
+    _TEMPLATE
+    .replace("__SSVC_LABELS__", json.dumps(_decision_point_labels()))
+    .replace("__HUMAN_IMPACT__", json.dumps(_human_impact_matrix()))
+)

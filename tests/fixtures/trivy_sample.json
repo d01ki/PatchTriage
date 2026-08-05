@@ -32,6 +32,23 @@
       ]
     },
     {
+      "Target": "app/BOOT-INF/lib/spring-beans-5.3.17.jar",
+      "Type": "jar",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2022-22965",
+          "PkgName": "org.springframework:spring-beans",
+          "InstalledVersion": "5.3.17",
+          "FixedVersion": "5.3.18",
+          "Severity": "CRITICAL",
+          "Title": "spring-framework: remote code execution via data binding (Spring4Shell)",
+          "Description": "Data binding on JDK 9+ allows unauthenticated remote code execution.",
+          "CVSS": {"nvd": {"V3Score": 9.8}},
+          "References": ["https://nvd.nist.gov/vuln/detail/CVE-2022-22965"]
+        }
+      ]
+    },
+    {
       "Target": "package-lock.json",
       "Type": "npm",
       "Vulnerabilities": [

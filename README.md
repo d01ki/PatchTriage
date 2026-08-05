@@ -176,10 +176,11 @@ library CVEs:
 | Corrected *down* from the conservative "assume Yes" | — | **4** |
 
 That last row matters most: those four findings were being over-prioritized
-by the conservative default. The bundled offline demo shows the same effect —
-CVE-2023-4911 is KEV-listed, but CISA publishes Automatable = No for it
-(local privilege escalation is not automatable at scale), so it lands on
-**Out-of-Cycle** instead of Immediate.
+by the conservative default. The bundled offline demo shows both directions on
+two equally KEV-listed findings: CVE-2022-22965 (Spring4Shell) carries
+Automatable = Yes and lands on **Immediate**, while CVE-2023-4911 carries
+Automatable = No (local privilege escalation is not automatable at scale) and
+lands on **Out-of-Cycle** instead of Immediate.
 
 Roughly half of all CVEs carry a Vulnrichment assessment. The rest keep the
 existing honest behavior: the official conservative default, visibly flagged
@@ -364,19 +365,24 @@ components so the operator can decide whether the evidence is sufficient.
 
 ## Bundled demo
 
-The demo uses frozen Trivy, Grype, EPSS, CISA KEV, and NVD evidence, so it
-works without a network or API key. Its three deduplicated findings illustrate
+The demo uses frozen Trivy, Grype, EPSS, CISA KEV, NVD, and CISA Vulnrichment
+evidence, so it works without a network or API key. Assessed against an Open,
+MEF-Failure, Critical-safety target, its four deduplicated findings illustrate
 why severity alone is not the deployment decision:
 
-| SSVC outcome | Vulnerability | Package | CVSS | EPSS | CISA KEV |
-|---|---|---|---:|---:|---|
-| Immediate | CVE-2023-4911 | libc6 | 7.8 | 0.856 | Yes |
-| Scheduled | CVE-2024-3094 | xz-utils | 10.0 | 0.372 | No |
-| Scheduled | CVE-2021-23337 | lodash | 7.2 | 0.018 | No |
+| SSVC outcome | Vulnerability | Package | CVSS | EPSS | CISA KEV | CISA Automatable |
+|---|---|---|---:|---:|---|---|
+| Immediate | CVE-2022-22965 | spring-beans | 9.8 | 0.945 | Yes | Yes |
+| Out-of-Cycle | CVE-2023-4911 | libc6 | 7.8 | 0.856 | Yes | No |
+| Scheduled | CVE-2024-3094 | xz-utils | 10.0 | 0.372 | No | Yes |
+| Scheduled | CVE-2021-23337 | lodash | 7.2 | 0.018 | No | — |
 
-The known-exploited finding is surfaced before the CVSS 10.0 finding, while
-the exact outcome remains explainable from the SSVC path and target context.
-This small demo proves pipeline behavior, not real-world effectiveness.
+Both known-exploited findings are surfaced before the CVSS 10.0 finding, but
+they do not receive the same deadline: Spring4Shell is remotely automatable
+and lands on **Immediate** (3 days), while the equally KEV-listed local
+privilege escalation in glibc is **Out-of-Cycle** (14 days). The exact outcome
+stays explainable from the SSVC path and target context. This small demo
+proves pipeline behavior, not real-world effectiveness.
 
 ## Scriptable usage
 

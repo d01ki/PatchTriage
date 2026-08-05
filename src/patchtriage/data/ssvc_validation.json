@@ -70,6 +70,7 @@
     "needs_confirmation": ["exploitation", "system_exposure", "automatable", "mission_impact", "safety_impact"]
   },
   "demo_expected": {
+    "CVE-2022-22965": "immediate",
     "CVE-2023-4911": "immediate",
     "CVE-2024-3094": "scheduled",
     "CVE-2021-23337": "scheduled"

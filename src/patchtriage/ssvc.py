@@ -169,6 +169,11 @@ class SSVCAssessment(BaseModel):
     supplemental: dict = Field(default_factory=dict)
 
 
+def label_for(value: str) -> str:
+    """Official display label for a decision point value, or the raw value."""
+    return _LABELS.get(value, value)
+
+
 _HUMAN_ORDER = (
     HumanImpact.LOW,
     HumanImpact.MEDIUM,

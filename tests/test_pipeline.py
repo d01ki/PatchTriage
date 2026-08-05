@@ -24,7 +24,7 @@ def test_sniff_format():
 
 def test_trivy_parse():
     trivy, _ = _load_all()
-    assert len(trivy) == 3
+    assert len(trivy) == 4
     xz = next(f for f in trivy if f.vuln_id == "CVE-2024-3094")
     assert xz.severity.value == "critical"
     assert xz.cvss_score == 10.0
@@ -41,13 +41,16 @@ def test_grype_ghsa_canonicalized_to_cve():
 def test_dedup_merges_cross_scanner():
     trivy, grype = _load_all()
     findings = dedup(trivy + grype)
-    # 5 raw -> 3 unique (lodash and libc6 overlap across scanners)
-    assert len(findings) == 3
+    # 7 raw -> 4 unique (lodash, libc6 and spring-beans overlap across scanners)
+    assert len(findings) == 4
     lodash = next(f for f in findings if f.package.name == "lodash")
     assert sorted(lodash.reported_by) == ["grype", "trivy"]
     libc = next(f for f in findings if "libc" in f.package.name)
     assert sorted(libc.reported_by) == ["grype", "trivy"]
     assert libc.cvss_score == 7.8                    # max kept
+    # Trivy calls the ecosystem "jar", Grype "java-archive": same Maven package
+    spring = next(f for f in findings if "spring-beans" in f.package.name)
+    assert sorted(spring.reported_by) == ["grype", "trivy"]
 
 
 def test_rules_backend_uses_kev_as_active_ssvc_evidence():
@@ -185,7 +188,7 @@ def test_evaluation_is_presented_as_user_outcomes():
     findings = _triaged_findings()
     row = evaluate(findings, budgets=[1])[0]
     outcome = evaluation_outcome(row, len(findings))
-    assert outcome["review_reduction_pct"] == 66.7
+    assert outcome["review_reduction_pct"] == 75.0
     assert outcome["kev_coverage_pct"] == 100.0
     assert outcome["kev_gain_points"] == 100.0
     assert outcome["additional_kev_vs_cvss"] == 1
