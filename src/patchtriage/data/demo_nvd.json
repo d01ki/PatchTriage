@@ -1,8 +1,44 @@
-{"CVE-2024-3094": {"score": 10.0, "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
-  "version": "3.1", "cwes": ["CWE-506"],
-  "references": ["https://www.openwall.com/lists/oss-security/2024/03/29/4"]},
- "CVE-2023-4911": {"score": 7.8, "vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
-  "version": "3.1", "cwes": ["CWE-787"],
-  "references": ["https://www.exploit-db.com/exploits/51710"]},
- "CVE-2021-23337": {"score": 7.2, "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
-  "version": "3.1", "cwes": ["CWE-94"], "references": []}}
+{
+  "CVE-2021-23337": {
+    "cwes": [
+      "CWE-94"
+    ],
+    "references": [],
+    "score": 7.2,
+    "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+    "version": "3.1"
+  },
+  "CVE-2022-22965": {
+    "cwes": [
+      "CWE-94"
+    ],
+    "references": [
+      "https://tanzu.vmware.com/security/cve-2022-22965"
+    ],
+    "score": 9.8,
+    "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "version": "3.1"
+  },
+  "CVE-2023-4911": {
+    "cwes": [
+      "CWE-787"
+    ],
+    "references": [
+      "https://www.exploit-db.com/exploits/51710"
+    ],
+    "score": 7.8,
+    "vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+    "version": "3.1"
+  },
+  "CVE-2024-3094": {
+    "cwes": [
+      "CWE-506"
+    ],
+    "references": [
+      "https://www.openwall.com/lists/oss-security/2024/03/29/4"
+    ],
+    "score": 10.0,
+    "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+    "version": "3.1"
+  }
+}

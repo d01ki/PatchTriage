@@ -1,24 +1,33 @@
 {
- "CVE-2021-23337": {
-  "assessed": false,
-  "reason": "CVE record carries no CISA SSVC assessment"
- },
- "CVE-2023-4911": {
-  "Automatable": "no",
-  "Exploitation": "active",
-  "Technical Impact": "total",
-  "assessed": true,
-  "role": "CISA Coordinator",
-  "timestamp": "2025-10-15T19:45:35.724824Z",
-  "version": "2.0.3"
- },
- "CVE-2024-3094": {
-  "Automatable": "yes",
-  "Exploitation": "none",
-  "Technical Impact": "total",
-  "assessed": true,
-  "role": "CISA Coordinator",
-  "timestamp": "2024-04-02T04:00:23.138684Z",
-  "version": "2.0.3"
- }
+  "CVE-2021-23337": {
+    "assessed": false,
+    "reason": "CVE record carries no CISA SSVC assessment"
+  },
+  "CVE-2022-22965": {
+    "Automatable": "yes",
+    "Exploitation": "active",
+    "Technical Impact": "total",
+    "assessed": true,
+    "role": "CISA Coordinator",
+    "timestamp": "2024-06-04T17:52:20.836000Z",
+    "version": "2.0.3"
+  },
+  "CVE-2023-4911": {
+    "Automatable": "no",
+    "Exploitation": "active",
+    "Technical Impact": "total",
+    "assessed": true,
+    "role": "CISA Coordinator",
+    "timestamp": "2025-10-15T19:45:35.724824Z",
+    "version": "2.0.3"
+  },
+  "CVE-2024-3094": {
+    "Automatable": "yes",
+    "Exploitation": "none",
+    "Technical Impact": "total",
+    "assessed": true,
+    "role": "CISA Coordinator",
+    "timestamp": "2024-04-02T04:00:23.138684Z",
+    "version": "2.0.3"
+  }
 }

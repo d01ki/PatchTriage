@@ -1,3 +1,18 @@
-{"CVE-2024-3094": {"epss": 0.372, "percentile": 0.971},
- "CVE-2023-4911": {"epss": 0.856, "percentile": 0.994},
- "CVE-2021-23337": {"epss": 0.018, "percentile": 0.882}}
+{
+  "CVE-2021-23337": {
+    "epss": 0.018,
+    "percentile": 0.882
+  },
+  "CVE-2022-22965": {
+    "epss": 0.945,
+    "percentile": 0.999
+  },
+  "CVE-2023-4911": {
+    "epss": 0.856,
+    "percentile": 0.994
+  },
+  "CVE-2024-3094": {
+    "epss": 0.372,
+    "percentile": 0.971
+  }
+}

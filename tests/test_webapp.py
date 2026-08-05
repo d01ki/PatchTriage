@@ -208,18 +208,23 @@ def test_security_headers_are_present(server):
     assert "Import repository" in page
     assert "CycloneDX/SPDX JSON" in page
     assert "Categorical outcome — no aggregate SSVC score" in page
-    assert "Exploitation and Automatable are reviewed per vulnerability" in page
+    assert "belong to the vulnerability rather than the system" in page
     assert 'id="f-automatable"' not in page
-    assert "CERT/CC SSVC standard" in page
+    assert "CERT/CC SSVC" in page
     assert "not a numeric risk score" in page
-    assert "PatchTriage-only:" in page
-    assert "“Not assessed” stores missing context" in page
-    assert "Not assessed — default: Open" in page
-    assert "Not assessed — default: Support Crippled" in page
-    assert "Not assessed — default: Marginal" in page
-    assert "SSVC EXP 1.0.1" in page
-    assert "SSVC MI 2.0.0" in page
-    assert "SSVC SI 2.0.1" in page
+    assert "PatchTriage stores it as missing" in page
+    # The target form states the conservative fallback for each unanswered
+    # decision point, and derives Human Impact from the published table
+    # instead of asking for it.
+    assert "Falls back to " in page
+    assert 'fallback:"open"' in page
+    assert 'fallback:"mef_support_crippled"' in page
+    assert 'fallback:"marginal"' in page
+    assert '"marginal|mef_failure": "medium"' in page
+    assert "EXP 1.0.1" in page
+    assert "MI 2.0.0" in page
+    assert "SI 2.0.1" in page
+    assert "HI 2.0.2" in page
     assert "Advanced context evidence" in page
     assert "Context evidence sources" in page
     assert "Review vulnerability-specific SSVC inputs" in page
@@ -321,8 +326,8 @@ def test_offline_demo_runs_end_to_end(server):
         {"backend": "rules"},
     )
     assert status == 200
-    assert summary["total"] == 3
-    assert summary["kev"] == 1
+    assert summary["total"] == 4
+    assert summary["kev"] == 2
     assert summary["vendor_advisories"] == 0
     assert summary["vendor_sources"] == []
     assert summary["comparison"]["kev"] == {
@@ -331,28 +336,33 @@ def test_offline_demo_runs_end_to_end(server):
     }
     assert summary["comparison"]["outcome"] == {
         "reviewed": 1,
-        "review_reduction_pct": 66.7,
-        "kev_coverage_pct": 100.0,
-        "kev_gain_points": 100.0,
+        "review_reduction_pct": 75.0,
+        # k is one quarter of four findings, so a single reviewed finding can
+        # only ever reach one of the two known-exploited entries.
+        "kev_coverage_pct": 50.0,
+        "kev_gain_points": 50.0,
         "additional_kev_vs_cvss": 1,
         "kev_lift_vs_cvss": None,
-        "urgent_coverage_pct": 100.0,
+        "urgent_coverage_pct": 50.0,
     }
     assert summary["comparison"]["urgent"] == {
-        "total": 1, "cvss": 0, "epss": 1, "kev": 1, "ssvc": 1,
+        "total": 2, "cvss": 0, "epss": 1, "kev": 1, "ssvc": 1,
     }
-    # CVE-2023-4911 is KEV-listed, but CISA publishes Automatable = No for it
-    # (local privilege escalation is not automatable at scale). The demo
-    # therefore lands on Out-of-Cycle rather than the Immediate produced by
-    # the old conservative "assume Yes" default: an authoritative input
-    # correcting an over-prioritization is the point of the Vulnrichment feed.
+    # The demo deliberately contains both halves of the Vulnrichment story.
+    # CVE-2022-22965 is KEV-listed and CISA publishes Automatable = Yes, so an
+    # Open, high-human-impact deployment lands on Immediate. CVE-2023-4911 is
+    # equally KEV-listed but CISA publishes Automatable = No (local privilege
+    # escalation is not automatable at scale), so it lands on Out-of-Cycle
+    # instead of the Immediate produced by the conservative "assume Yes"
+    # default: an authoritative input correcting an over-prioritization.
     assert summary["outcomes"] == {
-        "immediate": 0, "out_of_cycle": 1, "scheduled": 2, "defer": 0,
+        "immediate": 1, "out_of_cycle": 1, "scheduled": 2, "defer": 0,
     }
-    assert summary["top_ssvc_decision"] == "Out-of-Cycle"
+    assert summary["top_ssvc_decision"] == "Immediate"
     assert summary["ssvc_confirmation_fields"] == ["automatable"]
-    assert summary["top_deadline_days"] == 14
-    assert summary["explanation"]["outcome_label"] == "Out-of-Cycle"
+    assert summary["top_deadline_days"] == 3
+    assert summary["explanation"]["vuln_id"] == "CVE-2022-22965"
+    assert summary["explanation"]["outcome_label"] == "Immediate"
     assert summary["explanation"]["basis"].startswith(
         "The SSVC Deployer path"
     )
@@ -361,12 +371,12 @@ def test_offline_demo_runs_end_to_end(server):
         "mission_impact": "mef_failure", "safety_impact": "critical",
         "context_sources": ["OpenTelemetry", "Falco"],
     }
-    assert summary["explanation"]["ssvc"]["decision"] == "out_of_cycle"
+    assert summary["explanation"]["ssvc"]["decision"] == "immediate"
     assert (summary["explanation"]["ssvc"]["automatable"]["source"]
             == "CISA Vulnrichment")
     assert summary["explanation"]["checks"][0]["status"] == "confirmed"
     assert summary["explanation"]["ssvc"]["supplemental"]["runtime_observed"] is True
-    assert len(summary["ssvc_inputs"]) == 3
+    assert len(summary["ssvc_inputs"]) == 4
     assert all("exploitation" in item and "automatable" in item
                for item in summary["ssvc_inputs"])
     assert summary["duration_ms"] >= 0

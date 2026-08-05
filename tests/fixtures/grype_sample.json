@@ -28,6 +28,20 @@
       },
       "relatedVulnerabilities": [],
       "artifact": {"name": "libc6", "version": "2.36-9", "type": "deb"}
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2022-22965",
+        "severity": "Critical",
+        "description": "spring-framework remote code execution via data binding",
+        "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2022-22965",
+        "fix": {"versions": ["5.3.18"], "state": "fixed"},
+        "cvss": [{"metrics": {"baseScore": 9.8}}]
+      },
+      "relatedVulnerabilities": [],
+      "artifact": {"name": "org.springframework:spring-beans",
+                   "version": "5.3.17", "type": "java-archive",
+                   "purl": "pkg:maven/org.springframework/spring-beans@5.3.17"}
     }
   ]
 }

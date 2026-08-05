@@ -207,7 +207,7 @@ def test_async_demo_job_can_be_polled_and_persists_result(enhanced_server):
     finished = _poll_job(opener, enhanced_server, job["job_id"])
     assert finished["state"] == "succeeded", finished.get("error")
     assert finished["summary"]["target_id"] == target["id"]
-    assert finished["summary"]["total"] == 3
+    assert finished["summary"]["total"] == 4
     with webserver._JOB_LOCK:
         assert "summary" not in webserver._JOBS[job["job_id"]]
     status, summaries = _api(opener, "GET", enhanced_server + "/api/summaries")
