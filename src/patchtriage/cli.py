@@ -20,6 +20,7 @@ from __future__ import annotations
 import glob as globmod
 import json
 import os
+import re
 import shutil
 import sys
 import webbrowser
@@ -193,7 +194,7 @@ def _emit(findings, subset, actions, eval_rows, output, html):
         html_path.parent.mkdir(parents=True, exist_ok=True)
         html_path.write_text(render_html(subset, actions, eval_rows),
                              encoding="utf-8")
-        console.print(f"HTML report: [bold]{html}[/bold]")
+        console.print(f"HTML report: [bold]{_output_location(html_path)}[/bold]")
     if output:
         report = {
             "findings": [f.model_dump(mode="json") for f in findings],
@@ -204,7 +205,9 @@ def _emit(findings, subset, actions, eval_rows, output, html):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(report, indent=2, default=str),
                                encoding="utf-8")
-        console.print(f"JSON report: [bold]{output}[/bold]")
+        console.print(
+            f"JSON report: [bold]{_output_location(output_path)}[/bold]"
+        )
 
 
 @app.command()
@@ -823,8 +826,15 @@ def start():
                   "SPDX export) - packages are resolved online via OSV.dev, "
                   "no local scanner needed.\nHave a scanner? "
                   "trivy image --format json -o trivy.json nginx:1.24[/dim]")
+    if _in_container():
+        console.print(
+            "[dim]Docker CLI: files in this repository are available under "
+            "/work. For an Explorer file picker or repository URL, use the "
+            "web GUI (`./run.sh`).[/dim]"
+        )
     while True:
-        pattern = typer.prompt("Path or glob (e.g. scans/*.json)").strip()
+        entered = typer.prompt("Path or glob (e.g. scans/*.json)")
+        pattern = _normalize_input_pattern(entered)
         files = sorted(Path(p) for p in globmod.glob(pattern))
         if files:
             console.print(f"[dim]{len(files)} file(s): "
@@ -832,12 +842,20 @@ def start():
                           f"{' ...' if len(files) > 5 else ''}[/dim]")
             break
         console.print(f"[red]no files match {pattern!r}[/red]")
-        if os.name != "nt" and len(pattern) > 2 and pattern[1] == ":" \
-                and pattern[2] in "\\/":
-            console.print("[yellow]that looks like a Windows path, but this "
-                          "is not a Windows machine - copy the file here "
-                          "first (e.g. scp), or run patchtriage where the "
-                          "file lives[/yellow]")
+        if _is_windows_path(entered) and os.name != "nt":
+            if _in_container():
+                console.print(
+                    "[yellow]A container cannot see a Windows host path "
+                    "directly. Use the web GUI's file picker, or copy the "
+                    "file into this repository and enter its /work path."
+                    "[/yellow]"
+                )
+            else:
+                console.print(
+                    "[yellow]That looks like a Windows path, but this is not "
+                    "Windows. Under WSL it is normally /mnt/<drive>/...; "
+                    "otherwise copy the file to this machine first.[/yellow]"
+                )
 
     # 2. environment context
     console.print("\n[bold]2. Asset context[/bold] - the same CVE on an "
@@ -910,8 +928,10 @@ def start():
 
     # 4. outputs
     console.print("\n[bold]4. Report[/bold]")
-    html = typer.prompt("HTML report path", default="report.html").strip()
-    output = typer.prompt("JSON report path", default="report.json").strip()
+    html_default = "/out/report.html" if _in_container() else "report.html"
+    output_default = "/out/report.json" if _in_container() else "report.json"
+    html = typer.prompt("HTML report path", default=html_default).strip()
+    output = typer.prompt("JSON report path", default=output_default).strip()
 
     try:
         findings, subset, actions, eval_rows = _pipeline(
@@ -956,11 +976,58 @@ def start():
                 raise typer.Exit(code=1)
 
 
+_WINDOWS_PATH = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+
+
+def _strip_input_quotes(value: str) -> str:
+    """Remove quotes commonly added when a path is pasted or dragged."""
+    value = value.strip()
+    if (len(value) >= 2 and value[0] == value[-1]
+            and value[0] in ("'", '"')):
+        return value[1:-1].strip()
+    return value
+
+
+def _is_windows_path(value: str) -> bool:
+    return bool(_WINDOWS_PATH.match(_strip_input_quotes(value)))
+
+
+def _running_under_wsl() -> bool:
+    return (bool(os.environ.get("WSL_DISTRO_NAME"))
+            or Path("/proc/sys/fs/binfmt_misc/WSLInterop").exists())
+
+
+def _normalize_input_pattern(value: str) -> str:
+    """Normalize pasted paths without hiding container mount boundaries."""
+    pattern = os.path.expanduser(_strip_input_quotes(value))
+    match = _WINDOWS_PATH.match(pattern)
+    if match and _running_under_wsl() and not _in_container():
+        drive, tail = match.groups()
+        tail = tail.replace("\\", "/")
+        return f"/mnt/{drive.lower()}/{tail}"
+    return pattern
+
+
+def _output_location(path: Path) -> str:
+    """Show an absolute container path and its Compose host destination."""
+    resolved = path.resolve()
+    if _in_container():
+        try:
+            relative = resolved.relative_to(Path("/out"))
+        except ValueError:
+            pass
+        else:
+            return f"{resolved} (Docker host: ./out/{relative.as_posix()})"
+    return str(resolved)
+
+
 def _offer_browser(html: Path) -> None:
     """Offer to open the report — but never in a headless/container context."""
     resolved = html.resolve()
     if _is_headless():
-        console.print(f"\n[bold]Open the report:[/bold] {resolved}")
+        console.print(
+            f"\n[bold]Open the report:[/bold] {_output_location(html)}"
+        )
         if _in_container():
             console.print("[dim](running in a container - open the file on "
                           "your host via the mounted volume)[/dim]")
@@ -1086,7 +1153,8 @@ def demo(
             os.environ["PATCHTRIAGE_CACHE_DIR"] = previous_cache_dir
         shutil.rmtree(tmp, ignore_errors=True)
     console.print("\n[bold green]Demo complete.[/bold green] Open "
-                  f"[bold]{html}[/bold] in a browser. To try the AI backend: "
+                  f"[bold]{_output_location(html)}[/bold] in a browser. "
+                  "To try the AI backend: "
                   "configure a provider with `patchtriage setup` and re-run "
                   "with `patchtriage run ... --triage ai`.")
 
@@ -1320,6 +1388,13 @@ def _print_eval(rows) -> None:
                  f"{r.urgent_ssvc}/{r.urgent_total}"),
         )
     console.print(table)
+    console.print(
+        "[dim]How to read x/y: x target findings appear within that top-k "
+        "queue, out of y target findings in the full result. KEV = CISA "
+        "Known Exploited Vulnerabilities; Urgent = SSVC Immediate or "
+        "Out-of-Cycle (P1/P2). Example: 1/2 at top 1 means the first-ranked "
+        "item captures one of the two target findings.[/dim]"
+    )
 
 
 if __name__ == "__main__":

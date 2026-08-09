@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# One command to launch PatchTriage: build + start the GUI in Docker and open
-# the console in your browser. Nothing but Docker required.
+# Docker-only launcher. Nothing but Docker is required on the host.
 #
-#   ./run.sh              # build, start, open http://localhost:8765
-#   ./run.sh --stop       # stop the console
-#   PORT=9000 ./run.sh    # use a different host port
+#   ./run.sh                 # GUI + Explorer file picker / repository import
+#   ./run.sh demo            # offline demo -> ./out/demo_report.{html,json}
+#   ./run.sh start           # interactive CLI; /work inputs -> ./out reports
+#   ./run.sh cli run ...     # any PatchTriage CLI command in Docker
+#   ./run.sh --stop          # stop the GUI
+#   PORT=9000 ./run.sh       # use a different GUI port
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -22,16 +24,68 @@ else
   exit 1
 fi
 
-if [[ "${1:-}" == "--stop" ]]; then
-  "${DC[@]}" down
-  echo "PatchTriage console stopped."
-  exit 0
-fi
+usage() {
+  echo "Usage: ./run.sh [gui|demo|start|cli COMMAND...|--stop]"
+  echo "  gui       Open the browser UI (default; file picker and repository URLs)"
+  echo "  demo      Run the offline demo; reports are written under ./out"
+  echo "  start     Run the guided CLI; repository files are mounted at /work"
+  echo "  cli ...   Run an arbitrary patchtriage command inside Docker"
+}
 
-echo "==> building and starting the PatchTriage console (Docker)…"
+MODE="${1:-gui}"
+case "${MODE}" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --stop)
+    "${DC[@]}" down
+    echo "PatchTriage console stopped."
+    exit 0
+    ;;
+  demo|start)
+    if [[ "$#" -ne 1 ]]; then
+      echo "ERROR: ./run.sh ${MODE} does not accept extra arguments." >&2
+      usage >&2
+      exit 2
+    fi
+    mkdir -p out
+    echo "==> building the PatchTriage ${MODE} image..."
+    "${DC[@]}" build "${MODE}"
+    echo "==> running PatchTriage ${MODE} in Docker..."
+    "${DC[@]}" run --rm "${MODE}"
+    exit 0
+    ;;
+  cli)
+    shift
+    if [[ "$#" -eq 0 ]]; then
+      echo "ERROR: ./run.sh cli needs a patchtriage command." >&2
+      usage >&2
+      exit 2
+    fi
+    mkdir -p out
+    "${DC[@]}" build triage
+    "${DC[@]}" run --rm triage "$@"
+    exit 0
+    ;;
+  gui)
+    if [[ "$#" -gt 1 ]]; then
+      echo "ERROR: ./run.sh gui does not accept extra arguments." >&2
+      usage >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "ERROR: unknown mode: ${MODE}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+echo "==> building and starting the PatchTriage console (Docker)..."
 PATCHTRIAGE_PORT="${PORT}" "${DC[@]}" up -d --build gui
 
-echo "==> waiting for the console to become ready…"
+echo "==> waiting for the console to become ready..."
 for i in $(seq 1 60); do
   if curl -fsS "${URL}/api/config" >/dev/null 2>&1; then
     ready=1; break

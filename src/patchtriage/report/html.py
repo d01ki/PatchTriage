@@ -407,7 +407,8 @@ def render_html(findings: list[Finding], actions: list[Action],
       <p class="lede">Same findings and fixed work budget k, compared across CVSS, EPSS,
       KEV-first, and SSVC orderings. CISA KEV is independent observed-exploitation evidence.
       “SSVC urgent” measures coverage of this inventory's Immediate and Out-of-Cycle decisions;
-      it is a context-consistency measure, not independent ground truth.</p>
+      it is a context-consistency measure, not independent ground truth. Each x/y cell means
+      x target findings surfaced in that top-k queue out of y target findings in the full result.</p>
       <table>
         <thead><tr><th>Budget</th><th>KEV · CVSS</th><th>KEV · EPSS</th><th>KEV · KEV-first</th><th>KEV · SSVC</th>
         <th>Urgent · CVSS</th><th>Urgent · EPSS</th><th>Urgent · KEV-first</th><th>Urgent · SSVC</th></tr></thead>

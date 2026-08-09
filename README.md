@@ -56,7 +56,8 @@ https://youtu.be/UxSTwKSwf0U
 
 ## Quick start with Docker
 
-Docker is the shortest path to the GUI:
+Docker is the shortest path and does not require Python, pip, or a virtual
+environment on the host:
 
 ```bash
 git clone https://github.com/d01ki/PatchTriage
@@ -70,25 +71,73 @@ Open [http://localhost:8765](http://localhost:8765). The equivalent command is:
 docker compose up gui
 ```
 
-To make the locally running container use the repository access granted to a
-GitHub token:
+If port 8765 is already in use, choose another host port:
 
 ```bash
-GITHUB_TOKEN=... docker compose up gui
+PORT=9000 ./run.sh
 ```
+
+### Scan a repository locally
+
+The repository workflow stays in the browser; no host path or Python virtual
+environment is required:
+
+1. Run `./run.sh` and open the printed localhost URL.
+2. Expand **Add a target**, enter a system name, review the SSVC context, and
+   select **Add target**.
+3. On the new target, select **Import repository**.
+4. Paste the HTTPS repository URL and select **Import evidence**.
+5. After the imported component count appears, select **Run**.
+6. Select **Open full report** when the assessment finishes.
+
+For a public GitHub repository, no token is required until GitHub's anonymous
+API rate limit is reached. For a private repository, or to raise that limit,
+pass a token whose repository access you intend PatchTriage to use:
+
+```bash
+GITHUB_TOKEN=... ./run.sh
+```
+
+GitHub imports use the Dependency Graph SPDX SBOM and do not clone or execute
+the repository. A result marked **coverage incomplete** is not a scan failure:
+it means some imported components lacked a resolved package identity/version
+or an upstream lookup could not be completed. The report names the unchecked
+scope instead of treating zero findings as proof of safety.
 
 Stop the console with `./run.sh --stop` or `docker compose down`. Targets,
 attached evidence, reports, and caches persist in Docker volumes.
 
-To run the bundled air-gapped demonstration instead:
+The launcher also wraps the Docker CLI workflows:
+
+```bash
+./run.sh demo       # bundled air-gapped demonstration
+# HTML: ./out/demo_report.html
+# JSON: ./out/demo_report.json
+
+./run.sh start      # interactive guided CLI
+# Inputs committed/copied under this repository appear below /work.
+# The default reports are ./out/report.html and ./out/report.json.
+
+./run.sh cli run /work/scans/trivy.json \
+    --html /out/report.html -o /out/report.json
+```
+
+The GUI is the recommended Docker workflow for files outside the repository:
+**Upload evidence** opens the browser/Explorer file picker and uploads the
+selected JSON or SBOM into the container. **Import repository** accepts a
+repository URL directly. A Windows host path such as
+`C:\Users\name\Downloads\sbom.json` is not itself visible inside a Linux
+container, so do not paste that path into the Docker CLI wizard; either use the
+GUI picker or copy the file under this repository and enter `/work/<file>`.
+
+The direct Compose equivalents remain available:
 
 ```bash
 docker compose run --rm demo
-# HTML: ./out/demo_report.html
-# JSON: ./out/demo_report.json
+docker compose run --rm start
 ```
 
-## Local installation
+## Optional local installation (without Docker)
 
 Python 3.10 or newer is required.
 
@@ -383,6 +432,15 @@ and lands on **Immediate** (3 days), while the equally KEV-listed local
 privilege escalation in glibc is **Out-of-Cycle** (14 days). The exact outcome
 stays explainable from the SSVC path and target context. This small demo
 proves pipeline behavior, not real-world effectiveness.
+
+The demo's **Outcome check** table asks what each ranking method would surface
+when only the top *k* findings can be reviewed. A cell shown as `x/y` means
+"`x` target findings surfaced in this top-*k* queue, out of `y` target findings
+in the complete demo result." For example, `1/2` at `top 1` means that ranking
+puts one of the two relevant findings first. **KEV** counts CISA Known
+Exploited Vulnerabilities; **Urgent** counts SSVC Immediate or Out-of-Cycle
+(P1/P2) decisions. The table compares ordering behavior; it is not a success
+score or probability.
 
 ## Scriptable usage
 
