@@ -1,10 +1,12 @@
 # PatchTriage
 
+[![Black Hat Europe 2026](https://img.shields.io/badge/Black%20Hat%20Europe%202026-Arsenal-000000)](https://blackhat.com/europe/arsenal-overview.html)
 [![Deploy](https://github.com/d01ki/PatchTriage/actions/workflows/deploy.yml/badge.svg)](https://github.com/d01ki/PatchTriage/actions/workflows/deploy.yml)
 [![CI](https://github.com/d01ki/PatchTriage/actions/workflows/ci.yml/badge.svg)](https://github.com/d01ki/PatchTriage/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![Decision model: CERT/CC SSVC Deployer](https://img.shields.io/badge/decision-CERT%2FCC%20SSVC%20Deployer-5b5bd6.svg)](https://certcc.github.io/SSVC/howto/deployer_tree/)
+
 
 PatchTriage turns scanner evidence into environment-specific patch deployment
 decisions. It ingests vulnerability scans or SBOMs, deduplicates findings,
