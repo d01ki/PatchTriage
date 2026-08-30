@@ -1,4 +1,4 @@
-# PatchTriage
+# PatchTriage : Evidence-Driven Patch Prioritization
 
 [![Black Hat Europe 2026](https://img.shields.io/badge/Black%20Hat%20Europe%202026-Arsenal-000000)](https://blackhat.com/europe/arsenal-overview.html)
 [![Deploy](https://github.com/d01ki/PatchTriage/actions/workflows/deploy.yml/badge.svg)](https://github.com/d01ki/PatchTriage/actions/workflows/deploy.yml)
