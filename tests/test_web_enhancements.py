@@ -493,3 +493,6 @@ def test_ui_renders_action_queue_and_persistent_run_failures(enhanced_server):
     assert "Assessment failed:" in page
     assert "retry-run" in page
     assert 'role="alert"' in page
+    # The self-contained report can be saved directly from the console.
+    assert "Download HTML report" in page
+    assert 'download="${esc(reportFilename(summary))}"' in page
