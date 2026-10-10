@@ -265,7 +265,7 @@ def run(
              "Automatable, Technical Impact)"),
     nvd_api_key: Optional[str] = typer.Option(None, envvar="NVD_API_KEY"),
     vendor_sources: str = typer.Option(
-        "auto", help="Vendor advisories: auto|all|msrc,rhsa,usn,debian,ghsa"),
+        "auto", help="Vendor/exploit sources: auto|all|msrc,rhsa,usn,debian,ghsa,exploitdb"),
     no_vendor_advisories: bool = typer.Option(
         False, "--no-vendor-advisories",
         help="Skip Microsoft/RHSA/USN/Debian/GHSA lookups"),

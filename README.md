@@ -605,22 +605,27 @@ docker run --rm \
 
 ## Evidence connectors
 
-Core enrichment uses EPSS, CISA KEV, and optionally NVD. Vendor connectors are
-selected from package and distribution metadata by default.
+Core enrichment uses EPSS, CISA KEV, CISA Vulnrichment, and NVD. By default
+(`auto`) every CVE is also checked against Red Hat, Microsoft, and Exploit-DB;
+Ubuntu, Debian, and GitHub are added from package and distribution metadata.
+`--vendor-sources all` queries every connector.
 
 | Source | Evidence returned |
 |---|---|
-| Microsoft MSRC | Update document and CVRF/CSAF reference |
+| Microsoft MSRC | Security Update Guide entry and monthly update document (a missing record is not an error) |
 | Red Hat RHSA | Advisory, severity, and released packages |
 | Ubuntu USN | Advisory, affected packages, and fixed versions |
 | Debian Security Tracker | Distribution release status and fixed versions |
 | GitHub GHSA | Advisory, ecosystem packages, patched version, and vulnerable functions |
+| Exploit-DB | Published exploit entries; a hit is public PoC evidence for SSVC Exploitation |
 
 The public evidence connectors work without credentials. In a local
 deployment, `GITHUB_TOKEN`/`GH_TOKEN` supplies the repository access granted
 to that token and raises GitHub API rate limits; `NVD_API_KEY` raises the NVD
 rate limit. Connector failures are recorded per finding and do not abort the
-assessment.
+assessment. The Exploit-DB catalog is downloaded at most once a day (32 MB
+cap) and only its CVE index is cached; a failed download is not recorded as a
+completed exploit search.
 
 ## Optional AI explanations
 
