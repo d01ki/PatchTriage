@@ -85,8 +85,8 @@ The repository workflow stays in the browser; no host path or Python virtual
 environment is required:
 
 1. Run `./run.sh` and open the printed localhost URL.
-2. Expand **Add a target**, enter a system name, review the SSVC context, and
-   select **Add target**.
+2. In the **Add a target** panel, enter a system name, answer the SSVC context
+   questions you know, and select **Add target**.
 3. On the new target, select **Import repository**.
 4. Paste the HTTPS repository URL and select **Import evidence**.
 5. After the imported component count appears, select **Run**.
@@ -125,7 +125,7 @@ The launcher also wraps the Docker CLI workflows:
 ```
 
 The GUI is the recommended Docker workflow for files outside the repository:
-**Upload evidence** opens the browser/Explorer file picker and uploads the
+**Upload SBOM** opens the browser/Explorer file picker and uploads the
 selected JSON or SBOM into the container. **Import repository** accepts a
 repository URL directly. A Windows host path such as
 `C:\Users\name\Downloads\sbom.json` is not itself visible inside a Linux
@@ -175,7 +175,7 @@ patchtriage verify      # offline conformance and repeatability proof
 
 
 
-The **Upload evidence** button accepts:
+The **Upload SBOM** button accepts:
 
 - Trivy JSON;
 - Grype JSON;
@@ -347,7 +347,8 @@ The SSVC engine evaluates the remaining decision points as follows:
 
 - **Exploitation** is derived from authoritative threat evidence. A CISA KEV
   listing is Active; CISA's published Vulnrichment assessment is used next;
-  public exploit evidence can establish Public PoC. The GUI lets an analyst
+  public exploit evidence (NVD Exploit references or an Exploit-DB entry)
+  can establish Public PoC. The GUI lets an analyst
   confirm the value for each finding. An analyst input cannot downgrade
   authoritative CISA KEV Active evidence; a conflicting input is kept visible
   and flagged for confirmation.
@@ -384,6 +385,22 @@ SSVC produces a categorical deployment decision, not a numerical risk score.
 
 The day targets are PatchTriage workflow defaults; they are not additional
 CERT/CC decision values. Organizations should map them to their own policy.
+
+In the GUI, **Patch decisions** opens with a donut chart and the number of
+Immediate, Out-of-Cycle, Scheduled and Defer findings across all assessed
+targets. Each target result then shows:
+
+- its own outcome breakdown;
+- **Decision path**: pick a finding to see its route through the CERT/CC
+  Deployer tree (Exploitation → System Exposure → Automatable → Human
+  Impact → outcome), the alternatives at each level, and what each Human
+  Impact value would yield. Values marked `?` are conservative defaults that
+  need confirmation. NVD, CISA KEV, vendor and Exploit-DB links for the
+  finding are listed below the tree;
+- **Action queue**: one row per package change with its SSVC outcome,
+  workflow target, CISA BOD 26-04 result and effective deadline;
+- **Open full report** and **Download HTML report** for the self-contained
+  report.
 
 ### Where GUI data is stored
 
