@@ -10,3 +10,4 @@ demo_report.json
 .patchtriage_demo/
 out/
 benchmarks/out/
+verification_report.json

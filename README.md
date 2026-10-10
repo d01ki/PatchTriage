@@ -242,6 +242,53 @@ as a conflict rather than silently dropped.
 Cached for a week on disk; `--no-vulnrichment` disables the lookup, and the
 offline demo ships a bundled snapshot so it still needs no network.
 
+## CISA BOD 26-04: a separate response policy
+
+[BOD 26-04](https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk)
+(issued 2026-06-10) assigns remediation timelines with its own decision table,
+published by CERT/CC as
+[`cisa:DT_BOD2604:1.0.0`](https://certcc.github.io/SSVC/howto/cisa_response/).
+PatchTriage evaluates it **next to** the SSVC Deployer result and never
+changes that result.
+
+| | SSVC Deployer | BOD 26-04 |
+|---|---|---|
+| Inputs | Exploitation, System Exposure, Automatable, Human Impact | In KEV, Publicly Exposed, Automatable, Technical Impact |
+| Outcomes | Defer, Scheduled, Out-of-Cycle, Immediate | Fix on system upgrade, 60 days, 14 days, 3 days, 3 days & forensic triage |
+
+**Applicability** is a per-target input: `required` (US federal civilian
+executive branch system), `voluntary` (adopted by policy), `not_applicable`,
+or `unknown` (the default). Only `required` and `voluntary` reach the
+effective deadline; otherwise the BOD result is shown as a reference and the
+existing SSVC behavior is unchanged.
+
+**Inputs follow CISA's implementation guidance.** A failed KEV lookup leaves
+In KEV unresolved. CISA's Automatable = No / Technical Impact = Total default
+is applied only when both are unpublished after a completed Vulnrichment
+lookup and the CVE is not in KEV. **Publicly Exposed** is its own answer —
+not SSVC System Exposure; internet-exposure evidence can set it to Yes, but
+nothing sets it to No except an explicit answer. Unresolved inputs show every
+candidate outcome plus a clearly labelled *provisional* (most urgent) one.
+
+**Effective action** names the rule that set it: `ssvc_only`, `bod_maximum`,
+`workflow_target_stricter`, `bod_fix_on_upgrade`, or
+`bod_unresolved_provisional`. Every obligation is kept — forensic triage
+stays attached even when another deadline is shorter, and "fix on system
+upgrade" is never turned into Defer or a number. BOD timelines are
+calendar-day maximums counted from the earlier of the KEV addition or the
+agency identifying the CVE on the asset; because that identification date is
+not known to PatchTriage, no absolute due date is computed.
+
+```bash
+patchtriage run trivy.json --bod2604 voluntary --publicly-exposed yes \
+  --html report.html -o report.json
+```
+
+The GUI has the same two inputs under **CISA BOD 26-04 policy**; an asset
+inventory accepts `bod2604_applicability` and `publicly_exposed`. This is
+decision support, not a compliance attestation: asset tagging, CDM reporting,
+and the forensic triage itself remain the operator's responsibility.
+
 ## Fleet: assess an organization, not one repository
 
 One deployed system is a *target*; an organization's repositories are a
