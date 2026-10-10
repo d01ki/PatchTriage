@@ -451,3 +451,45 @@ def test_ui_exposes_repository_context_privacy_and_async_contract(
     assert 'api("GET","/api/summaries")' in page
     assert "/api/targets/${id}/runs" in page
     assert "/api/jobs/${jobId}" in page
+
+
+def test_summary_action_queue_matches_report_actions_for_gui(enhanced_server):
+    """The GUI action queue renders only these server-computed fields.
+
+    The browser must not recompute outcomes, so each queue row has to carry
+    the SSVC outcome label, its workflow target, and the findings it closes.
+    """
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    _, job = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target['id']}/runs",
+        {"backend": "rules"},
+    )
+    summary = _poll_job(opener, enhanced_server, job["job_id"])["summary"]
+    queue = summary["action_queue"]
+    assert len(queue) == summary["actions"] and queue
+    assert summary["action_queue_truncated"] is False
+    allowed = {"Immediate", "Out-of-Cycle", "Scheduled", "Defer"}
+    for row in queue:
+        assert row["outcome_label"] in allowed
+        assert row["kind"] in {"upgrade", "mitigate"}
+        assert row["finding_count"] >= len(row["cves"]) >= 1
+        assert isinstance(row["deadline_days"], int)
+    # Highest outcome first, matching the report's action ordering.
+    rank = {"Immediate": 0, "Out-of-Cycle": 1, "Scheduled": 2, "Defer": 3}
+    ranks = [rank[row["outcome_label"]] for row in queue]
+    assert ranks == sorted(ranks)
+    assert queue[0]["summary"] == summary["top_action"]
+
+
+def test_ui_renders_action_queue_and_persistent_run_failures(enhanced_server):
+    with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
+        page = response.read().decode("utf-8")
+    assert "summary.action_queue" in page
+    assert "Workflow target" in page
+    assert "not an SSVC or regulatory deadline" in page
+    # A failed job must leave a visible, retryable state instead of only a
+    # transient toast, and must not display an older decision as current.
+    assert "Assessment failed:" in page
+    assert "retry-run" in page
+    assert 'role="alert"' in page

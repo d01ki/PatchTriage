@@ -155,8 +155,11 @@ _TEMPLATE = r"""<!doctype html>
   .toast{position:fixed;right:22px;bottom:22px;background:#151a25;color:#fff;border:1px solid #343d50;padding:11px 15px;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.28);transform:translateY(90px);opacity:0;transition:.2s;z-index:30;max-width:420px}.toast.show{transform:none;opacity:1}.toast.error{border-color:#a63d36}
   .filehidden{display:none}
   dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
+  .statecard{padding:16px 21px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.statecard.failed{border-left:4px solid var(--immediate)}.statecard.running{border-left:4px solid var(--scheduled)}.statecard strong{display:block;font-size:15px}.statecard span{display:block;color:#647083;font-size:13.5px;margin-top:3px;overflow-wrap:anywhere}
+  .actionqueue{border-top:1px solid #e1e5ed;padding:18px 21px}.actionqueue summary{cursor:pointer;font-weight:750;font-size:14px}.actionqueue p{color:#657083;font-size:13px;margin:7px 0 10px}.queuetable{width:100%;border-collapse:collapse;font-size:13px}.queuetable th,.queuetable td{text-align:left;padding:8px;border-top:1px solid #e2e6ee;vertical-align:top}.queuetable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#6f7989}.queuetable td.num{white-space:nowrap;font-family:"SFMono-Regular",Consolas,monospace}.queuetable .cves{display:block;color:#778195;font-size:11.5px;margin-top:3px;overflow-wrap:anywhere}.outcomepill{display:inline-flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap}.outcomepill i{width:8px;height:8px;border-radius:50%;background:var(--defer)}.outcomepill.immediate i{background:var(--immediate)}.outcomepill.out-of-cycle i{background:var(--outofcycle)}.outcomepill.scheduled i{background:var(--scheduled)}.kindtag{display:inline-block;font-size:11px;font-weight:750;border:1px solid #d6dbe5;border-radius:3px;padding:1px 5px;margin-right:6px;color:#4f5969}.kindtag.mitigate{border-color:#f0cf86;background:#fff7e4;color:#765017}
+.workspaceinner>*{min-width:0}
   @media(max-width:1100px){.hero{grid-template-columns:1fr}.benchmark{grid-template-columns:1fr}.workspaceinner{grid-template-columns:300px minmax(0,1fr)}.resultbody{grid-template-columns:1fr}.compare{border-right:0;border-bottom:1px solid #e4e7ed}}
-  @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:1fr}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlink{grid-column:2}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
+  @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:minmax(0,1fr)}.queuetable{display:block;overflow-x:auto}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlink{grid-column:2}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
   @media(max-width:520px){h1{font-size:43px}.topbar{padding:0 16px}.brand{font-size:13px}.hero{padding-left:16px;padding-right:16px}.kpis{padding-left:16px;padding-right:16px}.prioritylegend{grid-template-columns:1fr 1fr}.prioritylegend>div{border-bottom:1px solid #e2e6ee}.sectiontitle{align-items:flex-start;gap:10px}.decisionactions{align-items:flex-end;flex-direction:column}.enginecontrol{min-width:0}.enginecontrol select{min-width:175px}.resulthead{padding:15px}.resultbody>div,.metricrow{padding-left:15px;padding-right:15px}.versus{grid-template-columns:1fr}.vs{text-align:center}.row2{grid-template-columns:1fr}}
 </style></head>
 <body>
@@ -320,7 +323,7 @@ _TEMPLATE = r"""<!doctype html>
 const SSVC_LABELS=__SSVC_LABELS__;
 const HUMAN_IMPACT=__HUMAN_IMPACT__;
 let CFG={backends:["rules"],has_ai:false,ai_provider:null};
-let TARGETS=[];let RESULTS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
+let TARGETS=[];let RESULTS=new Map();let STATUS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
 
 async function api(method,path,body){
   const opt={method,headers:{}};
@@ -369,7 +372,8 @@ async function resumeActiveJobs(){
   const jobs=await api("GET","/api/jobs");
   if(!jobs.length)return;
   notify(`Resuming ${jobs.length} active assessment job${jobs.length===1?"":"s"}...`);
-  jobs.forEach(job=>waitForJob(job.job_id).then(summary=>{RESULTS.set(summary.target_id,summary);renderResults();}).catch(error=>notify(error.message,true)));
+  jobs.forEach(job=>{if(job.target_id)STATUS.set(job.target_id,{state:"running"});waitForJob(job.job_id).then(summary=>{STATUS.delete(summary.target_id);RESULTS.set(summary.target_id,summary);renderResults();}).catch(error=>{if(job.target_id)STATUS.set(job.target_id,{state:"failed",error:error.message});renderResults();});});
+  renderResults();
 }
 function contextTags(target){
   const exposure=target.system_exposure||"unknown",mission=target.mission_impact||"unknown",safety=target.safety_impact||"unknown";
@@ -477,6 +481,21 @@ function ssvcInputBlock(summary){
     <div class="ssvcinputactions"><button class="btn primary small save-ssvc-inputs">Save inputs and rerun</button></div>
   </details>`;
 }
+function queueBlock(summary){
+  const queue=summary.action_queue||[];if(!queue.length)return "";
+  const rows=queue.map((item,index)=>{
+    const label=item.outcome_label||"Unknown",cls=String(label).toLowerCase().replaceAll(" ","-");
+    const cves=item.cves||[],more=Math.max(0,(item.finding_count||cves.length)-cves.length);
+    const kind=item.kind==="mitigate"?'<span class="kindtag mitigate">No fix</span>':"";
+    return `<tr><td class="num">${index+1}</td><td><span class="outcomepill ${esc(cls)}"><i aria-hidden="true"></i>${esc(label)}</span></td>
+      <td>${kind}${esc(item.summary)}<span class="cves">${esc(cves.join(", "))}${more?` and ${more} more`:""}</span></td>
+      <td class="num">${item.kev_count?`${esc(item.kev_count)} KEV`:"—"}</td><td class="num">${esc(item.finding_count)}</td>
+      <td class="num">${item.deadline_days==null?"—":`≤ ${esc(item.deadline_days)} days`}</td></tr>`;}).join("");
+  return `<details class="actionqueue" open><summary>Action queue · ${queue.length}${summary.action_queue_truncated?"+":""} package action${queue.length===1?"":"s"}, highest SSVC outcome first</summary>
+    <p>One row per package change. The outcome is the most urgent SSVC Deployer outcome among the findings it closes. “Workflow target” is PatchTriage's configurable example timeline, not an SSVC or regulatory deadline.${summary.action_queue_truncated?" Only the first actions are listed here; the full report has every action.":""}</p>
+    <table class="queuetable"><thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>KEV</th><th>Findings</th><th>Workflow target</th></tr></thead><tbody>${rows}</tbody></table>
+  </details>`;
+}
 function renderResult(summary){
   const name=summary.url?`<a href="${esc(summary.url)}" target="_blank" rel="noopener">${esc(summary.name)} ↗</a>`:esc(summary.name);
   const context=summary.evaluated_context||{};
@@ -484,7 +503,7 @@ function renderResult(summary){
   const hasFindings=summary.total>0;const emptyOutcome=summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):emptyOutcome;const outcomeClass=hasFindings?String(outcome).toLowerCase().replaceAll(" ","-"):"no-findings";
   return `<article class="result" data-result="${summary.target_id}">
     <div class="resulthead">
-      <div class="prioritybox"><div class="priority ${esc(outcomeClass)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"SSVC outcome":"evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`target: ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
+      <div class="prioritybox"><div class="priority ${esc(outcomeClass)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"SSVC outcome":"evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow target ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
       <div><div class="rname">${name} · ${summary.duration_ms} ms ${summary.demo?"· offline snapshot":""}</div><div class="action">${esc(summary.top_action||summary.result_message||"Assessment completed")}</div></div>
       <a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a>
     </div>
@@ -503,6 +522,7 @@ function renderResult(summary){
     ${qualityBlock(summary)}
     <div class="confirmbar">Target context used · ${esc(contextText)}</div>
     <div class="resultbody"><div class="compare">${compareBlock(summary)}</div><div class="explain">${explainBlock(summary)}</div></div>
+    ${queueBlock(summary)}
     ${ssvcInputBlock(summary)}
   </article>`;
 }
@@ -521,10 +541,17 @@ function qualityBlock(summary){
     ${deEscalated}${sources}
   </div>`;
 }
+function targetName(id){const target=TARGETS.find(item=>item.id===id);return target?target.name:id;}
+function statusCard(id,status){
+  if(status.state==="running")return `<article class="result statecard running lightpanel" data-status="${esc(id)}" aria-busy="true"><div><strong>Assessing ${esc(targetName(id))}…</strong><span>evidence → context → SSVC → audit → remediation plan. Other targets stay usable.</span></div></article>`;
+  return `<article class="result statecard failed lightpanel" data-status="${esc(id)}" role="alert"><div><strong>Assessment failed: ${esc(targetName(id))}</strong><span>${esc(status.error||"The assessment did not finish.")}</span><span>No decision is shown for this target until a run succeeds. Check the evidence and context, then retry.</span></div><button class="btn small retry-run" data-id="${esc(id)}">Retry assessment</button></article>`;
+}
 function renderResults(){
   const results=document.getElementById("results");
+  const states=[...STATUS.entries()].filter(([id])=>!RESULTS.has(id)||STATUS.get(id).state==="running").map(([id,status])=>statusCard(id,status)).join("");
+  if(!RESULTS.size&&states){results.innerHTML=states;updateKpis();refreshFleet();return;}
   if(!RESULTS.size){results.innerHTML='<div class="running lightpanel"><strong>No completed decisions yet.</strong><div class="hint">Run a target or launch the offline Demo.</div></div>';updateKpis();refreshFleet();return;}
-  results.innerHTML=[...RESULTS.values()].map(renderResult).join("");updateKpis();refreshFleet();
+  results.innerHTML=states+[...RESULTS.entries()].filter(([id])=>!(STATUS.get(id)||{}).state).map(([,summary])=>renderResult(summary)).join("");updateKpis();refreshFleet();
 }
 async function refreshFleet(){
   const bar=document.getElementById("fleetbar");
@@ -555,18 +582,18 @@ async function waitForJob(jobId){
 }
 async function runTargets(ids){
   if(!ids.length){notify("Attach evidence or import a repository first.",true);return;}
-  setBusy(true);ids.forEach(id=>RESULTS.delete(id));
-  document.getElementById("results").innerHTML='<div class="running lightpanel"><strong>Assessment jobs queued...</strong><div class="hint">evidence &rarr; context &rarr; SSVC &rarr; audit &rarr; remediation plan</div><div class="scanline"></div></div>';
+  setBusy(true);ids.forEach(id=>{RESULTS.delete(id);STATUS.set(id,{state:"running"});});renderResults();
   const backend=document.getElementById("backend").value||CFG.backends[0]||"rules";
   const pending=[];
   for(const id of ids){
     try{
       const job=await api("POST",`/api/targets/${id}/runs`,{backend});
-      pending.push(waitForJob(job.job_id).then(summary=>{RESULTS.set(id,summary);renderResults();return summary;}));
-    }catch(error){notify(`Target ${id}: ${error.message}`,true);}
+      pending.push(waitForJob(job.job_id).then(summary=>{STATUS.delete(id);RESULTS.set(id,summary);renderResults();return summary;},error=>{STATUS.set(id,{state:"failed",error:error.message});renderResults();throw error;}));
+    }catch(error){STATUS.set(id,{state:"failed",error:error.message});}
   }
   const settled=await Promise.allSettled(pending);
-  settled.filter(item=>item.status==="rejected").forEach(item=>notify(item.reason.message||String(item.reason),true));
+  const failed=[...STATUS.values()].filter(status=>status.state==="failed").length;
+  if(failed)notify(`${failed} assessment${failed===1?"":"s"} failed. Details are shown in the results.`,true);
   renderResults();setBusy(false);updateKpis();
 }
 
@@ -581,6 +608,7 @@ async function saveSsvcInputs(card){
 }
 document.getElementById("results").onclick=event=>{
   if(event.target.closest(".demo-trigger"))launchDemo();
+  const retry=event.target.closest(".retry-run");if(retry)runTargets([retry.dataset.id]);
   const save=event.target.closest(".save-ssvc-inputs");if(save)saveSsvcInputs(save.closest(".result"));
 };
 const SSVC_FIELDS=[
@@ -641,8 +669,10 @@ function editContext(target){editingTarget=target.id;document.getElementById("ta
 document.getElementById("add").onclick=async()=>{
   const name=document.getElementById("f-name").value.trim();if(!editingTarget&&!name){notify("Give the target a system name.",true);return;}
   try{
-    const wasEditing=editingTarget;if(editingTarget){await api("POST",`/api/targets/${editingTarget}/context`,contextPayload());RESULTS.delete(editingTarget);}else{await api("POST","/api/targets",{name,url:document.getElementById("f-url").value.trim(),...contextPayload()});}
-    resetForm();await loadTargets();renderResults();notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added.");
+    const wasEditing=editingTarget;let created=null;if(editingTarget){await api("POST",`/api/targets/${editingTarget}/context`,contextPayload());RESULTS.delete(editingTarget);STATUS.delete(editingTarget);}else{created=await api("POST","/api/targets",{name,url:document.getElementById("f-url").value.trim(),...contextPayload()});}
+    resetForm();await loadTargets();renderResults();
+    if(created){document.getElementById("targetform").open=false;const card=document.querySelector(`.target[data-id="${created.id}"]`);if(card){card.scrollIntoView({behavior:"smooth",block:"center"});const next=card.querySelector('[data-action="import"]');if(next)next.focus({preventScroll:true});}}
+    notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added. Next: upload scanner JSON or an SBOM, or import a repository.");
   }catch(error){notify(error.message,true);}
 };
 document.getElementById("cancel-edit").onclick=resetForm;
@@ -654,7 +684,7 @@ document.getElementById("targetlist").onclick=async event=>{
   if(action==="repository"){repoTarget=id;document.getElementById("repo-url").value="";document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
   if(action==="run")runTargets([id]);
   if(action==="delete"&&confirm("Delete this target and its local evidence?")){
-    try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
+    try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);STATUS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
     catch(error){notify(error.message,true);}
   }
 };
@@ -683,7 +713,7 @@ document.getElementById("repo-import").onclick=async()=>{
   try{
     document.getElementById("repo-import").disabled=true;notify("Fetching GitHub Dependency Graph SBOM...");
     const imported=await api("POST",`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
-    RESULTS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
+    RESULTS.delete(targetId);STATUS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
     notify(`${imported.filename} imported (${imported.provenance.component_count} components).`);
   }catch(error){notify("Repository import failed: "+error.message,true);}
   finally{document.getElementById("repo-import").disabled=false;}
@@ -692,7 +722,7 @@ document.getElementById("filepick").onchange=async event=>{
   const file=event.target.files[0];if(!file||!pickTarget)return;
   const maxBytes=(CFG.limits&&CFG.limits.source_bytes)||16*1024*1024;
   if(file.size>maxBytes){notify(`Evidence file must be ${Math.floor(maxBytes/1024/1024)} MiB or smaller.`,true);event.target.value="";return;}
-  try{const targetId=pickTarget;const imported=await api("POST",`/api/targets/${targetId}/source`,{content:await file.text(),filename:file.name});RESULTS.delete(targetId);await loadTargets();renderResults();notify(`${file.name} attached (SHA-256 ${imported.sha256.slice(0,12)}).`);}
+  try{const targetId=pickTarget;const imported=await api("POST",`/api/targets/${targetId}/source`,{content:await file.text(),filename:file.name});RESULTS.delete(targetId);STATUS.delete(targetId);await loadTargets();renderResults();notify(`${file.name} attached (SHA-256 ${imported.sha256.slice(0,12)}).`);}
   catch(error){notify("Import failed: "+error.message,true);}
   event.target.value="";pickTarget=null;
 };
