@@ -496,11 +496,11 @@ def _infer_technical_impact(finding: Finding) -> DecisionPoint:
             evidence.append(
                 f"CISA assessment timestamp {enrichment.ssvc_timestamp}")
         return _point(
-            "TI", "2.0.0", published, Confidence.HIGH,
+            "TI", "1.0.0", published, Confidence.HIGH,
             "CISA Vulnrichment", evidence, inferred=True,
         )
     return _point(
-        "TI", "2.0.0", TechnicalImpact.UNKNOWN, Confidence.LOW,
+        "TI", "1.0.0", TechnicalImpact.UNKNOWN, Confidence.LOW,
         "not assessed",
         ["No published Technical Impact assessment was found for this CVE"],
         inferred=True,
