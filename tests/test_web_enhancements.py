@@ -543,3 +543,50 @@ def test_bod2604_context_is_separate_invalidates_and_reaches_report(
     assert "CISA BOD 26-04 response policy (separate from SSVC)" in report
     assert html.escape(top["bod2604"]["label"]) in report
     assert "not a compliance attestation" in report
+
+
+def test_decision_paths_come_from_the_engine_table(enhanced_server):
+    """The GUI tree draws server-computed branches; it never recomputes SSVC."""
+    from patchtriage.ssvc import (
+        Automatable, Exploitation, HumanImpact, SystemExposure,
+        deployer_decision)
+
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    summary = _run_demo(opener, enhanced_server, target["id"])
+    paths = summary["decision_paths"]
+    assert len(paths) == summary["total"]
+    assert summary["decision_paths_truncated"] is False
+    for path in paths:
+        points = path["points"]
+        assert path["asset"] == "Demo"
+        assert path["model"] == "ssvc:DT_DP:1.0.0"
+        assert [b["human_impact"] for b in path["branches"]] == [
+            "low", "medium", "high", "very_high"]
+        for branch in path["branches"]:
+            assert branch["decision"] == deployer_decision(
+                Exploitation(points["exploitation"]["value"]),
+                SystemExposure(points["system_exposure"]["value"]),
+                Automatable(points["automatable"]["value"]),
+                HumanImpact(branch["human_impact"])).value
+        chosen = next(b for b in path["branches"]
+                      if b["human_impact"] == points["human_impact"]["value"])
+        assert chosen["decision"] == path["decision"]
+        assert path["evidence"][0]["source"] == "NVD"
+        assert path["evidence"][0]["url"].startswith(
+            "https://nvd.nist.gov/vuln/detail/CVE-")
+    counts = {}
+    for path in paths:
+        counts[path["decision"]] = counts.get(path["decision"], 0) + 1
+    assert {k: v for k, v in summary["outcomes"].items() if v} == counts
+
+
+def test_ui_has_outcome_donut_and_decision_tree(enhanced_server):
+    with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
+        page = response.read().decode("utf-8")
+    assert 'id="outcomesummary"' in page
+    assert "function donutSvg" in page and "function treeSvg" in page
+    assert "Decision path · why each finding reached its SSVC outcome" in page
+    # The browser draws the branches it is given instead of a local table.
+    assert "path.branches" in page
+    assert "_DEPLOYER_TABLE" not in page

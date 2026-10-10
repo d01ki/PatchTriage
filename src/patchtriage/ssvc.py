@@ -577,6 +577,22 @@ def deployer_decision(exploitation: Exploitation,
     return row[_HUMAN_ORDER.index(human_impact)]
 
 
+def human_impact_branches(exploitation: str, exposure: str,
+                          automatable: str) -> list[dict]:
+    """Outcomes of the Human Impact branches below one Deployer path.
+
+    Read straight from the official table so a visualization can show what
+    each Human Impact value would yield without re-implementing the tree.
+    """
+    row = _DEPLOYER_TABLE[(Exploitation(exploitation),
+                           SystemExposure(exposure), Automatable(automatable))]
+    return [
+        {"human_impact": human.value, "human_impact_label": _LABELS[human.value],
+         "decision": decision.value, "decision_label": _LABELS[decision.value]}
+        for human, decision in zip(_HUMAN_ORDER, row)
+    ]
+
+
 def assess(finding: Finding) -> SSVCAssessment:
     exploitation = _infer_exploitation(finding)
     exposure = _infer_system_exposure(finding)

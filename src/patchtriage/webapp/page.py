@@ -92,7 +92,7 @@ _TEMPLATE = r"""<!doctype html>
   .kpi{background:var(--panel);border:1px solid var(--line);padding:15px 18px}.kpi+.kpi{border-left:0}
   .kpi .value{font:750 28px "SFMono-Regular",Consolas,monospace}.kpi .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.07em}
   .workspace{background:var(--paper);color:var(--dark);border-radius:22px 22px 0 0;min-height:720px;padding:34px clamp(20px,4vw,64px) 70px}
-  .workspaceinner{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:340px minmax(0,1fr);gap:28px}
+  .workspaceinner{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:30px}
   .sectiontitle{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
   .sectiontitle h2{margin:0;font-size:22px;letter-spacing:-.02em}.sectiontitle span{font:13px "SFMono-Regular",Consolas,monospace;color:#70798a;text-transform:uppercase;letter-spacing:.07em}
   .decisionactions{display:flex;align-items:center;gap:8px}.enginecontrol{display:grid;gap:2px;min-width:190px}.enginelabel{color:#70798a;font:700 10.5px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.07em;text-transform:uppercase}.enginevalue{border:1px solid #cfd5e2;border-radius:5px;background:#f7f8fb;color:#313a49;padding:7px 10px;font-size:13px;line-height:1.2}.enginecontrol select{width:auto;min-width:190px;padding:6px 9px;font-size:13px}
@@ -100,7 +100,7 @@ _TEMPLATE = r"""<!doctype html>
   .lightpanel{background:#fff;border:1px solid #d9deea;border-radius:10px;box-shadow:0 10px 28px rgba(30,40,65,.06)}
   details.add{margin-bottom:14px}details.add>summary{list-style:none;padding:14px 16px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between}
   details.add>summary::-webkit-details-marker{display:none}details.add>summary:after{content:"+";color:#697386}details.add[open]>summary:after{content:"−"}
-  .form{border-top:1px solid #e4e7ee;padding:14px;display:grid;gap:11px}
+  .form{border-top:1px solid #e4e7ee;padding:16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}.form>.addrow,.form>.ssvcblock,.form>.hint{grid-column:1/-1}.addhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:14px 16px}.addhead h3{margin:0;font-size:17px}.addrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:12px;align-items:end}.addrow .formactions{display:flex;gap:8px}.ssvcblock{grid-template-columns:repeat(4,minmax(0,1fr))}.ssvcblock>.ssvchead,.ssvcblock>.ssvcabout{grid-column:1/-1}details.add,section.add{margin-bottom:14px}
   input[type=text],select{width:100%;border:1px solid #cfd5e2;border-radius:5px;padding:9px 10px;background:#fff;color:#171b25}
   .contextintro{border:1px solid #cfd7e8;background:#f7f8fc;border-radius:6px;padding:12px;display:grid;gap:7px}.contexttitle{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.contexttitle strong{font-size:14px}.standardtag{display:inline-flex;border:1px solid #b9c5ed;border-radius:20px;background:#edf1ff;color:#3048a8;padding:3px 7px;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.04em;text-transform:uppercase}.contextintro span,.contextintro a{font-size:13px;color:#667183;line-height:1.45}.contextintro a{color:#4053ba;font-weight:700;text-decoration:none}.contextintro a:hover{text-decoration:underline}.patchtriagenote{border-left:3px solid #e6a32d;background:#fff8e8;padding:8px 9px;color:#66502b!important}.patchtriagenote b{color:#5a4015}
   .fieldlabel{display:grid;gap:5px;color:#697386;font-size:13px;font-weight:750;text-transform:uppercase;letter-spacing:.045em}.fieldtitle{display:flex;align-items:center;justify-content:space-between;gap:7px}.fieldlabel select,.fieldlabel input{font-size:14px;text-transform:none;letter-spacing:0}.fieldhelp{color:#70798a;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.45}.fieldhelp b{color:#4f596a}.formactions{display:flex;gap:7px}.formactions .btn{flex:1}
@@ -123,7 +123,7 @@ _TEMPLATE = r"""<!doctype html>
   .derivedvalue{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.derivedvalue b{font-size:19px;color:#232a3a;letter-spacing:-.01em}.derivedvalue span{font-size:12.5px;color:#69738a}
   .derivednote{font-size:12px;color:#78819a;line-height:1.5}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:flex;flex-direction:column;gap:9px}
+  .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
   .privacy{border:1px solid #efc46d;background:#fff7e2;color:#725016;border-radius:6px;padding:10px 11px;font-size:12.5px;line-height:1.45}
   .advanced{border:1px solid #dbe0ec;border-radius:6px;padding:8px 10px}.advanced summary{cursor:pointer;font-weight:750;color:#596579;font-size:13px;display:flex;justify-content:space-between}.advanced summary:after{content:"+"}.advanced[open] summary:after{content:"−"}.advancedgrid{display:grid;gap:9px;margin-top:10px}
   .target{background:#fff;border:1px solid #d9deea;border-radius:8px;padding:13px;transition:.18s}
@@ -156,9 +156,37 @@ _TEMPLATE = r"""<!doctype html>
   .filehidden{display:none}
   dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
   .bodpanel{margin-top:12px;border-top:1px dashed #cfd5e2;padding-top:10px}.bodpanel .factor small+small{margin-top:4px}.bodcell.reference b{color:#687285;font-weight:650}
+  :root{--c-immediate:#b8322a;--c-outofcycle:#eaa51a;--c-scheduled:#4f6be0;--c-defer:#7d8799}
+  .outcomesummary{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:center;padding:16px 20px;margin-bottom:14px}
+  .donut{display:block}.donut .seg{transition:opacity .15s}.donut:hover .seg{opacity:.55}.donut .seg:hover{opacity:1}
+  .donutlabel{font:800 26px "SFMono-Regular",Consolas,monospace;fill:#1f2633}.donutsub{font:600 11px system-ui,sans-serif;fill:#6b7486;letter-spacing:.04em}
+  .outcomerows{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .outcomerow{border:1px solid #e1e5ee;border-radius:8px;padding:10px 12px}
+  .outcomerow .name{display:flex;align-items:center;gap:7px;font-weight:750;color:#2d3441;font-size:14px}
+  .outcomerow .name i{width:10px;height:10px;border-radius:50%;flex:none}
+  .outcomerow .count{font:800 24px "SFMono-Regular",Consolas,monospace;color:#1f2633;margin-top:4px}.outcomerow .count small{font:600 12px system-ui,sans-serif;color:#6b7486;margin-left:6px}
+  .outcomerow .meaning{font-size:12.5px;color:#687285;line-height:1.4;margin-top:2px}
+  .breakdown{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 21px;border-bottom:1px solid #e5e8ef}
+  .breakdown .chips{display:flex;gap:8px;flex-wrap:wrap}.breakdown .chip{display:flex;align-items:center;gap:6px;border:1px solid #e1e5ee;border-radius:20px;padding:4px 10px;font-size:13px;color:#2d3441}.breakdown .chip i{width:9px;height:9px;border-radius:50%}.breakdown .chip b{font-family:"SFMono-Regular",Consolas,monospace}
+  .treeview{border-top:1px solid #e1e5ed;padding:18px 21px}.treeview>summary{cursor:pointer;font-weight:750;font-size:14px}
+  .treepick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}.treepick select{min-width:280px;max-width:100%}
+  .treecanvas{overflow-x:auto;border:1px solid #e1e5ee;border-radius:8px;background:#fbfcfe}
+  .treecanvas svg{display:block;min-width:820px;width:100%;height:auto}
+  .tree .edge{fill:none;stroke:#d3d8e3;stroke-width:1.2}.tree .edge.on{stroke:#1f2633;stroke-width:2.6}
+  .tree .node rect{fill:#fff;stroke:#cfd5e2;stroke-width:1}.tree .node text{font:600 12px system-ui,sans-serif;fill:#8a93a3}
+  .tree .node.on rect{fill:#1f2633;stroke:#1f2633}.tree .node.on text{fill:#fff;font-weight:750}
+  .tree .node.assumed rect{stroke-dasharray:4 3}.tree .node.on.assumed rect{fill:#3a4253;stroke:#eaa51a;stroke-width:2}
+  .tree .leaf text{font:700 12px system-ui,sans-serif;fill:#fff}.tree .leaf.off{opacity:.35}.tree .leaf.on rect{stroke:#1f2633;stroke-width:2.5}
+  .tree .colhead{font:700 11px system-ui,sans-serif;fill:#6b7486;letter-spacing:.06em;text-transform:uppercase}
+  .tree .root rect{fill:#eef1ff;stroke:#5368e8}.tree .root text{fill:#27336f;font:700 12px system-ui,sans-serif}
+  .pathsentence{margin:12px 0 6px;font-size:14px;line-height:1.6;color:#2d3441}.pathsentence b{white-space:nowrap}.pathsentence .src{color:#6b7486;font-size:12.5px}
+  .treelegend{font-size:12.5px;color:#687285;margin-top:6px}
+  .evidencelinks{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.evidencelinks a,.evidencelinks span{border:1px solid #d6dbe5;border-radius:4px;padding:3px 8px;font-size:12.5px;text-decoration:none;color:#3048c5;background:#fff}.evidencelinks span{color:#4f5969}
+  @media(max-width:1100px){.ssvcblock{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.outcomerows{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+  @media(max-width:820px){.form{grid-template-columns:minmax(0,1fr)}.addrow{grid-template-columns:minmax(0,1fr)}.ssvcblock{grid-template-columns:minmax(0,1fr)}.outcomesummary{grid-template-columns:minmax(0,1fr);justify-items:center}.outcomerows{width:100%}}
   .reportlinks{display:grid;gap:6px;justify-items:end}
   .statecard{padding:16px 21px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.statecard.failed{border-left:4px solid var(--immediate)}.statecard.running{border-left:4px solid var(--scheduled)}.statecard strong{display:block;font-size:15px}.statecard span{display:block;color:#647083;font-size:13.5px;margin-top:3px;overflow-wrap:anywhere}
-  .actionqueue{border-top:1px solid #e1e5ed;padding:18px 21px}.actionqueue summary{cursor:pointer;font-weight:750;font-size:14px}.actionqueue p{color:#657083;font-size:13px;margin:7px 0 10px}.queuetable{width:100%;border-collapse:collapse;font-size:13px}.queuetable th,.queuetable td{text-align:left;padding:8px;border-top:1px solid #e2e6ee;vertical-align:top}.queuetable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#6f7989}.queuetable td.num{white-space:nowrap;font-family:"SFMono-Regular",Consolas,monospace}.queuetable .cves{display:block;color:#778195;font-size:11.5px;margin-top:3px;overflow-wrap:anywhere}.outcomepill{display:inline-flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap}.outcomepill i{width:8px;height:8px;border-radius:50%;background:var(--defer)}.outcomepill.immediate i{background:var(--immediate)}.outcomepill.out-of-cycle i{background:var(--outofcycle)}.outcomepill.scheduled i{background:var(--scheduled)}.kindtag{display:inline-block;font-size:11px;font-weight:750;border:1px solid #d6dbe5;border-radius:3px;padding:1px 5px;margin-right:6px;color:#4f5969}.kindtag.mitigate{border-color:#f0cf86;background:#fff7e4;color:#765017}
+  .actionqueue{border-top:1px solid #e1e5ed;padding:18px 21px}.actionqueue summary{cursor:pointer;font-weight:750;font-size:14px}.actionqueue p{color:#657083;font-size:13px;margin:7px 0 10px}.queuetable{width:100%;border-collapse:collapse;font-size:13px}.queuetable th,.queuetable td{text-align:left;padding:8px;border-top:1px solid #e2e6ee;vertical-align:top}.queuetable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#6f7989}.queuetable td.num{white-space:nowrap;font-family:"SFMono-Regular",Consolas,monospace}.queuetable .cves{display:block;color:#778195;font-size:11.5px;margin-top:3px;overflow-wrap:anywhere}.outcomepill{display:inline-flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap}.outcomepill i{width:8px;height:8px;border-radius:50%;background:var(--defer)}.outcomepill.immediate i{background:var(--c-immediate)}.outcomepill.out-of-cycle i{background:var(--c-outofcycle)}.outcomepill.scheduled i{background:var(--c-scheduled)}.outcomepill i{background:var(--c-defer)}.kindtag{display:inline-block;font-size:11px;font-weight:750;border:1px solid #d6dbe5;border-radius:3px;padding:1px 5px;margin-right:6px;color:#4f5969}.kindtag.mitigate{border-color:#f0cf86;background:#fff7e4;color:#765017}
 .workspaceinner>*{min-width:0}
   @media(max-width:1100px){.hero{grid-template-columns:1fr}.benchmark{grid-template-columns:1fr}.workspaceinner{grid-template-columns:300px minmax(0,1fr)}.resultbody{grid-template-columns:1fr}.compare{border-right:0;border-bottom:1px solid #e4e7ed}}
   @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:minmax(0,1fr)}.queuetable{display:block;overflow-x:auto}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlinks{grid-column:2;justify-items:start}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
@@ -219,11 +247,14 @@ _TEMPLATE = r"""<!doctype html>
     <aside>
       <div class="sectiontitle"><h2>Targets</h2><span>asset context</span></div>
       <div class="privacy" id="privacy-note" hidden><b>Public service:</b> Do not upload confidential scanner output or private repository data. Anonymous evidence is retained temporarily.</div>
-      <details class="add lightpanel" id="targetform">
-        <summary id="form-title">Add a target</summary>
+      <section class="add lightpanel" id="targetform" aria-labelledby="form-title">
+        <div class="addhead"><h3 id="form-title">Add a target</h3><span class="hint">Name the system and describe how it is deployed. Then upload its SBOM from the target card.</span></div>
         <div class="form">
-          <input type="text" id="f-name" maxlength="120" placeholder="System name" aria-label="System name">
-          <input type="text" id="f-url" placeholder="Reference URL (optional; this field is not scanned)" aria-label="Reference link URL">
+          <div class="addrow">
+            <label class="fieldlabel">System name<input type="text" id="f-name" maxlength="120" placeholder="e.g. checkout-api" aria-label="System name"></label>
+            <label class="fieldlabel">Reference URL (optional)<input type="text" id="f-url" placeholder="Dashboard or repository link; not scanned" aria-label="Reference link URL"></label>
+            <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
+          </div>
           <div class="ssvcblock">
             <div class="ssvchead">
               <div><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC</span></div>
@@ -281,12 +312,11 @@ _TEMPLATE = r"""<!doctype html>
               <label class="fieldlabel">Context evidence sources<input type="text" id="f-sources" maxlength="400" placeholder="CMDB, OpenTelemetry, Falco"></label>
             </div>
           </details>
-          <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
           <div class="hint">Answer what you know. Anything left on “Not assessed” still produces a decision — it just carries the conservative fallback and stays flagged for confirmation, and you can revisit it later with <b>Review context</b>.</div>
         </div>
-      </details>
+      </section>
       <div style="margin:8px 0"><button class="btn small" id="fleet-open" title="Import every recently active repository of a GitHub account as targets">Import organization…</button></div>
-      <div class="targetlist" id="targetlist"></div>
+      <div class="targetlist" id="targetlist" aria-label="Registered targets"></div>
     </aside>
 
     <div>
@@ -298,12 +328,7 @@ _TEMPLATE = r"""<!doctype html>
         </div>
         <button class="btn small run-control" id="runall">Run all</button>
       </div></div>
-      <div class="prioritylegend lightpanel" aria-label="SSVC outcome meanings">
-        <div class="immediate"><b><i></i>Immediate</b>Act now · example local SLA 3 days</div>
-        <div class="outofcycle"><b><i></i>Out-of-Cycle</b>Next opportunity · example SLA 14 days</div>
-        <div class="scheduled"><b><i></i>Scheduled</b>Normal maintenance · example SLA 30 days</div>
-        <div class="defer"><b><i></i>Defer</b>Monitor · example review at 90 days</div>
-      </div>
+      <div class="outcomesummary lightpanel" id="outcomesummary" aria-label="SSVC outcome breakdown"></div>
       <div id="fleetbar" class="lightpanel" style="margin-bottom:12px;padding:12px 14px" hidden></div>
       <div class="results" id="results">
         <div class="empty lightpanel">
@@ -402,14 +427,14 @@ function renderTargets(){
     const sourceName=target.source_name||target.source_format||"evidence";
     const sourceMeta=target.source_file
       ?`${esc(sourceName)} &middot; ${esc(target.source_format)} &middot; ${Math.max(1,Math.round((target.source_size||0)/1024))} KiB &middot; SHA-256 ${esc((target.source_sha256||"").slice(0,12))}`
-      :"Attach scanner JSON, CycloneDX/SPDX JSON, or import a GitHub repository";
+      :"No SBOM yet: upload CycloneDX/SPDX JSON (or Trivy/Grype/OSV scanner JSON), or import a GitHub repository";
     return `<article class="target" data-id="${esc(target.id)}">
       <div class="targettop"><div><div class="targetname">${name}</div><div class="targetid">${esc(target.id)}</div></div></div>
       <div class="badges">${contextTags(target)}</div>
       <div class="source ${target.source_file?"ready":""}">${target.source_file?"&#9679; ":"&#9675; "}${sourceMeta}</div>
       <div class="targetactions">
         <button class="btn small" data-action="edit">Review context</button>
-        <button class="btn small attach" data-action="import" title="Upload Trivy/Grype/OSV JSON or a CycloneDX/SPDX JSON SBOM">Upload evidence</button>
+        <button class="btn small attach" data-action="import" title="Upload a CycloneDX/SPDX JSON SBOM (Trivy/Grype/OSV scanner JSON is also accepted)">Upload SBOM</button>
         <button class="btn small attach" data-action="repository" title="Fetch a GitHub Dependency Graph SBOM">Import repository</button>
         <button class="btn small run-control" data-action="run" ${target.source_file?"":"disabled"}>Run</button>
         <button class="btn small danger" data-action="delete">Delete</button>
@@ -496,6 +521,77 @@ function ssvcInputBlock(summary){
   </details>`;
 }
 function reportFilename(summary){return "patchtriage-"+(String(summary.name||summary.target_id).toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"report")+".html";}
+const OUTCOME_ORDER=[["immediate","Immediate","Act now · example local SLA 3 days"],["out_of_cycle","Out-of-Cycle","Next opportunity · example SLA 14 days"],["scheduled","Scheduled","Normal maintenance · example SLA 30 days"],["defer","Defer","Monitor · example review at 90 days"]];
+const OUTCOME_COLOR={immediate:"var(--c-immediate)",out_of_cycle:"var(--c-outofcycle)",scheduled:"var(--c-scheduled)",defer:"var(--c-defer)"};
+const OUTCOME_KEY={"Immediate":"immediate","Out-of-Cycle":"out_of_cycle","Scheduled":"scheduled","Defer":"defer"};
+function donutSvg(outcomes,size,caption){
+  const total=OUTCOME_ORDER.reduce((n,[k])=>n+(outcomes[k]||0),0),r=size/2-8,cx=size/2,cy=size/2,stroke=Math.max(10,Math.round(size*0.16));
+  const circ=2*Math.PI*r,gap=total>1?2:0;let offset=0;
+  const segs=total?OUTCOME_ORDER.filter(([k])=>outcomes[k]).map(([k,label])=>{const n=outcomes[k],len=Math.max(0,n/total*circ-gap);const seg=`<circle class="seg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${OUTCOME_COLOR[k]}" stroke-width="${stroke}" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${n} of ${total} (${Math.round(n/total*100)}%)</title></circle>`;offset+=n/total*circ;return seg;}).join(""):`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e3e7ef" stroke-width="${stroke}"></circle>`;
+  const text=OUTCOME_ORDER.map(([k,label])=>`${label} ${outcomes[k]||0}`).join(", ");
+  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(caption)}: ${esc(text)}">${segs}${size>=100?`<text class="donutlabel" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text><text class="donutsub" x="${cx}" y="${cy+22}" text-anchor="middle">FINDINGS</text>`:`<text class="donutsub" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text>`}</svg>`;
+}
+function renderOutcomeSummary(){
+  const el=document.getElementById("outcomesummary");if(!el)return;
+  const totals={immediate:0,out_of_cycle:0,scheduled:0,defer:0};
+  RESULTS.forEach(r=>OUTCOME_ORDER.forEach(([k])=>totals[k]+=((r.outcomes||{})[k]||0)));
+  const total=Object.values(totals).reduce((a,b)=>a+b,0);
+  const rows=OUTCOME_ORDER.map(([k,label,meaning])=>`<div class="outcomerow"><div class="name"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)}</div><div class="count">${totals[k]}<small>${total?Math.round(totals[k]/total*100)+"%":"—"}</small></div><div class="meaning">${esc(meaning)}</div></div>`).join("");
+  el.innerHTML=`${donutSvg(totals,150,"SSVC outcomes across all assessed targets")}<div><div class="microtitle">SSVC outcomes across ${RESULTS.size} assessed target${RESULTS.size===1?"":"s"} · ${total} findings</div><div class="outcomerows">${rows}</div></div>`;
+}
+function breakdownBlock(summary){
+  const o=summary.outcomes||{};const total=OUTCOME_ORDER.reduce((n,[k])=>n+(o[k]||0),0);if(!total)return "";
+  const chips=OUTCOME_ORDER.map(([k,label])=>`<span class="chip"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)} <b>${o[k]||0}</b></span>`).join("");
+  return `<div class="breakdown">${donutSvg(o,72,"SSVC outcomes for "+summary.name)}<div><div class="microtitle">Outcome breakdown · ${total} findings</div><div class="chips">${chips}</div></div></div>`;
+}
+const TREE_LEVELS=[
+  ["exploitation","Exploitation",[["none","None"],["public_poc","Public PoC"],["active","Active"]]],
+  ["system_exposure","System Exposure",[["small","Small"],["controlled","Controlled"],["open","Open"]]],
+  ["automatable","Automatable",[["no","No"],["yes","Yes"]]],
+  ["human_impact","Human Impact",[["low","Low"],["medium","Medium"],["high","High"],["very_high","Very High"]]]];
+function treeSvg(path){
+  const W=1000,H=300,nodeW=128,nodeH=32,top=44,colX=[20,190,360,530,700,860],P=path.points||{};
+  const ys=n=>Array.from({length:n},(_,i)=>top+(H-top-20)*(i+0.5)/n);
+  let edges="",nodes="",prev={x:colX[0]+nodeW,y:top+(H-top-20)/2};
+  const clip=(v,n)=>{v=String(v||"");return v.length>n?v.slice(0,n-1)+"…":v;};
+  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-27}" width="${nodeW}" height="54" rx="6"></rect><text x="${colX[0]+nodeW/2}" y="${prev.y-6}" text-anchor="middle">${esc(clip(path.asset,18))}</text><text x="${colX[0]+nodeW/2}" y="${prev.y+13}" text-anchor="middle">${esc(clip(path.vuln_id,18))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
+  const heads=["Finding","Exploitation","System Exposure","Automatable","Human Impact","SSVC outcome"].map((h,i)=>`<text class="colhead" x="${colX[i]+(i===5?66:nodeW/2)}" y="20" text-anchor="middle">${h}</text>`).join("");
+  let hiYs=[];
+  TREE_LEVELS.forEach(([key,,values],level)=>{
+    const x=colX[level+1],y=ys(values.length),chosen=(P[key]||{}).value,assumed=(P[key]||{}).needs_confirmation;let next=null;
+    values.forEach(([value,label],i)=>{
+      const on=value===chosen;
+      edges+=`<path class="edge${on?" on":""}" d="M${prev.x} ${prev.y} C ${prev.x+30} ${prev.y}, ${x-30} ${y[i]}, ${x} ${y[i]}"></path>`;
+      nodes+=`<g class="node${on?" on":""}${on&&assumed?" assumed":""}"><rect x="${x}" y="${y[i]-nodeH/2}" width="${nodeW}" height="${nodeH}" rx="6"></rect><text x="${x+nodeW/2}" y="${y[i]+4}" text-anchor="middle">${esc(label)}${on&&assumed?" ?":""}</text><title>${esc(label)}${on?` · ${(P[key]||{}).source||""}${assumed?" · conservative default, needs confirmation":""}`:""}</title></g>`;
+      if(on)next={x:x+nodeW,y:y[i]};
+    });
+    if(level===3)hiYs=y;
+    prev=next||prev;
+  });
+  (path.branches||[]).forEach((branch,i)=>{
+    const on=branch.human_impact===(P.human_impact||{}).value,k=branch.decision,x=colX[5],y=hiYs[i],sx=colX[4]+nodeW;
+    edges+=`<path class="edge${on?" on":""}" d="M${sx} ${y} L ${x} ${y}"></path>`;
+    nodes+=`<g class="leaf ${on?"on":"off"}"><rect x="${x}" y="${y-nodeH/2}" width="132" height="${nodeH}" rx="16" style="fill:${OUTCOME_COLOR[k]||"#7d8799"}"></rect><text x="${x+66}" y="${y+4}" text-anchor="middle"${k==="out_of_cycle"?' style="fill:#2d1d00"':""}>${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
+  });
+  return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pathSentencePlain(path))}">${heads}${edges}${nodes}</svg>`;
+}
+function pathSentencePlain(path){const P=path.points||{};return `${path.asset}: ${path.vuln_id} in ${path.package} ${path.version} — Exploitation ${(P.exploitation||{}).label}, System Exposure ${(P.system_exposure||{}).label}, Automatable ${(P.automatable||{}).label}, Human Impact ${(P.human_impact||{}).label} → ${path.decision_label}`;}
+function pathDetail(path){
+  const P=path.points||{};
+  const step=(key,label)=>{const p=P[key]||{};return `${esc(label)} <b>${esc(p.label||"Unknown")}</b>${p.needs_confirmation?" (assumed)":""} <span class="src">${esc(p.source||"")}</span>`;};
+  const evidence=(path.evidence||[]).map(e=>{const more=e.more?` (+${esc(e.more)} more in the report)`:"";return e.url?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.source)} · ${esc(e.label)} ↗${more}</a>`:`<span>${esc(e.source)} · ${esc(e.label)}${more}</span>`;}).join("");
+  return `<div class="treecanvas">${treeSvg(path)}</div>
+    <div class="pathsentence"><b>${esc(path.asset)}</b> · ${esc(path.package)} ${esc(path.version)} · <b>${esc(path.vuln_id)}</b><br>${step("exploitation","Exploitation")} → ${step("system_exposure","System Exposure")} → ${step("automatable","Automatable")} → ${step("human_impact","Human Impact")} <span class="src">(${esc((P.mission_impact||{}).label||"")} mission + ${esc((P.safety_impact||{}).label||"")} safety)</span> ⇒ <b>${esc(path.decision_label)}</b>${path.bod2604?` · BOD 26-04 ${esc(path.bod2604.label)}${path.bod2604.applied?"":" (reference)"}`:""}</div>
+    <div class="treelegend">Dark boxes are the values used for this finding; “?” marks a conservative default that needs confirmation. The right column shows what each Human Impact value would yield on this path (${esc(path.model)}).</div>
+    ${evidence?`<div class="evidencelinks" aria-label="Vulnerability evidence">${evidence}</div>`:""}`;
+}
+function treeBlock(summary){
+  const paths=summary.decision_paths||[];if(!paths.length)return "";
+  const options=paths.map((path,i)=>`<option value="${i}">${esc(path.decision_label)} · ${esc(path.vuln_id)} · ${esc(path.package)} ${esc(path.version)}</option>`).join("");
+  return `<details class="treeview" open><summary>Decision path · why each finding reached its SSVC outcome</summary>
+    <div class="treepick"><label class="fieldlabel">Finding<select class="treeselect" aria-label="Finding to explain for ${esc(summary.name)}">${options}</select></label>${summary.decision_paths_truncated?`<span class="hint">Showing the first ${paths.length} findings by priority.</span>`:""}</div>
+    <div class="treebody">${pathDetail(paths[0])}</div></details>`;
+}
 const OBLIGATIONS={remediate:"Remediate",remediate_at_next_major_upgrade:"Remediate at next major upgrade",forensic_triage:"Forensic triage"};
 const RULES={ssvc_only:"SSVC workflow (BOD not applied)",bod_maximum:"BOD 26-04 maximum",workflow_target_stricter:"Workflow target is stricter",bod_fix_on_upgrade:"BOD: fix on system upgrade",bod_unresolved_provisional:"Provisional: BOD inputs unresolved"};
 function bodCell(b){
@@ -569,6 +665,8 @@ function renderResult(summary){
       ${policyMetric(summary.response_policy)}
       ${(summary.ssvc_confirmation_fields||[]).length?`<span class="metric alert">confirm ${esc(summary.ssvc_confirmation_fields.map(v=>String(v).replaceAll("_"," ")).join(", "))}</span>`:""}
     </div>
+    ${breakdownBlock(summary)}
+    ${treeBlock(summary)}
     ${qualityBlock(summary)}
     <div class="confirmbar">Target context used · ${esc(contextText)}</div>
     <div class="resultbody"><div class="compare">${compareBlock(summary)}</div><div class="explain">${explainBlock(summary)}</div></div>
@@ -599,6 +697,7 @@ function statusCard(id,status){
 function renderResults(){
   const results=document.getElementById("results");
   const states=[...STATUS.entries()].filter(([id])=>!RESULTS.has(id)||STATUS.get(id).state==="running").map(([id,status])=>statusCard(id,status)).join("");
+  renderOutcomeSummary();
   if(!RESULTS.size&&states){results.innerHTML=states;updateKpis();refreshFleet();return;}
   if(!RESULTS.size){results.innerHTML='<div class="running lightpanel"><strong>No completed decisions yet.</strong><div class="hint">Run a target or launch the offline Demo.</div></div>';updateKpis();refreshFleet();return;}
   results.innerHTML=states+[...RESULTS.entries()].filter(([id])=>!(STATUS.get(id)||{}).state).map(([,summary])=>renderResult(summary)).join("");updateKpis();refreshFleet();
@@ -631,7 +730,7 @@ async function waitForJob(jobId){
   throw new Error("Assessment is still running; refresh to restore completed results.");
 }
 async function runTargets(ids){
-  if(!ids.length){notify("Attach evidence or import a repository first.",true);return;}
+  if(!ids.length){notify("Upload an SBOM or import a repository first.",true);return;}
   setBusy(true);ids.forEach(id=>{RESULTS.delete(id);STATUS.set(id,{state:"running"});});renderResults();
   const backend=document.getElementById("backend").value||CFG.backends[0]||"rules";
   const pending=[];
@@ -656,6 +755,11 @@ async function saveSsvcInputs(card){
   try{setBusy(true);await api("POST",`/api/targets/${id}/ssvc-inputs`,{inputs});notify("SSVC inputs saved. Re-running the decision…");await runTargets([id]);}
   catch(error){notify(error.message,true);setBusy(false);}
 }
+document.getElementById("results").addEventListener("change",event=>{
+  const select=event.target.closest(".treeselect");if(!select)return;
+  const card=select.closest(".result"),summary=RESULTS.get(card.dataset.result),path=((summary||{}).decision_paths||[])[Number(select.value)];
+  if(path)card.querySelector(".treebody").innerHTML=pathDetail(path);
+});
 document.getElementById("results").onclick=event=>{
   if(event.target.closest(".demo-trigger"))launchDemo();
   const retry=event.target.closest(".retry-run");if(retry)runTargets([retry.dataset.id]);
@@ -715,14 +819,14 @@ function optionalBool(id){const value=document.getElementById(id).value;return v
 function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean),bod2604_applicability:document.getElementById("f-bod").value,publicly_exposed:document.getElementById("f-public").value};}
 function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime","f-bod","f-public"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
 function boolChoice(value){return value===true?"true":value===false?"false":"unknown";}
-function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");document.getElementById("f-bod").value=target.bod2604_applicability||"unknown";document.getElementById("f-public").value=target.publicly_exposed||"unknown";document.getElementById("bodform").open=(target.bod2604_applicability||"unknown")!=="unknown";syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
+function editContext(target){editingTarget=target.id;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");document.getElementById("f-bod").value=target.bod2604_applicability||"unknown";document.getElementById("f-public").value=target.publicly_exposed||"unknown";document.getElementById("bodform").open=(target.bod2604_applicability||"unknown")!=="unknown";syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
 document.getElementById("add").onclick=async()=>{
   const name=document.getElementById("f-name").value.trim();if(!editingTarget&&!name){notify("Give the target a system name.",true);return;}
   try{
     const wasEditing=editingTarget;let created=null;if(editingTarget){await api("POST",`/api/targets/${editingTarget}/context`,contextPayload());RESULTS.delete(editingTarget);STATUS.delete(editingTarget);}else{created=await api("POST","/api/targets",{name,url:document.getElementById("f-url").value.trim(),...contextPayload()});}
     resetForm();await loadTargets();renderResults();
-    if(created){document.getElementById("targetform").open=false;const card=document.querySelector(`.target[data-id="${created.id}"]`);if(card){card.scrollIntoView({behavior:"smooth",block:"center"});const next=card.querySelector('[data-action="import"]');if(next)next.focus({preventScroll:true});}}
-    notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added. Next: upload scanner JSON or an SBOM, or import a repository.");
+    if(created){const card=document.querySelector(`.target[data-id="${created.id}"]`);if(card){card.scrollIntoView({behavior:"smooth",block:"center"});const next=card.querySelector('[data-action="import"]');if(next)next.focus({preventScroll:true});}}
+    notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added. Next: upload its SBOM, or import a repository.");
   }catch(error){notify(error.message,true);}
 };
 document.getElementById("cancel-edit").onclick=resetForm;

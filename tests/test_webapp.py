@@ -204,7 +204,8 @@ def test_security_headers_are_present(server):
     assert "<strong>A</strong>" not in page
     assert "<strong>HI</strong>" not in page
     assert "Immediate decisions" in page
-    assert "Upload evidence" in page
+    assert "Upload SBOM" in page
+    assert "Upload evidence" not in page
     assert "Import repository" in page
     assert "CycloneDX/SPDX JSON" in page
     assert "Categorical outcome — no aggregate SSVC score" in page
