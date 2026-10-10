@@ -11,3 +11,7 @@ demo_report.json
 out/
 benchmarks/out/
 verification_report.json
+
+# Local Claude Code guidance (kept out of the repository)
+CLAUDE.md
+.claude/
