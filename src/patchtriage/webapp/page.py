@@ -155,6 +155,7 @@ _TEMPLATE = r"""<!doctype html>
   .toast{position:fixed;right:22px;bottom:22px;background:#151a25;color:#fff;border:1px solid #343d50;padding:11px 15px;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.28);transform:translateY(90px);opacity:0;transition:.2s;z-index:30;max-width:420px}.toast.show{transform:none;opacity:1}.toast.error{border-color:#a63d36}
   .filehidden{display:none}
   dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
+  .bodpanel{margin-top:12px;border-top:1px dashed #cfd5e2;padding-top:10px}.bodpanel .factor small+small{margin-top:4px}.bodcell.reference b{color:#687285;font-weight:650}
   .reportlinks{display:grid;gap:6px;justify-items:end}
   .statecard{padding:16px 21px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.statecard.failed{border-left:4px solid var(--immediate)}.statecard.running{border-left:4px solid var(--scheduled)}.statecard strong{display:block;font-size:15px}.statecard span{display:block;color:#647083;font-size:13.5px;margin-top:3px;overflow-wrap:anywhere}
   .actionqueue{border-top:1px solid #e1e5ed;padding:18px 21px}.actionqueue summary{cursor:pointer;font-weight:750;font-size:14px}.actionqueue p{color:#657083;font-size:13px;margin:7px 0 10px}.queuetable{width:100%;border-collapse:collapse;font-size:13px}.queuetable th,.queuetable td{text-align:left;padding:8px;border-top:1px solid #e2e6ee;vertical-align:top}.queuetable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#6f7989}.queuetable td.num{white-space:nowrap;font-family:"SFMono-Regular",Consolas,monospace}.queuetable .cves{display:block;color:#778195;font-size:11.5px;margin-top:3px;overflow-wrap:anywhere}.outcomepill{display:inline-flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap}.outcomepill i{width:8px;height:8px;border-radius:50%;background:var(--defer)}.outcomepill.immediate i{background:var(--immediate)}.outcomepill.out-of-cycle i{background:var(--outofcycle)}.outcomepill.scheduled i{background:var(--scheduled)}.kindtag{display:inline-block;font-size:11px;font-weight:750;border:1px solid #d6dbe5;border-radius:3px;padding:1px 5px;margin-right:6px;color:#4f5969}.kindtag.mitigate{border-color:#f0cf86;background:#fff7e4;color:#765017}
@@ -261,6 +262,15 @@ _TEMPLATE = r"""<!doctype html>
               <span class="derivednote">Questions 2 and 3 combine through the published Human Impact table — PatchTriage never adds them up. The two remaining decision points, <b>Exploitation</b> and <b>Automatable</b>, belong to the vulnerability rather than the system, so they come from CISA KEV and Vulnrichment per finding.</span>
             </div>
           </div>
+          <details class="advanced" id="bodform">
+            <summary>CISA BOD 26-04 policy (separate from SSVC)</summary>
+            <div class="advancedgrid">
+              <span class="fieldhelp">BOD 26-04 assigns remediation timelines with its own decision table (<a href="https://certcc.github.io/SSVC/howto/cisa_response/" target="_blank" rel="noopener">cisa:DT_BOD2604:1.0.0</a>). It never changes the SSVC decision. It is binding only for US federal civilian executive branch systems; other organizations may adopt it voluntarily.</span>
+              <label class="fieldlabel">Applicability<select id="f-bod"><option value="unknown">Not recorded (reference only)</option><option value="required">Required: federal civilian system</option><option value="voluntary">Voluntary adoption</option><option value="not_applicable">Does not apply (reference only)</option></select></label>
+              <label class="fieldlabel">Publicly Exposed (CISA)<select id="f-public"><option value="unknown">Not assessed</option><option value="yes">Yes: reachable by unauthenticated or untrusted users over a public network</option><option value="no">No: not reachable that way</option></select></label>
+              <span class="fieldhelp">Publicly Exposed is CISA's asset question, not SSVC System Exposure. Left unassessed, it stays unresolved unless the target is marked internet exposed under Advanced context evidence.</span>
+            </div>
+          </details>
           <details class="advanced">
             <summary>Advanced context evidence</summary>
             <div class="advancedgrid">
@@ -379,6 +389,8 @@ async function resumeActiveJobs(){
 function contextTags(target){
   const exposure=target.system_exposure||"unknown",mission=target.mission_impact||"unknown",safety=target.safety_impact||"unknown";
   const tags=[`<span class="tag ${exposure==="open"?"hot":exposure==="unknown"?"warn":""}">EXP ${esc(exposure)}</span>`,`<span class="tag ${mission==="unknown"?"warn":""}">MI ${esc(mission)}</span>`,`<span class="tag ${safety==="unknown"?"warn":""}">SI ${esc(safety)}</span>`];
+  const bod=target.bod2604_applicability||"unknown";
+  if(bod==="required"||bod==="voluntary")tags.push(`<span class="tag">BOD 26-04 ${bod} · PE ${esc(target.publicly_exposed||"unknown")}</span>`);
   if(target.demo)tags.push('<span class="tag demo">offline demo</span>');
   return tags.join("");
 }
@@ -453,6 +465,7 @@ function explainBlock(summary){
     <div class="decisionline"><span>SSVC Deployer · ${esc(s.model||"")}</span><b>${esc(s.decision_label||"Unknown")}</b></div>
     <div class="decisionnote"><b>Categorical outcome — no aggregate SSVC score.</b> Supporting signals remain visible. Inside the same outcome, SSVC decision points are compared first, followed by EPSS and CVSS tie-breakers; none are added together into a score.</div>
     <div class="signalgrid">${signals}</div>
+    ${bodBlock(x)}
     ${(x.needs_confirmation||[]).length?`<div class="confirmbar">Confirm inferred inputs: ${esc(x.needs_confirmation.map(v=>String(v).replaceAll("_"," ")).join(", "))}. Conservative defaults remain active until reviewed.</div>`:""}
     ${checks?`<ul class="evidence" aria-label="Decision evidence checklist">${checks}</ul>`:""}
     ${advisories?`<div class="advisoryline">${advisories}</div>`:""}`;
@@ -483,6 +496,39 @@ function ssvcInputBlock(summary){
   </details>`;
 }
 function reportFilename(summary){return "patchtriage-"+(String(summary.name||summary.target_id).toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"report")+".html";}
+const OBLIGATIONS={remediate:"Remediate",remediate_at_next_major_upgrade:"Remediate at next major upgrade",forensic_triage:"Forensic triage"};
+const RULES={ssvc_only:"SSVC workflow (BOD not applied)",bod_maximum:"BOD 26-04 maximum",workflow_target_stricter:"Workflow target is stricter",bod_fix_on_upgrade:"BOD: fix on system upgrade",bod_unresolved_provisional:"Provisional: BOD inputs unresolved"};
+function bodCell(b){
+  if(!b)return "—";
+  const provisional=b.status!=="resolved";
+  return `<span class="bodcell ${b.applied?"":"reference"}"><b>${esc(b.label)}</b>${provisional?` <span class="reviewflag">provisional · ${esc(b.unresolved_findings)} unresolved</span>`:""}${b.forensic_triage&&!/forensic/i.test(b.label)?' <span class="kindtag mitigate">Forensic triage</span>':""}<span class="cves">${b.applied?esc(b.applicability==="required"?"Required":"Voluntary"):"Reference only"}</span></span>`;
+}
+function effectiveCell(item){
+  if(!item.effective_rule)return "—";
+  const days=item.effective_deadline_days==null?"No numeric deadline":`≤ ${esc(item.effective_deadline_days)} days`;
+  const extra=(item.obligations||[]).filter(o=>o!=="remediate").map(o=>OBLIGATIONS[o]||o);
+  return `<b class="num">${days}</b><span class="cves">${esc(RULES[item.effective_rule]||item.effective_rule)}${extra.length?" · also: "+esc(extra.join(", ")):""}</span>`;
+}
+function policyMetric(p){
+  if(!p||!p.evaluated)return "";
+  const scope=p.applied?"applied":"reference only";
+  return `<span class="metric ${p.unresolved?"alert":""}">BOD 26-04 ${scope}: ${p.resolved}/${p.evaluated} resolved${p.unresolved?`, ${p.unresolved} unresolved`:""}${p.forensic_triage?`, ${p.forensic_triage} forensic triage`:""}</span>`;
+}
+function bodBlock(x){
+  const b=x.bod2604,e=x.effective;if(!b)return "";
+  const names={in_kev:"In KEV",publicly_exposed:"Publicly Exposed",automatable:"Automatable",technical_impact:"Technical Impact"};
+  const inputs=Object.entries(b.inputs||{}).map(([key,p])=>`<div class="factor"><span>${esc(names[key]||key)}</span><b>${p.resolved?esc(String(p.value).replace(/^./,c=>c.toUpperCase())):"Unresolved"}</b><small>${esc(p.source)}${p.defaulted?" · CISA default":""}</small><small>${esc(p.basis)}</small></div>`).join("");
+  const outcome=b.status==="resolved"?esc(b.outcome_label):`Unresolved · provisional ${esc(b.provisional_label)}`;
+  const obligations=(b.obligations||[]).map(o=>OBLIGATIONS[o]||o).join(", ");
+  return `<div class="bodpanel"><div class="microtitle">CISA BOD 26-04 · separate policy result</div>
+    <div class="decisionline"><span>${esc(b.policy)} · ${esc(b.applied?b.applicability:"reference only")}</span><b>${outcome}</b></div>
+    <div class="ssvcflow">${inputs}</div>
+    <div class="decisionnote"><b>${esc(b.definition)}</b> Obligations: ${esc(obligations)}. ${esc(b.applicability_note)}</div>
+    ${b.status!=="resolved"?`<div class="confirmbar">Confirm ${esc((b.unresolved_inputs||[]).map(v=>names[v]||v).join(", "))} to resolve the BOD outcome. Candidates: ${esc((b.candidate_outcomes||[]).join(", "))}.</div>`:""}
+    ${e?`<div class="decisionnote"><b>Effective action · ${esc(RULES[e.rule]||e.rule)}.</b> ${esc(e.explanation)}</div>`:""}
+    <div class="decisionnote">Clock: ${esc(b.deadline_anchor)}${b.kev_date_added?` KEV added ${esc(b.kev_date_added)}.`:""}${b.kev_due_date?` KEV catalog due date ${esc(b.kev_due_date)}.`:""} PatchTriage does not compute an absolute due date because the agency identification date is not recorded.</div>
+  </div>`;
+}
 function queueBlock(summary){
   const queue=summary.action_queue||[];if(!queue.length)return "";
   const rows=queue.map((item,index)=>{
@@ -492,10 +538,11 @@ function queueBlock(summary){
     return `<tr><td class="num">${index+1}</td><td><span class="outcomepill ${esc(cls)}"><i aria-hidden="true"></i>${esc(label)}</span></td>
       <td>${kind}${esc(item.summary)}<span class="cves">${esc(cves.join(", "))}${more?` and ${more} more`:""}</span></td>
       <td class="num">${item.kev_count?`${esc(item.kev_count)} KEV`:"—"}</td><td class="num">${esc(item.finding_count)}</td>
-      <td class="num">${item.deadline_days==null?"—":`≤ ${esc(item.deadline_days)} days`}</td></tr>`;}).join("");
+      <td class="num">${item.deadline_days==null?"—":`≤ ${esc(item.deadline_days)} days`}</td>
+      <td>${bodCell(item.bod2604)}</td><td>${effectiveCell(item)}</td></tr>`;}).join("");
   return `<details class="actionqueue" open><summary>Action queue · ${queue.length}${summary.action_queue_truncated?"+":""} package action${queue.length===1?"":"s"}, highest SSVC outcome first</summary>
     <p>One row per package change. The outcome is the most urgent SSVC Deployer outcome among the findings it closes. “Workflow target” is PatchTriage's configurable example timeline, not an SSVC or regulatory deadline.${summary.action_queue_truncated?" Only the first actions are listed here; the full report has every action.":""}</p>
-    <table class="queuetable"><thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>KEV</th><th>Findings</th><th>Workflow target</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="queuetable"><thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>KEV</th><th>Findings</th><th>Workflow target</th><th>BOD 26-04</th><th>Effective</th></tr></thead><tbody>${rows}</tbody></table>
   </details>`;
 }
 function renderResult(summary){
@@ -519,6 +566,7 @@ function renderResult(summary){
       ${(summary.enrichment_errors||[]).length?`<span class="metric alert" title="${esc(summary.enrichment_errors.join(" | "))}">${summary.enrichment_errors.length} evidence lookup warnings</span>`:""}
       <span class="metric ${summary.source&&summary.source.coverage_status!=="complete"?"alert":""}">coverage ${esc((summary.source&&summary.source.coverage_status)||"unknown")}</span>
       <span class="metric">SSVC ${esc(summary.top_ssvc_decision||"not evaluated")}</span>
+      ${policyMetric(summary.response_policy)}
       ${(summary.ssvc_confirmation_fields||[]).length?`<span class="metric alert">confirm ${esc(summary.ssvc_confirmation_fields.map(v=>String(v).replaceAll("_"," ")).join(", "))}</span>`:""}
     </div>
     ${qualityBlock(summary)}
@@ -664,10 +712,10 @@ function syncSsvcContext(){
 }
 SSVC_FIELDS.forEach(field=>document.getElementById(field.select).addEventListener("change",syncSsvcContext));
 function optionalBool(id){const value=document.getElementById(id).value;return value==="unknown"?null:value==="true";}
-function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean)};}
-function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
+function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean),bod2604_applicability:document.getElementById("f-bod").value,publicly_exposed:document.getElementById("f-public").value};}
+function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime","f-bod","f-public"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
 function boolChoice(value){return value===true?"true":value===false?"false":"unknown";}
-function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
+function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");document.getElementById("f-bod").value=target.bod2604_applicability||"unknown";document.getElementById("f-public").value=target.publicly_exposed||"unknown";document.getElementById("bodform").open=(target.bod2604_applicability||"unknown")!=="unknown";syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
 document.getElementById("add").onclick=async()=>{
   const name=document.getElementById("f-name").value.trim();if(!editingTarget&&!name){notify("Give the target a system name.",true);return;}
   try{

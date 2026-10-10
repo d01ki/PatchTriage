@@ -10,6 +10,8 @@ from __future__ import annotations
 import html as _html
 from datetime import datetime, timezone
 
+from ..bod2604 import OUTCOMES
+from ..bod2604 import summarize as summarize_response_policy
 from ..evalcmp import EvalRow
 from ..models import Finding
 from ..plan import Action
@@ -54,6 +56,98 @@ def _kev_display(finding: Finding, compact: bool = False) -> str:
     if status == "not_listed":
         return "—" if compact else "Not listed"
     return "?" if compact else "Not confirmed"
+
+
+_BOD_RULES = {
+    "ssvc_only": "SSVC workflow (BOD not applied)",
+    "bod_maximum": "BOD 26-04 maximum",
+    "workflow_target_stricter": "workflow target is stricter",
+    "bod_fix_on_upgrade": "BOD fix on system upgrade + workflow target",
+    "bod_unresolved_provisional": "provisional: BOD inputs unresolved",
+}
+_OBLIGATION_TEXT = {
+    "remediate": "remediate",
+    "remediate_at_next_major_upgrade": "remediate at next major upgrade",
+    "forensic_triage": "forensic triage",
+}
+
+
+def _bod_action_cell(a: Action) -> str:
+    policy = a.bod2604 or {}
+    if not policy:
+        return "—"
+    text = _esc(policy["label"])
+    if policy["status"] != "resolved":
+        text += (f' <span class="small">(provisional, '
+                 f'{policy["unresolved_findings"]} unresolved)</span>')
+    if policy["forensic_triage"]:
+        text += ' <span class="kev">forensic triage</span>'
+    scope = (policy["applicability"] if policy["applied"]
+             else "reference only")
+    return f'{text}<div class="cves">{_esc(scope)}</div>'
+
+
+def _effective_cell(a: Action) -> str:
+    if not a.effective_rule:
+        return "—"
+    days = ("no numeric deadline" if a.effective_deadline_days is None
+            else f"{a.effective_deadline_days}d")
+    extra = [_OBLIGATION_TEXT.get(o, o) for o in a.obligations
+             if o != "remediate"]
+    note = _BOD_RULES.get(a.effective_rule, a.effective_rule)
+    if extra:
+        note += "; also " + ", ".join(extra)
+    return f'{_esc(days)}<div class="cves">{_esc(note)}</div>'
+
+
+def _bod_finding_cell(t: dict) -> str:
+    policy = t.get("bod2604") or {}
+    if not policy:
+        return "—"
+    if policy["status"] == "resolved":
+        text = _esc(policy["outcome_label"])
+    else:
+        unresolved = ", ".join(
+            name.replace("_", " ") for name in policy["unresolved_inputs"])
+        text = (f'unresolved ({_esc(unresolved)}); provisional '
+                f'{_esc(policy["provisional_label"])}')
+    return text
+
+
+def _bod_section(findings: list[Finding]) -> str:
+    summary = summarize_response_policy(findings)
+    if not summary["evaluated"]:
+        return ""
+    sources = summary["sources"]
+    scope = ", ".join(summary["applicability"]) or "unknown"
+    applied = ("applied to the effective deadline"
+               if summary["applied"] else
+               "reference only: not applied to the effective deadline")
+    outcomes = " · ".join(
+        f"{_esc(OUTCOMES[k]['label'])} {v}"
+        for k, v in summary["outcomes"].items() if v)
+    return f"""
+  <section>
+    <h2>CISA BOD 26-04 response policy (separate from SSVC)</h2>
+    <p class="lede">Evaluated with {_esc(summary["policy"])}. Inputs are In KEV,
+    Publicly Exposed, Automatable and Technical Impact — not the SSVC Deployer
+    inputs. The SSVC outcome above is unchanged. Applicability: {_esc(scope)}
+    ({_esc(applied)}).</p>
+    <p class="small">Resolved {summary["resolved"]}/{summary["evaluated"]}
+    findings{(" · " + outcomes) if outcomes else ""} · unresolved
+    {summary["unresolved"]} · forensic triage {summary["forensic_triage"]}.
+    Unresolved findings carry a provisional (most urgent candidate) outcome and
+    need confirmation. Timelines are calendar-day maximums counted from the
+    earlier of the CVE's KEV addition or the agency identifying it on the
+    asset; PatchTriage does not compute absolute due dates.
+    This is not a compliance attestation.</p>
+    <p class="small">Sources:
+      <a href="{_esc(sources["directive"]["url"])}" target="_blank" rel="noopener">CISA directive</a>
+      (issued {_esc(sources["directive"]["issued"])}),
+      <a href="{_esc(sources["implementation_guidance"]["url"])}" target="_blank" rel="noopener">implementation guidance</a>,
+      <a href="{_esc(sources["decision_model"]["url"])}" target="_blank" rel="noopener">CERT/CC decision table</a>;
+      retrieved {_esc(sources["directive"]["retrieved"])}.</p>
+  </section>"""
 
 
 def render_html(findings: list[Finding], actions: list[Action],
@@ -281,6 +375,8 @@ def render_html(findings: list[Finding], actions: list[Action],
               <div class="cves">{_esc(", ".join(a.cves[:6]))}{" …" if len(a.cves) > 6 else ""}</div></td>
           <td class="num">{len(a.cves)}</td>
           <td class="num">{a.deadline_days}d</td>
+          <td class="small">{_bod_action_cell(a)}</td>
+          <td class="num">{_effective_cell(a)}</td>
         </tr>"""
 
     advisory_rows = ""
@@ -368,6 +464,7 @@ def render_html(findings: list[Finding], actions: list[Action],
           <td class="mono small">{'<br>'.join(advisory_badges) or '—'}</td>
           <td>{_esc(t.get("action", "—"))}</td>
           <td class="mono small">{_esc(f.asset.identifier)}</td>
+          <td class="small">{_bod_finding_cell(t)}</td>
           <td class="small">{_audit_badge(t)}{_esc((t.get("rationale") or "")[:160])}</td>
         </tr>"""
 
@@ -565,10 +662,11 @@ def render_html(findings: list[Finding], actions: list[Action],
     automatable spread, and human impact. One action often closes many findings;
     CVSS and EPSS remain visible as evidence, never as a proprietary score.</p>
     <table>
-      <thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>CVEs</th><th>Due</th></tr></thead>
+      <thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>CVEs</th><th>Workflow target</th><th>BOD 26-04</th><th>Effective</th></tr></thead>
       <tbody>{action_rows}</tbody>
     </table>
   </section>
+  {_bod_section(findings)}
   {eval_html}
   {advisory_html}
   {vendor_error_html}
@@ -576,7 +674,7 @@ def render_html(findings: list[Finding], actions: list[Action],
     <h2>All findings</h2>
     <table>
       <thead><tr><th>SSVC outcome</th><th>CVE</th><th>Package</th><th>CVSS</th><th>EPSS</th>
-      <th>KEV</th><th>Vendor evidence</th><th>Action</th><th>Asset</th><th>Rationale</th></tr></thead>
+      <th>KEV</th><th>Vendor evidence</th><th>Action</th><th>Asset</th><th>BOD 26-04</th><th>Rationale</th></tr></thead>
       <tbody>{finding_rows}</tbody>
     </table>
   </section>

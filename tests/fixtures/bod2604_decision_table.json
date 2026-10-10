@@ -1,0 +1,159 @@
+{
+  "schema": "patchtriage-policy-expectations:1.0.0",
+  "model": "cisa:DT_BOD2604:1.0.0",
+  "outcome_group": "cisa:BOD2604:1.0.0",
+  "source": {
+    "url": "https://raw.githubusercontent.com/CERTCC/SSVC/main/data/csv/cisa/cisa_bod_26_04_1_0_0.csv",
+    "commit": "396ade559cb90a52b4af5b4887a1db06b81dd5e4",
+    "retrieved": "2026-10-11",
+    "sha256": "78b0e9531cd5f1af9ebd1916c37a147e74da1017ddd133ffcf3c14e095b155f6",
+    "csv": "row,In KEV v1.0.0 (cisa),Publicly Exposed v1.0.0 (cisa),Automatable v2.0.0,Technical Impact v1.0.0,CISA BOD 26-04 Remediation Timelines v1.0.0 (cisa)\n0,no,no,no,partial,fix on system upgrade\n1,yes,no,no,partial,14 days\n2,no,yes,no,partial,60 days\n3,no,no,yes,partial,60 days\n4,no,no,no,total,fix on system upgrade\n5,yes,yes,no,partial,14 days\n6,yes,no,yes,partial,14 days\n7,no,yes,yes,partial,14 days\n8,yes,no,no,total,14 days\n9,no,yes,no,total,14 days\n10,no,no,yes,total,60 days\n11,yes,yes,yes,partial,3 days\n12,yes,yes,no,total,3 days & forensic investigation\n13,yes,no,yes,total,3 days & forensic investigation\n14,no,yes,yes,total,3 days\n15,yes,yes,yes,total,3 days & forensic investigation\n"
+  },
+  "note": "Transcribed from the CERT/CC CSV, not generated from PatchTriage. CERT/CC names outcome 3DF '3 days & forensic investigation'; the CISA directive and the CERT/CC outcome definition call the obligation 'forensic triage'.",
+  "rows": [
+    {
+      "row": 0,
+      "in_kev": "no",
+      "publicly_exposed": "no",
+      "automatable": "no",
+      "technical_impact": "partial",
+      "outcome_name": "fix on system upgrade",
+      "outcome": "FSU"
+    },
+    {
+      "row": 1,
+      "in_kev": "yes",
+      "publicly_exposed": "no",
+      "automatable": "no",
+      "technical_impact": "partial",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 2,
+      "in_kev": "no",
+      "publicly_exposed": "yes",
+      "automatable": "no",
+      "technical_impact": "partial",
+      "outcome_name": "60 days",
+      "outcome": "60D"
+    },
+    {
+      "row": 3,
+      "in_kev": "no",
+      "publicly_exposed": "no",
+      "automatable": "yes",
+      "technical_impact": "partial",
+      "outcome_name": "60 days",
+      "outcome": "60D"
+    },
+    {
+      "row": 4,
+      "in_kev": "no",
+      "publicly_exposed": "no",
+      "automatable": "no",
+      "technical_impact": "total",
+      "outcome_name": "fix on system upgrade",
+      "outcome": "FSU"
+    },
+    {
+      "row": 5,
+      "in_kev": "yes",
+      "publicly_exposed": "yes",
+      "automatable": "no",
+      "technical_impact": "partial",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 6,
+      "in_kev": "yes",
+      "publicly_exposed": "no",
+      "automatable": "yes",
+      "technical_impact": "partial",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 7,
+      "in_kev": "no",
+      "publicly_exposed": "yes",
+      "automatable": "yes",
+      "technical_impact": "partial",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 8,
+      "in_kev": "yes",
+      "publicly_exposed": "no",
+      "automatable": "no",
+      "technical_impact": "total",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 9,
+      "in_kev": "no",
+      "publicly_exposed": "yes",
+      "automatable": "no",
+      "technical_impact": "total",
+      "outcome_name": "14 days",
+      "outcome": "14D"
+    },
+    {
+      "row": 10,
+      "in_kev": "no",
+      "publicly_exposed": "no",
+      "automatable": "yes",
+      "technical_impact": "total",
+      "outcome_name": "60 days",
+      "outcome": "60D"
+    },
+    {
+      "row": 11,
+      "in_kev": "yes",
+      "publicly_exposed": "yes",
+      "automatable": "yes",
+      "technical_impact": "partial",
+      "outcome_name": "3 days",
+      "outcome": "3D"
+    },
+    {
+      "row": 12,
+      "in_kev": "yes",
+      "publicly_exposed": "yes",
+      "automatable": "no",
+      "technical_impact": "total",
+      "outcome_name": "3 days & forensic investigation",
+      "outcome": "3DF"
+    },
+    {
+      "row": 13,
+      "in_kev": "yes",
+      "publicly_exposed": "no",
+      "automatable": "yes",
+      "technical_impact": "total",
+      "outcome_name": "3 days & forensic investigation",
+      "outcome": "3DF"
+    },
+    {
+      "row": 14,
+      "in_kev": "no",
+      "publicly_exposed": "yes",
+      "automatable": "yes",
+      "technical_impact": "total",
+      "outcome_name": "3 days",
+      "outcome": "3D"
+    },
+    {
+      "row": 15,
+      "in_kev": "yes",
+      "publicly_exposed": "yes",
+      "automatable": "yes",
+      "technical_impact": "total",
+      "outcome_name": "3 days & forensic investigation",
+      "outcome": "3DF"
+    }
+  ]
+}

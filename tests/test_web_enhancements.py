@@ -8,6 +8,7 @@ contracts that unit tests of the target store alone cannot exercise.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import socket
 import threading
@@ -496,3 +497,49 @@ def test_ui_renders_action_queue_and_persistent_run_failures(enhanced_server):
     # The self-contained report can be saved directly from the console.
     assert "Download HTML report" in page
     assert 'download="${esc(reportFilename(summary))}"' in page
+
+
+def test_bod2604_context_is_separate_invalidates_and_reaches_report(
+        enhanced_server):
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    target_id = target["id"]
+    before = _run_demo(opener, enhanced_server, target_id)
+    assert before["response_policy"]["applied"] is False
+
+    status, error = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target_id}/context",
+        {"bod2604_applicability": "maybe"},
+    )
+    assert status == 400 and "bod2604_applicability" in error["error"]
+
+    status, updated = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target_id}/context",
+        {"bod2604_applicability": "voluntary", "publicly_exposed": "yes"},
+    )
+    assert status == 200
+    assert updated["bod2604_applicability"] == "voluntary"
+    # Policy inputs are decision inputs: the old result must disappear.
+    assert _api(opener, "GET", enhanced_server + "/api/summaries") == (200, [])
+    assert _report_status(opener, enhanced_server, target_id) == 404
+
+    after = _run_demo(opener, enhanced_server, target_id)
+    # The SSVC Deployer result is unchanged by adopting the policy.
+    assert after["outcomes"] == before["outcomes"]
+    assert after["top_ssvc_decision"] == before["top_ssvc_decision"]
+    assert after["explanation"]["ssvc"] == before["explanation"]["ssvc"]
+    policy = after["response_policy"]
+    assert policy["applied"] is True and policy["evaluated"] == after["total"]
+    assert policy["policy"] == "cisa:DT_BOD2604:1.0.0"
+    top = after["action_queue"][0]
+    assert top["bod2604"]["applied"] is True
+    assert top["effective_rule"] != "ssvc_only"
+    assert after["explanation"]["bod2604"]["inputs"]["publicly_exposed"][
+        "value"] == "yes"
+
+    with opener.open(f"{enhanced_server}/report/{target_id}",
+                     timeout=15) as response:
+        report = response.read().decode("utf-8")
+    assert "CISA BOD 26-04 response policy (separate from SSVC)" in report
+    assert html.escape(top["bod2604"]["label"]) in report
+    assert "not a compliance attestation" in report

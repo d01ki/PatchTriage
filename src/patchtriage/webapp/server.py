@@ -554,6 +554,9 @@ class Handler(BaseHTTPRequestHandler):
                     system_exposure=body.get("system_exposure", "unknown"),
                     mission_impact=body.get("mission_impact", "unknown"),
                     safety_impact=body.get("safety_impact", "unknown"),
+                    publicly_exposed=body.get("publicly_exposed", "unknown"),
+                    bod2604_applicability=body.get(
+                        "bod2604_applicability", "unknown"),
                     context_sources=body.get("context_sources"),
                     workspace_id=workspace,
                     max_targets=MAX_TARGETS_PER_SESSION,
@@ -622,6 +625,7 @@ class Handler(BaseHTTPRequestHandler):
                 "criticality", "internet_exposed", "reachable",
                 "runtime_observed", "system_exposure",
                 "mission_impact", "safety_impact", "context_sources",
+                "publicly_exposed", "bod2604_applicability",
             }
             try:
                 target = tstore.update_target_inputs(

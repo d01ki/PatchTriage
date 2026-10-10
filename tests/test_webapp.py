@@ -370,7 +370,15 @@ def test_offline_demo_runs_end_to_end(server):
         "system_exposure": "open",
         "mission_impact": "mef_failure", "safety_impact": "critical",
         "context_sources": ["OpenTelemetry", "Falco"],
+        # The demo does not opt into CISA BOD 26-04, so it stays a reference
+        # result and the SSVC deadline remains effective.
+        "publicly_exposed": "unknown",
+        "bod2604_applicability": "unknown",
     }
+    assert summary["response_policy"]["applied"] is False
+    assert summary["action_queue"][0]["effective_rule"] == "ssvc_only"
+    assert (summary["action_queue"][0]["effective_deadline_days"]
+            == summary["top_deadline_days"])
     assert summary["explanation"]["ssvc"]["decision"] == "immediate"
     assert (summary["explanation"]["ssvc"]["automatable"]["source"]
             == "CISA Vulnrichment")

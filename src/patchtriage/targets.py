@@ -10,6 +10,8 @@ a list of them, each with:
                   straight to it
   * system_exposure, automatable, mission_impact, safety_impact
                   explicit SSVC Deployer context
+  * publicly_exposed, bod2604_applicability
+                  CISA BOD 26-04 policy inputs, kept separate from SSVC
   * reachable/runtime_observed
                   supplemental confidence evidence
   * source        an attached scan (Trivy/Grype/OSV JSON) or SBOM
@@ -49,6 +51,12 @@ _SSVC_CHOICES = {
     "safety_impact": {
         "negligible", "marginal", "critical", "catastrophic", "unknown",
     },
+}
+
+_POLICY_CHOICES = {
+    "publicly_exposed": {"yes", "no", "unknown"},
+    "bod2604_applicability": {"required", "voluntary", "not_applicable",
+                              "unknown"},
 }
 
 
@@ -117,6 +125,14 @@ def _clean_ssvc(value: str | None, field: str) -> str:
     normalized = str(value or "unknown").strip().lower().replace("-", "_")
     if normalized not in _SSVC_CHOICES[field]:
         allowed = ", ".join(sorted(_SSVC_CHOICES[field]))
+        raise ValueError(f"{field} must be one of: {allowed}")
+    return normalized
+
+
+def _clean_policy(value: str | None, field: str) -> str:
+    normalized = str(value or "unknown").strip().lower().replace("-", "_")
+    if normalized not in _POLICY_CHOICES[field]:
+        allowed = ", ".join(sorted(_POLICY_CHOICES[field]))
         raise ValueError(f"{field} must be one of: {allowed}")
     return normalized
 
@@ -197,6 +213,8 @@ def add_target(name: str, url: str = "", criticality: str = "unknown",
                automatable: str = "unknown",
                mission_impact: str = "unknown",
                safety_impact: str = "unknown",
+               publicly_exposed: str = "unknown",
+               bod2604_applicability: str = "unknown",
                context_sources: list[str] | None = None,
                demo: bool = False,
                workspace_id: str | None = None, *,
@@ -221,6 +239,10 @@ def add_target(name: str, url: str = "", criticality: str = "unknown",
             "automatable": _clean_ssvc(automatable, "automatable"),
             "mission_impact": _clean_ssvc(mission_impact, "mission_impact"),
             "safety_impact": _clean_ssvc(safety_impact, "safety_impact"),
+            "publicly_exposed": _clean_policy(
+                publicly_exposed, "publicly_exposed"),
+            "bod2604_applicability": _clean_policy(
+                bod2604_applicability, "bod2604_applicability"),
             "context_sources": _clean_sources(context_sources),
             "ssvc_overrides": {},
             "demo": bool(demo),
@@ -253,6 +275,9 @@ def _apply_target_fields(target: dict, fields: dict) -> None:
     for key in _SSVC_CHOICES:
         if key in fields and fields[key] is not None:
             target[key] = _clean_ssvc(fields[key], key)
+    for key in _POLICY_CHOICES:
+        if key in fields and fields[key] is not None:
+            target[key] = _clean_policy(fields[key], key)
     if fields.get("context_sources") is not None:
         target["context_sources"] = _clean_sources(fields["context_sources"])
     for key in (

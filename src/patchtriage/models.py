@@ -28,6 +28,15 @@ _ASSET_SSVC_CHOICES = {
     },
 }
 
+# CISA BOD 26-04 inputs. Publicly Exposed is a distinct CISA decision point
+# (cisa:PE:1.0.0), not SSVC System Exposure; applicability records whether
+# the directive binds this target, is adopted voluntarily, or is unknown.
+_ASSET_POLICY_CHOICES = {
+    "publicly_exposed": {"yes", "no", "unknown"},
+    "bod2604_applicability": {"required", "voluntary", "not_applicable",
+                              "unknown"},
+}
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"
@@ -78,6 +87,8 @@ class Asset(BaseModel):
     automatable: str = "unknown"            # yes|no|unknown
     mission_impact: str = "unknown"         # degraded|mef_support_crippled|mef_failure|mission_failure|unknown
     safety_impact: str = "unknown"          # negligible|marginal|critical|catastrophic|unknown
+    publicly_exposed: str = "unknown"       # BOD 26-04 cisa:PE: yes|no|unknown
+    bod2604_applicability: str = "unknown"  # required|voluntary|not_applicable|unknown
     context_sources: list[str] = Field(default_factory=list)
     owner: str = ""
     context_notes: str = ""
@@ -90,6 +101,17 @@ class Asset(BaseModel):
         normalized = str(value or "unknown").strip().lower().replace("-", "_")
         if normalized not in _ASSET_SSVC_CHOICES[info.field_name]:
             allowed = ", ".join(sorted(_ASSET_SSVC_CHOICES[info.field_name]))
+            raise ValueError(f"{info.field_name} must be one of: {allowed}")
+        return normalized
+
+    @field_validator(*_ASSET_POLICY_CHOICES, mode="before")
+    @classmethod
+    def validate_policy_context(cls, value, info):
+        if isinstance(value, bool):
+            value = "yes" if value else "no"
+        normalized = str(value or "unknown").strip().lower().replace("-", "_")
+        if normalized not in _ASSET_POLICY_CHOICES[info.field_name]:
+            allowed = ", ".join(sorted(_ASSET_POLICY_CHOICES[info.field_name]))
             raise ValueError(f"{info.field_name} must be one of: {allowed}")
         return normalized
 
@@ -133,6 +155,7 @@ class Enrichment(BaseModel):
     in_cisa_kev: bool = False                 # known exploited in the wild
     kev_ransomware: bool = False              # KEV flags ransomware campaign use
     kev_due_date: Optional[str] = None
+    kev_date_added: Optional[str] = None      # KEV dateAdded (BOD 26-04 clock anchor candidate)
     nvd_cvss_score: Optional[float] = None
     nvd_cvss_vector: str = ""
     nvd_cvss_version: str = ""

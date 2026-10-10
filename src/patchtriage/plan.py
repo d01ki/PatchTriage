@@ -14,8 +14,11 @@ from functools import cmp_to_key
 import re
 
 from packaging.version import InvalidVersion, Version
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
+from .bod2604 import action_policy
 from .dedup import package_identity
 from .models import Finding
 from .ssvc import ssvc_sort_key
@@ -42,6 +45,12 @@ class Action(BaseModel):
     deadline_days: int = 90
     kev_count: int = 0
     rationales: list[str] = Field(default_factory=list)
+    # Separate CISA BOD 26-04 policy view. ``deadline_days`` above stays the
+    # SSVC workflow target; the effective fields name the rule that set them.
+    bod2604: Optional[dict] = None
+    effective_deadline_days: Optional[int] = None
+    effective_rule: str = ""
+    obligations: list[str] = Field(default_factory=list)
 
 
 _SEMVER = re.compile(
@@ -307,6 +316,7 @@ def build_plan(findings: list[Finding]) -> list[Action]:
             deadline_days=min(deadlines) if deadlines else 90,
             kev_count=sum(1 for g in group if g.enrichment.in_cisa_kev),
             rationales=[(g.triage or {}).get("rationale", "") for g in group][:3],
+            **action_policy(group),
         ))
 
     actions.sort(key=lambda action: (

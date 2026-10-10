@@ -12,6 +12,8 @@ from ..enrich.clients import enrich, enrich_from_snapshot
 from ..evalcmp import evaluate
 from ..ingest.parsers import load_file_with_metadata
 from ..models import Asset
+from ..bod2604 import apply_policy as apply_response_policy
+from ..bod2604 import summarize as summarize_response_policy
 from ..plan import build_plan
 from ..presentation import (
     decision_quality,
@@ -140,6 +142,8 @@ def asset_from_target(target: dict) -> Asset:
         automatable="unknown",
         mission_impact=target.get("mission_impact", "unknown"),
         safety_impact=target.get("safety_impact", "unknown"),
+        publicly_exposed=target.get("publicly_exposed", "unknown"),
+        bod2604_applicability=target.get("bod2604_applicability", "unknown"),
         context_sources=target.get("context_sources") or [],
     )
 
@@ -206,6 +210,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
     be = get_backend(backend)
     run_triage(findings, be, jobs=1 if backend == "rules" else 4)
     audit = audit_all(findings)
+    apply_response_policy(findings)
 
     actions = build_plan(findings)
     eval_rows = evaluate(findings)
@@ -249,6 +254,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "checks": priority_evidence(top_finding),
             "rationale": (top_finding.triage or {}).get("rationale", ""),
             "ssvc": ssvc,
+            "bod2604": (top_finding.triage or {}).get("bod2604"),
+            "effective": (top_finding.triage or {}).get("effective"),
             "confidence": ssvc.get("confidence", "low"),
             "needs_confirmation": ssvc.get("needs_confirmation", []),
             "cvss": e.nvd_cvss_score or top_finding.cvss_score,
@@ -386,14 +393,21 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                 "kev_count": action.kev_count,
                 "cves": action.cves[:8],
                 "finding_count": len(action.finding_keys),
+                "bod2604": action.bod2604,
+                "effective_deadline_days": action.effective_deadline_days,
+                "effective_rule": action.effective_rule,
+                "obligations": action.obligations,
             }
             for action in actions[:MAX_SUMMARY_ACTIONS]
         ],
         "action_queue_truncated": len(actions) > MAX_SUMMARY_ACTIONS,
+        "response_policy": summarize_response_policy(findings),
         "evaluated_context": {
             "system_exposure": override.system_exposure,
             "mission_impact": override.mission_impact,
             "safety_impact": override.safety_impact,
+            "publicly_exposed": override.publicly_exposed,
+            "bod2604_applicability": override.bod2604_applicability,
             "context_sources": override.context_sources,
         },
         "result_state": (

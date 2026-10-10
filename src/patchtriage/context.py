@@ -11,6 +11,8 @@ inventory (simple YAML, checked into your repo) onto findings:
         automatable: yes              # SSVC: yes|no|unknown
         mission_impact: mef_failure   # SSVC organizational consequence
         safety_impact: marginal       # SSVC safety/well-being consequence
+        publicly_exposed: yes         # CISA BOD 26-04 cisa:PE (not System Exposure)
+        bod2604_applicability: voluntary  # required|voluntary|not_applicable
         reachable: true                # static call/dependency analysis
         runtime_observed: true         # eBPF / Falco / OpenTelemetry evidence
         context_sources: [otel, falco]
@@ -47,6 +49,12 @@ _SSVC_CHOICES = {
     },
 }
 
+_POLICY_CHOICES = {
+    "publicly_exposed": {"yes", "no", "unknown"},
+    "bod2604_applicability": {"required", "voluntary", "not_applicable",
+                              "unknown"},
+}
+
 
 def _as_bool(value, field: str) -> bool:
     if isinstance(value, bool):
@@ -59,9 +67,12 @@ def _as_bool(value, field: str) -> bool:
 def _as_choice(value, field: str) -> str:
     if field == "automatable" and isinstance(value, bool):
         return "yes" if value else "no"
+    if field == "publicly_exposed" and isinstance(value, bool):
+        return "yes" if value else "no"
+    choices = _SSVC_CHOICES.get(field) or _POLICY_CHOICES[field]
     normalized = str(value or "unknown").strip().lower().replace("-", "_")
-    if normalized not in _SSVC_CHOICES[field]:
-        allowed = ", ".join(sorted(_SSVC_CHOICES[field]))
+    if normalized not in choices:
+        allowed = ", ".join(sorted(choices))
         raise ValueError(f"inventory field '{field}' must be one of: {allowed}")
     return normalized
 
@@ -94,7 +105,7 @@ def apply_context(findings: list[Finding], inventory: list[dict]) -> int:
                 if "runtime_observed" in rule:
                     f.asset.runtime_observed = _as_bool(
                         rule["runtime_observed"], "runtime_observed")
-                for field in _SSVC_CHOICES:
+                for field in (*_SSVC_CHOICES, *_POLICY_CHOICES):
                     if field in rule:
                         setattr(f.asset, field, _as_choice(rule[field], field))
                 if "context_sources" in rule:
