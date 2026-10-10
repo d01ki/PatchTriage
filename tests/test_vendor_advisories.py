@@ -3,11 +3,9 @@
 import httpx
 import pytest
 
-from patchtriage.enrich import vendors
 from patchtriage.enrich.vendors import (
     auto_sources,
     enrich_vendor_advisories,
-    index_exploitdb,
     parse_debian,
     parse_exploitdb,
     parse_ghsa,
@@ -124,8 +122,8 @@ def test_all_connectors_attach_evidence_with_one_normalized_model(
             return httpx.Response(200, json=payloads["debian"])
         if path.endswith("/advisories"):
             return httpx.Response(200, json=payloads["ghsa"])
-        if path.endswith("/files_exploits.csv"):
-            return httpx.Response(200, text=EXPLOITDB_CSV)
+        if path == "/search" and request.url.host == "www.exploit-db.com":
+            return httpx.Response(200, json=_exploitdb_payload())
         return httpx.Response(404)
 
     finding = _finding()
@@ -163,58 +161,74 @@ def test_connector_failure_is_visible_but_non_fatal(tmp_path, monkeypatch):
     assert finding.enrichment.vendor_lookup_errors
 
 
-EXPLOITDB_CSV = (
-    "id,file,description,date_published,author,type,platform,port,"
-    "date_added,date_updated,verified,codes,tags,aliases,screenshot_url,"
-    "application_url,source_url\n"
-    f"50592,exploits/java/remote/50592.py,\"Apache Log4j 2 - RCE\","
-    f"2021-12-14,x,remote,java,,2021-12-14,2021-12-14,1,{CVE};OSVDB-1,,,,,\n"
-    "1,exploits/x/1.txt,\"No CVE row\",2000-01-01,x,dos,linux,,"
-    "2000-01-01,2000-01-01,0,OSVDB-2,,,,,\n"
-)
+def _exploitdb_payload(cve_number="2021-44228", exploit_id="50592"):
+    """Shape of the JSON returned by Exploit-DB's per-CVE search."""
+    return {"draw": 1, "recordsTotal": 2, "recordsFiltered": 2, "data": [
+        {"id": exploit_id,
+         "description": [exploit_id, "Apache Log4j 2 - RCE"],
+         "date_published": "2021-12-14", "verified": 1,
+         "type": {"display": "Remote"}, "platform": {"platform": "Java"},
+         "code": [{"code_type": "cve", "code": cve_number}]},
+        # A loosely matching row for another CVE must not be attached.
+        {"id": "1", "description": ["1", "Other"], "verified": 0,
+         "code": [{"code_type": "cve", "code": "2020-0001"}]},
+    ]}
 
 
-def test_exploitdb_index_keeps_only_cve_rows_and_links_the_exploit():
-    index = index_exploitdb(EXPLOITDB_CSV)
-    assert list(index) == [CVE]
-    [record] = parse_exploitdb(index, CVE)
+def test_exploitdb_search_keeps_exact_cve_hits_and_links_the_exploit():
+    [record] = parse_exploitdb(_exploitdb_payload(), CVE)
     assert record["advisory_id"] == "EDB-50592"
     assert record["url"] == "https://www.exploit-db.com/exploits/50592"
+    assert record["title"] == "Apache Log4j 2 - RCE"
     assert record["severity"] == "verified"
-    with pytest.raises(ValueError, match="expected columns"):
-        index_exploitdb("a,b\n1,2\n")
+    with pytest.raises(ValueError, match="unexpected search response"):
+        parse_exploitdb({"error": "blocked"}, CVE)
 
 
-def test_exploitdb_hit_becomes_public_poc_evidence(tmp_path, monkeypatch):
+def test_exploitdb_is_queried_live_and_never_written_to_disk(
+        tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/files_exploits.csv"):
-            return httpx.Response(200, text=EXPLOITDB_CSV)
+        if request.url.host == "www.exploit-db.com":
+            requests.append(request.url.params["cve"])
+            hit = request.url.params["cve"] == "2021-44228"
+            return httpx.Response(200, json=_exploitdb_payload() if hit else
+                                  {"draw": 1, "data": []})
         return httpx.Response(404)
 
     hit, miss = _finding(), _finding()
-    miss.vuln_id = "CVE-2020-0001"
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        enrich_vendor_advisories([hit, miss], sources="exploitdb",
-                                 client=client)
+    miss.vuln_id = "CVE-2020-0002"
+    for _ in range(2):  # a second run must query again, not reuse a cache
+        for finding in (hit, miss):
+            finding.enrichment.exploit_references = []
+            finding.enrichment.exploit_sources_checked = []
+            finding.enrichment.vendor_advisories = []
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            enrich_vendor_advisories([hit, miss], sources="exploitdb",
+                                     client=client)
+    assert sorted(requests) == sorted(["2021-44228", "2020-0002"] * 2)
     assert hit.enrichment.exploit_references == [
         "https://www.exploit-db.com/exploits/50592"]
     assert "exploitdb" in hit.enrichment.exploit_sources_checked
     # A completed search with no entry is coverage, not a PoC.
     assert miss.enrichment.exploit_references == []
     assert "exploitdb" in miss.enrichment.exploit_sources_checked
+    stored = (tmp_path / "vendor_advisories.json")
+    assert "exploitdb" not in (
+        stored.read_text(encoding="utf-8") if stored.exists() else "")
+    assert not list(tmp_path.glob("exploitdb*"))
     from patchtriage.ssvc import assess
     assert assess(hit).exploitation.value == "public_poc"
 
 
-def test_failed_exploitdb_download_is_not_reported_as_searched(
+def test_failed_exploitdb_search_is_not_reported_as_searched(
         tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
-    monkeypatch.setattr(vendors, "EXPLOITDB_MAX_BYTES", 10)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=EXPLOITDB_CSV)
+        return httpx.Response(503)
 
     finding = _finding()
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
@@ -222,8 +236,7 @@ def test_failed_exploitdb_download_is_not_reported_as_searched(
                                            client=client)
     assert summary["errors"] == 1
     assert "exploitdb" not in finding.enrichment.exploit_sources_checked
-    assert any("size limit" in e
-               for e in finding.enrichment.vendor_lookup_errors)
+    assert finding.enrichment.vendor_lookup_errors
 
 
 def test_microsoft_without_a_record_is_not_an_error(tmp_path, monkeypatch):

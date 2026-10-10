@@ -7,8 +7,6 @@ for an operator; exploitation likelihood continues to come from KEV/EPSS.
 
 from __future__ import annotations
 
-import csv
-import io
 import os
 from collections.abc import Iterable
 from typing import Any
@@ -23,9 +21,10 @@ RHSA_URL = "https://access.redhat.com/hydra/rest/securitydata/csaf.json"
 UBUNTU_OSV_URL = "https://api.osv.dev/v1/vulns/UBUNTU-"
 DEBIAN_URL = "https://security-tracker.debian.org/tracker/data/json"
 GHSA_URL = "https://api.github.com/advisories"
-EXPLOITDB_URL = ("https://gitlab.com/exploit-database/exploitdb/-/raw/main/"
-                 "files_exploits.csv")
-EXPLOITDB_MAX_BYTES = 32 * 1024 * 1024
+# Exploit-DB's own per-CVE search (the JSON its search page uses). Queried
+# live for every run and never written to disk.
+EXPLOITDB_URL = "https://www.exploit-db.com/search"
+EXPLOITDB_MAX_RESULTS = 10
 MSRC_GUIDE_URL = "https://msrc.microsoft.com/update-guide/vulnerability/"
 
 ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa", "exploitdb")
@@ -33,6 +32,8 @@ ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa", "exploitdb")
 # analysis for many upstream CVEs (Microsoft also for Azure Linux packages),
 # and Exploit-DB is the public proof-of-concept archive.
 _ALWAYS_SOURCES = ("rhsa", "msrc", "exploitdb")
+# Sources that are queried on every run and never persisted to the cache.
+_LIVE_ONLY_SOURCES = frozenset({"exploitdb"})
 _APP_ECOSYSTEMS = {
     "npm", "pypi", "maven", "nuget", "golang", "go", "rubygems", "gem",
     "cargo", "rust", "composer", "packagist", "pub", "hex", "erlang",
@@ -189,69 +190,42 @@ def parse_ghsa(payload: list | dict, cve: str) -> list[dict]:
     return out
 
 
-def index_exploitdb(text: str) -> dict[str, list[dict]]:
-    """Index Exploit-DB's files_exploits.csv by CVE id.
-
-    Only rows that name a CVE in ``codes`` are kept, so the cached index is a
-    small fraction of the 10 MB catalog.
-    """
-    reader = csv.DictReader(io.StringIO(text))
-    required = {"id", "description", "codes", "date_published"}
-    if not reader.fieldnames or not required <= set(reader.fieldnames):
-        raise ValueError("Exploit-DB catalog is missing expected columns")
-    index: dict[str, list[dict]] = {}
-    for row in reader:
-        exploit_id = str(row.get("id") or "").strip()
-        if not exploit_id.isdigit():
+def parse_exploitdb(payload: dict, cve: str) -> list[dict]:
+    """Normalize an Exploit-DB search response, keeping only exact CVE hits."""
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise ValueError("Exploit-DB returned an unexpected search response")
+    number = cve.upper().removeprefix("CVE-")
+    out = []
+    for row in rows[:EXPLOITDB_MAX_RESULTS]:
+        if not isinstance(row, dict):
             continue
-        for code in str(row.get("codes") or "").split(";"):
-            cve = code.strip().upper()
-            if not cve.startswith("CVE-"):
-                continue
-            index.setdefault(cve, []).append({
-                "id": exploit_id,
-                "description": str(row.get("description") or "")[:300],
-                "date_published": str(row.get("date_published") or ""),
-                "type": str(row.get("type") or ""),
-                "platform": str(row.get("platform") or ""),
-                "verified": str(row.get("verified") or "") == "1",
-            })
-    return index
-
-
-def parse_exploitdb(index: dict, cve: str) -> list[dict]:
-    return [
-        _record(
+        exploit_id = str(row.get("id") or "").strip()
+        codes = {
+            str(code.get("code") or "").upper().removeprefix("CVE-")
+            for code in (row.get("code") or [])
+            if isinstance(code, dict) and code.get("code_type") == "cve"
+        }
+        if not exploit_id.isdigit() or number not in codes:
+            continue
+        description = row.get("description")
+        if isinstance(description, list):
+            description = description[-1] if description else ""
+        kind = (row.get("type") or {}).get("display", "") \
+            if isinstance(row.get("type"), dict) else ""
+        platform = (row.get("platform") or {}).get("platform", "") \
+            if isinstance(row.get("platform"), dict) else ""
+        out.append(_record(
             source="exploitdb",
-            advisory_id=f"EDB-{row['id']}",
-            title=row.get("description", ""),
-            url=f"https://www.exploit-db.com/exploits/{row['id']}",
-            severity="verified" if row.get("verified") else "unverified",
-            published_at=row.get("date_published", ""),
-            products=[p for p in (row.get("platform"), row.get("type")) if p],
-        )
-        for row in (index.get(cve) or [])[:10]
-    ]
-
-
-def _fetch_exploitdb_index(client: httpx.Client) -> dict[str, list[dict]]:
-    index = _load_cache("exploitdb_index.json", max_age_hours=24)
-    if isinstance(index, dict) and index:
-        return index
-    chunks: list[bytes] = []
-    size = 0
-    with client.stream("GET", EXPLOITDB_URL, timeout=120) as response:
-        response.raise_for_status()
-        for chunk in response.iter_bytes():
-            size += len(chunk)
-            if size > EXPLOITDB_MAX_BYTES:
-                raise ValueError("Exploit-DB catalog exceeds the size limit")
-            chunks.append(chunk)
-    index = index_exploitdb(b"".join(chunks).decode("utf-8", "replace"))
-    if not index:
-        raise ValueError("Exploit-DB catalog contained no CVE references")
-    _save_cache("exploitdb_index.json", index)
-    return index
+            advisory_id=f"EDB-{exploit_id}",
+            title=str(description or "")[:300],
+            url=f"https://www.exploit-db.com/exploits/{exploit_id}",
+            severity="verified" if str(row.get("verified")) == "1"
+            else "unverified",
+            published_at=str(row.get("date_published") or ""),
+            products=[p for p in (platform, kind) if p],
+        ))
+    return out
 
 
 def parse_sources(value: str | Iterable[str]) -> tuple[str, ...]:
@@ -350,6 +324,8 @@ def enrich_vendor_advisories(
     cache = _load_cache("vendor_advisories.json", max_age_hours=24) or {}
     for source in ALL_SOURCES:
         cache.setdefault(source, {})
+    for source in _LIVE_ONLY_SOURCES:
+        cache[source] = {}  # never reuse a stored result for live sources
     errors: dict[tuple[str, str], str] = {}
     owns_client = client is None
     client = client or httpx.Client(
@@ -390,16 +366,19 @@ def enrich_vendor_advisories(
                 for cve in source_cves["debian"]:
                     cache["debian"][cve] = parse_debian(debian, cve)
 
-        if source_cves["exploitdb"]:
+        # Exploit-DB is searched live per CVE; results stay in memory only.
+        for cve in sorted(source_cves["exploitdb"]):
             try:
-                exploitdb = _fetch_exploitdb_index(client)
+                response = client.get(EXPLOITDB_URL, params={
+                    "cve": cve.upper().removeprefix("CVE-"), "draw": "1",
+                    "start": "0", "length": str(EXPLOITDB_MAX_RESULTS),
+                }, headers={"X-Requested-With": "XMLHttpRequest",
+                            "Accept": "application/json"}, timeout=30)
+                response.raise_for_status()
+                cache["exploitdb"][cve] = parse_exploitdb(response.json(), cve)
             except (httpx.HTTPError, ValueError, TypeError,
-                    KeyError, AttributeError, UnicodeError) as exc:
-                for cve in source_cves["exploitdb"]:
-                    errors[("exploitdb", cve)] = str(exc)
-            else:
-                for cve in source_cves["exploitdb"]:
-                    cache["exploitdb"][cve] = parse_exploitdb(exploitdb, cve)
+                    KeyError, AttributeError) as exc:
+                errors[("exploitdb", cve)] = str(exc)
 
         for source in ("msrc", "usn", "ghsa"):
             for cve in sorted(source_cves[source]):
@@ -412,7 +391,9 @@ def enrich_vendor_advisories(
                 except (httpx.HTTPError, ValueError, TypeError,
                         KeyError, AttributeError) as exc:
                     errors[(source, cve)] = str(exc)
-        _save_cache("vendor_advisories.json", cache)
+        _save_cache("vendor_advisories.json", {
+            source: rows for source, rows in cache.items()
+            if source not in _LIVE_ONLY_SOURCES})
     finally:
         if owns_client:
             client.close()

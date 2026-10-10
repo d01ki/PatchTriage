@@ -623,8 +623,8 @@ The public evidence connectors work without credentials. In a local
 deployment, `GITHUB_TOKEN`/`GH_TOKEN` supplies the repository access granted
 to that token and raises GitHub API rate limits; `NVD_API_KEY` raises the NVD
 rate limit. Connector failures are recorded per finding and do not abort the
-assessment. The Exploit-DB catalog is downloaded at most once a day (32 MB
-cap) and only its CVE index is cached; a failed download is not recorded as a
+assessment. Exploit-DB is searched live for each CVE on every run and its
+results are never written to disk; a failed search is not recorded as a
 completed exploit search.
 
 ## Optional AI explanations
