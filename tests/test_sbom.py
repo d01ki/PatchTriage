@@ -14,6 +14,7 @@ from patchtriage.ingest.parsers import (detect_sbom, load_file,
                                         load_file_with_metadata, parse_osv,
                                         select_osv_fixed_version)
 from patchtriage.ingest.sbom import (_fetch_vuln, _osv_cache_load,
+                                      _resolve_unversioned,
                                       _osv_cache_save, _query_ids,
                                       IncompleteOsvCoverageError, is_sbom,
                                       parse_sbom_components,
@@ -357,3 +358,103 @@ def test_osv_detail_discards_mismatched_cache_before_valid_refresh():
     assert result == expected
     assert cache == {"OSV-REQUESTED": expected}
     assert updates == {"OSV-REQUESTED": expected}
+
+
+@pytest.mark.parametrize("package", [
+    Package(name="actions/checkout", ecosystem="githubactions",
+            purl="pkg:githubactions/actions/checkout@4.%2A.%2A"),
+    Package(name="pydantic", version=">= 2.5", ecosystem="pypi",
+            purl="pkg:pypi/pydantic"),
+    Package(name="left-pad", version="^1.3.0", ecosystem="npm"),
+])
+def test_ranges_and_wildcards_are_not_sent_to_osv_as_versions(package):
+    """OSV matches "4.*.*" as an opaque string and returns nothing."""
+    result = _query_ids([package], _BatchClient({"results": []}))
+    assert result.coverage.unqueryable_components == 1
+    assert result.coverage.queried_components == 0
+
+
+class _RegistryClient:
+    """Fake PyPI/npm registry plus OSV querybatch, recording requests."""
+
+    def __init__(self, versions, failing=()):
+        self.versions = versions
+        self.failing = set(failing)
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def get(self, url, **kwargs):
+        name = next((n for n in self.versions if f"/{n}/" in url
+                     or f"/{n.replace('/', '%2F')}/" in url), None)
+        request = httpx.Request("GET", url)
+        if name is None or name in self.failing:
+            raise httpx.ConnectError("registry unreachable", request=request)
+        version = self.versions[name]
+        if "pypi.org" in url:
+            return _BatchResponse({"info": {"version": version}})
+        return _BatchResponse({"version": version})
+
+    def post(self, url, json=None, **kwargs):
+        self.queries.extend(json["queries"])
+        return _BatchResponse({"results": [{} for _ in json["queries"]]})
+
+
+def test_versionless_registry_packages_are_checked_at_latest_release():
+    """GitHub's Dependency Graph drops ">=2.5" and lists no version at all."""
+    client = _RegistryClient({"pydantic": "2.11.7", "@scope/ui": "3.1.0"})
+    packages = [
+        Package(name="pydantic", ecosystem="pypi", purl="pkg:pypi/pydantic"),
+        Package(name="@scope/ui", ecosystem="npm",
+                purl="pkg:npm/%40scope/ui"),
+    ]
+    resolved, inferred, errors = _resolve_unversioned(packages, client)
+    assert errors == []
+    assert [p.version for p in resolved] == ["2.11.7", "3.1.0"]
+    assert all(p.version_source.startswith("registry-latest:")
+               for p in resolved)
+    assert [(i["name"], i["version"]) for i in inferred] == [
+        ("pydantic", "2.11.7"), ("@scope/ui", "3.1.0")]
+
+    result = _query_ids(resolved, client)
+    assert result.coverage.queried_components == 2
+    assert {"package": {"purl": "pkg:pypi/pydantic"},
+            "version": "2.11.7"} in client.queries
+
+
+def test_failed_registry_lookup_stays_unchecked_and_visible():
+    client = _RegistryClient({"pydantic": "2.11.7"}, failing={"pydantic"})
+    packages = [Package(name="pydantic", ecosystem="pypi",
+                        purl="pkg:pypi/pydantic")]
+    resolved, inferred, errors = _resolve_unversioned(packages, client)
+    assert resolved[0].version == ""
+    assert inferred == []
+    assert "pydantic" in errors[0]
+
+
+def test_inferred_versions_never_make_sbom_coverage_complete(monkeypatch,
+                                                             tmp_path):
+    import patchtriage.ingest.sbom as sbom
+    sbom_path = tmp_path / "github.spdx.json"
+    sbom_path.write_text(json.dumps({
+        "spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT",
+        "packages": [{
+            "name": "pydantic", "SPDXID": "SPDXRef-pydantic",
+            "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER",
+                              "referenceType": "purl",
+                              "referenceLocator": "pkg:pypi/pydantic"}],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(sbom.httpx, "Client",
+                        lambda **kwargs: _RegistryClient({"pydantic": "2.11.7"}))
+    result = load_file_with_metadata(sbom_path)
+    assert result.coverage["queried_components"] == 1
+    assert result.coverage["unqueryable_components"] == 0
+    assert result.coverage["inferred_components"] == 1
+    assert result.coverage["inferred_versions"][0]["version"] == "2.11.7"
+    assert result.coverage["complete"] is False

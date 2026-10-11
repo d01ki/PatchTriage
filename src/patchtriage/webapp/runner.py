@@ -100,6 +100,7 @@ def decision_path(finding) -> dict | None:
         "vuln_id": finding.vuln_id,
         "package": finding.package.name,
         "version": finding.package.version,
+        "version_source": finding.package.version_source,
         "fixed_version": finding.package.fixed_version,
         "asset": finding.asset.identifier,
         "model": ssvc.get("model", ""),
@@ -156,11 +157,17 @@ def _result_message(findings: list, actions: list, incomplete: bool,
     names = [str(name) for name in (coverage.get("unqueryable_names") or [])]
     checked_ecosystems = [
         str(eco) for eco in (coverage.get("queried_ecosystems") or [])]
+    inferred = int(coverage.get("inferred_components") or 0)
+    inferred_note = (
+        f" {inferred} component(s) listed without a version were checked at "
+        "their latest registry release, which reflects a fresh install, not "
+        "necessarily the deployed version." if inferred else "")
 
     if findings:
         if incomplete and actions:
             return ("Assessment completed, but evidence coverage is bounded: "
                     f"{checked} of {total} component(s) could be checked."
+                    + inferred_note
                     if total else
                     "Assessment completed with bounded or incomplete "
                     "evidence coverage.")
@@ -169,6 +176,11 @@ def _result_message(findings: list, actions: list, incomplete: bool,
                     "be built.")
         return ""
 
+    if inferred and total and not skipped:
+        return (f"{checked} of {total} component(s) were checked against OSV "
+                "and none had a known vulnerability." + inferred_note
+                + " Commit a lockfile or upload scanner output to assess the "
+                "exact deployed versions.")
     if skipped and total:
         examples = ", ".join(names[:5])
         more = f" and {len(names) - 5} more" if len(names) > 5 else ""
@@ -180,6 +192,8 @@ def _result_message(findings: list, actions: list, incomplete: bool,
         )
         if examples:
             detail += f": {examples}{more}"
+        if inferred:
+            detail += "." + inferred_note.rstrip(".")
         if checked and not any(
                 eco.lower() not in {"githubactions", "github"}
                 for eco in checked_ecosystems):

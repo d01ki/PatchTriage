@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote
 
 import httpx
 
@@ -30,6 +33,12 @@ from .parsers import _prefer_cve, select_osv_fixed_version
 OSV_QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/"
 OSV_CACHE_MAX_AGE_HOURS = 24 * 7
+
+PYPI_JSON_URL = "https://pypi.org/pypi/{name}/json"
+NPM_LATEST_URL = "https://registry.npmjs.org/{name}/latest"
+REGISTRY_TIMEOUT_SECONDS = 15
+REGISTRY_MAX_WORKERS = 4
+MAX_REGISTRY_LOOKUPS = 200
 
 
 @dataclass
@@ -53,10 +62,16 @@ class OsvCoverage:
     unqueryable_names: list[str] = field(default_factory=list)
     queried_ecosystems: list[str] = field(default_factory=list)
     unqueryable_ecosystems: list[str] = field(default_factory=list)
+    # Components the SBOM listed without a version, checked at the latest
+    # registry release instead. That is what a fresh install resolves today,
+    # not necessarily what is deployed, so it never counts as complete.
+    inferred_components: int = 0
+    inferred_versions: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def complete(self) -> bool:
         return (self.unqueryable_components == 0
+                and self.inferred_components == 0
                 and self.failed_components == 0
                 and self.vulnerability_details_failed == 0
                 and self.queried_components == self.total_components)
@@ -77,6 +92,8 @@ class OsvCoverage:
             "unqueryable_names": list(self.unqueryable_names),
             "queried_ecosystems": list(self.queried_ecosystems),
             "unqueryable_ecosystems": list(self.unqueryable_ecosystems),
+            "inferred_components": self.inferred_components,
+            "inferred_versions": [dict(item) for item in self.inferred_versions],
         }
 
 
@@ -242,9 +259,25 @@ def _valid_osv_vuln(value: Any, expected_id: str | None = None) -> bool:
     return expected_id is None or value["id"] == expected_id
 
 
-def _purl_has_version(purl: str) -> bool:
+def _purl_version(purl: str) -> str:
     main = str(purl or "").split("?", 1)[0].split("#", 1)[0]
-    return main.rfind("@") > main.find("/")
+    at = main.rfind("@")
+    return unquote(main[at + 1:]) if at > main.find("/") else ""
+
+
+def _purl_has_version(purl: str) -> bool:
+    return bool(_purl_version(purl))
+
+
+# A range or wildcard ("4.*.*", ">= 2.5", "^1.2") is a constraint, not an
+# installed version. OSV would match it as an opaque string and report
+# nothing, which reads as a clean result for a package that was never checked.
+_UNRESOLVED_VERSION_CHARS = set("*<>=~^|, ")
+
+
+def _is_resolved_version(value: str) -> bool:
+    value = str(value or "").strip()
+    return bool(value) and not (_UNRESOLVED_VERSION_CHARS & set(value))
 
 
 def _osv_ecosystem(value: str) -> str:
@@ -265,18 +298,113 @@ def _osv_ecosystem(value: str) -> str:
 
 
 def _component_query(component: Package) -> dict | None:
-    if component.purl and (component.version or _purl_has_version(component.purl)):
+    purl_version = _purl_version(component.purl)
+    if not _is_resolved_version(purl_version or component.version):
+        return None
+    if component.purl:
         query: dict[str, Any] = {"package": {"purl": component.purl}}
-        if component.version and not _purl_has_version(component.purl):
+        if not purl_version:
             query["version"] = component.version
         return query
-    if component.ecosystem and component.name and component.version:
+    if component.ecosystem and component.name:
         return {
             "package": {"name": component.name,
                         "ecosystem": _osv_ecosystem(component.ecosystem)},
             "version": component.version,
         }
     return None
+
+
+def _purl_name(purl: str) -> str:
+    """``pkg:npm/%40scope/name@1`` -> ``@scope/name``."""
+    if not str(purl or "").startswith("pkg:"):
+        return ""
+    main = purl[4:].split("?", 1)[0].split("#", 1)[0]
+    path = main.split("/", 1)[1] if "/" in main else ""
+    at = path.rfind("@")
+    if at > 0:
+        path = path[:at]
+    return unquote(path)
+
+
+def _registry_latest(ecosystem: str, name: str,
+                     client: httpx.Client) -> str:
+    """Latest stable release a fresh install would resolve, or ''."""
+    if ecosystem == "PyPI":
+        response = client.get(
+            PYPI_JSON_URL.format(name=quote(name, safe="")),
+            timeout=REGISTRY_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        info = response.json().get("info")
+        version = info.get("version") if isinstance(info, dict) else ""
+    elif ecosystem == "npm":
+        response = client.get(
+            NPM_LATEST_URL.format(name=quote(name, safe="@/")),
+            timeout=REGISTRY_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        version = response.json().get("version")
+    else:
+        return ""
+    version = str(version or "").strip()
+    if not _is_resolved_version(version) or len(version) > 64:
+        raise ValueError(f"registry returned no usable version for {name}")
+    return version
+
+
+def _resolve_unversioned(components: list[Package], client: httpx.Client
+                         ) -> tuple[list[Package], list[dict[str, str]],
+                                    list[str]]:
+    """Check versionless registry packages at their latest release.
+
+    GitHub's Dependency Graph drops range specifiers such as ``>=2.5`` and
+    lists the package with no version, so without this every application
+    dependency of a repository with no lockfile goes unchecked. The inferred
+    version is recorded on the package and in coverage; it is evidence about
+    a fresh install, not about what a particular deployment runs.
+    """
+    candidates: list[tuple[int, str, str]] = []
+    for index, component in enumerate(components):
+        if _component_query(component) is not None:
+            continue
+        ecosystem = _osv_ecosystem(component.ecosystem)
+        name = _purl_name(component.purl) or component.name
+        if ecosystem in {"PyPI", "npm"} and name:
+            candidates.append((index, ecosystem, name))
+    if not candidates:
+        return components, [], []
+
+    errors: list[str] = []
+    if len(candidates) > MAX_REGISTRY_LOOKUPS:
+        errors.append(
+            f"{len(candidates) - MAX_REGISTRY_LOOKUPS} versionless "
+            "component(s) exceeded the registry lookup limit")
+        candidates = candidates[:MAX_REGISTRY_LOOKUPS]
+
+    def lookup(candidate):
+        _, ecosystem, name = candidate
+        try:
+            return _registry_latest(ecosystem, name, client), ""
+        except (httpx.HTTPError, json.JSONDecodeError, AttributeError,
+                TypeError, ValueError) as exc:
+            return "", (f"{ecosystem} latest-version lookup for {name} "
+                        f"failed: {str(exc) or exc.__class__.__name__}")
+
+    with ThreadPoolExecutor(max_workers=REGISTRY_MAX_WORKERS) as pool:
+        outcomes = list(pool.map(lookup, candidates))
+
+    retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    resolved = list(components)
+    inferred: list[dict[str, str]] = []
+    for (index, ecosystem, name), (version, error) in zip(candidates, outcomes):
+        if error:
+            errors.append(error)
+            continue
+        source = f"registry-latest:{ecosystem}@{retrieved_at}"
+        resolved[index] = components[index].model_copy(
+            update={"version": version, "version_source": source})
+        inferred.append({"name": name, "ecosystem": ecosystem,
+                         "version": version, "source": source})
+    return resolved, inferred, errors
 
 
 def _query_ids(components: list[Package], client: httpx.Client,
@@ -381,8 +509,13 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
     cache_updates: dict[str, dict] = {}
     findings: list[RawFinding] = []
     with httpx.Client(headers={"user-agent": "patchtriage"}) as client:
+        components, inferred, resolution_errors = _resolve_unversioned(
+            components, client)
         query_result = _query_ids(components, client, progress)
         coverage = query_result.coverage
+        coverage.inferred_components = len(inferred)
+        coverage.inferred_versions = inferred[:50]
+        coverage.errors.extend(resolution_errors)
         failed_details: dict[str, str] = {}
         for pkg, vids in zip(components, query_result.ids):
             for vid in vids:

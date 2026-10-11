@@ -66,6 +66,10 @@ class Package(BaseModel):
     version: str = ""
     ecosystem: str = ""          # e.g. debian, alpine, npm, pypi, golang
     purl: str = ""               # package URL if the scanner provides one
+    # "" = the version came from the evidence itself. Otherwise it names how
+    # PatchTriage inferred it (e.g. "registry-latest:PyPI@<retrieved_at>")
+    # because the evidence listed the package without a resolved version.
+    version_source: str = ""
     fixed_version: str = ""      # applicable confirmed fix ("" = unavailable or unknown)
     # Conflicting scanner/vendor fix values are retained for safe, auditable
     # action-level selection instead of being discarded during correlation.
