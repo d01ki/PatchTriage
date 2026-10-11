@@ -230,7 +230,7 @@ def test_security_headers_are_present(server):
     assert page.count('<details class="advanced"') == 1
     assert "Optional context · CISA BOD 26-04 policy and supporting evidence" in page
     assert "Supporting context evidence" in page
-    assert "Context evidence sources" in page
+    assert "Evidence sources" in page
     assert "Review vulnerability-specific SSVC inputs" in page
     assert 'id="backend-static"' in page
     assert 'aria-label="Decision engine" hidden' in page
