@@ -30,11 +30,23 @@ ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
 OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
 
 
+def filesystem_path(path: Path) -> Path:
+    """Allow the config store's nested artifacts to exceed Windows MAX_PATH."""
+    if os.name != "nt":
+        return path
+    value = os.path.abspath(path)
+    if value.startswith("\\\\?\\"):
+        return Path(value)
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
+
+
 def config_dir() -> Path:
     override = os.environ.get("PATCHTRIAGE_CONFIG_DIR")
     if override:
-        return Path(override)
-    return Path.home() / ".config" / "patchtriage"
+        return filesystem_path(Path(override))
+    return filesystem_path(Path.home() / ".config" / "patchtriage")
 
 
 def config_path() -> Path:

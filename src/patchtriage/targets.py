@@ -354,7 +354,8 @@ def delete_target(target_id: str, workspace_id: str | None = None) -> bool:
             return False
         directory = targets_dir(workspace_id)
         invalidate_result(target_id, workspace_id)
-        source = Path(str((removed_target or {}).get("source_file") or ""))
+        source = cfgmod.filesystem_path(
+            Path(str((removed_target or {}).get("source_file") or "")))
         if (source.name.startswith(f"{target_id}_source")
                 and source.parent.resolve() == directory.resolve()):
             source.unlink(missing_ok=True)
@@ -373,7 +374,7 @@ def get_target(target_id: str, workspace_id: str | None = None) -> dict | None:
 
 def _managed_source_path(value: str, directory: Path,
                          target_id: str | None = None) -> Path | None:
-    path = Path(str(value or ""))
+    path = cfgmod.filesystem_path(Path(str(value or "")))
     try:
         valid_parent = path.parent.resolve() == directory.resolve()
     except OSError:
