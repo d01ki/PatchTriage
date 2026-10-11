@@ -17,6 +17,7 @@ function runtime() {
   let now = Date.now();
   const sandbox = {
     console, AbortController,
+    window: {location: {hash: ''}, addEventListener() {}},
     Date: class extends Date { static now() { return now; } },
     setTimeout: (fn, ms) => setTimeout(() => { now += ms; fn(); }, ms >= 15000 ? ms : 0),
     clearTimeout,

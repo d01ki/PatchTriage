@@ -386,11 +386,16 @@ SSVC produces a categorical deployment decision, not a numerical risk score.
 The day targets are PatchTriage workflow defaults; they are not additional
 CERT/CC decision values. Organizations should map them to their own policy.
 
-The desktop GUI keeps the target list on the left and the selected result on
+The GUI opens with **Patch what matters first.** and an introduction to the
+decision model. Choose **Open workspace** or try the offline demo to begin.
+**Overview** returns to the introduction; refreshing `#workspace` keeps the
+workspace open with its saved results.
+
+The desktop workspace keeps the target list and totals on the left and the selected result on
 the right. At typical laptop viewport sizes (1280×720 and 1366×768), the demo's
 Decision path, sources, and report links fit without scrolling the page.
 Long queues and detailed evidence scroll within their tab; narrow screens
-use a stacked layout. **How it works** opens the model explanation separately.
+use a stacked layout. Controls and primary labels use readable 14–16 px text.
 
 **Patch decisions** shows a compact outcome breakdown across assessed targets.
 Select a target to see its highest-priority action and four result tabs:

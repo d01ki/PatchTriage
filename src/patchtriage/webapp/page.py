@@ -205,7 +205,7 @@ _TEMPLATE = r"""<!doctype html>
   .results{flex:1;min-height:0;gap:10px}.result{min-height:0;display:flex;flex-direction:column;flex:1;box-shadow:0 4px 16px #1e284108}.resulthead{grid-template-columns:125px minmax(0,1fr) auto;padding:13px 16px;gap:14px;flex:none}.priority{height:auto;min-height:32px;font-size:12px;padding:7px}.prioritymeaning{font-size:9px;margin-top:3px}.prioritydue{font-size:10px;margin-top:2px}.rname{font-size:12px;margin-bottom:4px;overflow-wrap:anywhere}.action{font-size:17px;line-height:1.3;overflow-wrap:anywhere}.reportlinks{gap:5px}.reportlink{font-size:12px}.resulttools{display:flex;gap:8px;margin-top:6px;align-items:center}.textbutton{border:0;background:transparent;padding:0;color:#4053ba;font-size:12px;font-weight:650;text-decoration:underline;text-underline-offset:3px}
   .resultnotice{flex:none;padding:6px 16px;background:#fff8e8;color:#785921;border-bottom:1px solid #ecd8ad;font-size:12px;overflow-wrap:anywhere}.resultnotice summary{cursor:pointer}.resultnotice p{margin:6px 0}.resulttabs{display:flex;gap:18px;padding:0 16px;border-bottom:1px solid #dfe4ee;flex:none}.resulttab{background:none;border:0;border-bottom:2px solid transparent;color:#6c7688;font-weight:650;font-size:12px;padding:10px 0;white-space:nowrap}.resulttab[aria-selected=true]{color:#3048c5;border-color:#5368e8}.tabcount{font-size:10px;background:#edf0f7;border-radius:9px;padding:1px 5px;margin-left:4px}.tabcount.warn{background:#fff0cf;color:#8b5918}.resultpanel{min-height:0;overflow:auto;flex:1;padding:14px 16px}.resultpanel:focus{outline-offset:-3px}.resultpanel .treeview{padding:0;border:0}.treeview>summary{font-size:14px}.treepick{margin:8px 0 10px;flex-wrap:nowrap}.treepick label{display:flex;align-items:center;gap:10px;min-width:0;flex:1;text-transform:none;letter-spacing:0;color:#697386;font-size:12px}.treepick select{min-width:0;max-width:650px;font-size:13px;padding:7px 10px}.treecanvas{overflow:hidden;border-color:#e3e7ef}.treecanvas svg{min-width:0;max-height:260px;width:100%;height:auto}.treelegend{font-size:11px;margin-top:7px}.pathsources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}.pathsource{border-left:2px solid #d9dfed;padding-left:9px;font-size:11px;color:#6c7688;overflow-wrap:anywhere}.pathsource strong{font-size:12px;color:#303a4c;display:block;margin-bottom:2px}.pathsource.assumed{border-color:#eaa51a;background:#fff9eb}.pathsource span{display:block}.evidencelinks{gap:5px;margin-top:10px}.evidencelinks a,.evidencelinks span{font-size:11px;padding:3px 7px}.pathcontext{display:flex;gap:12px;justify-content:space-between;font-size:12px;color:#5c677b;margin-top:8px;flex-wrap:wrap}.pathcontext b{color:#2d3441}.pathcontext .policyhint{color:#7b643c}
   .actionqueue,.ssvcinputreview{padding:0;border:0}.actionqueue summary,.ssvcinputreview summary{font-size:14px}.queuetable{font-size:12px}.queuetable th{font-size:10px}.queuetable th,.queuetable td{padding:8px 6px}.queuewrap{overflow-x:auto}.queuetable .cves{font-size:11px}.resultbody{grid-template-columns:minmax(0,1fr)}.compare,.explain{padding:0;border:0}.resultpanel .metricrow{padding:8px 0;gap:5px;background:none}.metric{font-size:11px}.resultpanel .confirmbar{margin:8px 0}.resultpanel .signal{padding:8px}.resultpanel .signalgrid{margin-bottom:10px}.resultpanel .factor{padding:9px}.resultpanel .microtitle{margin-top:12px}.resultpanel .compare{margin-top:18px}.ssvcinputtable select{min-width:130px}.empty{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:24px}.emptycontent{max-width:610px;width:100%}.emptycontent .eyebrow{color:#5264d9;font-size:11px}.emptycontent h3{font-size:30px;line-height:1.15;letter-spacing:-.03em;margin:12px 0}.emptycontent p{color:#6b7486;font-size:14px;max-width:58ch;margin:0 0 22px}.startsteps{display:flex;gap:12px;margin-bottom:24px}.startstep{flex:1;background:#f6f8fc;padding:13px;border:1px solid #e3e7ef;border-radius:7px;font-size:12px;color:#657083}.startstep b{display:block;color:#323e57;margin-bottom:5px}.startstep span{color:#5368e8;font-family:Consolas,monospace;margin-right:5px}.startactions{display:flex;gap:10px;flex-wrap:wrap}.emptycontent .targetactions{margin-top:18px}.targetsummary{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}.targetsummary .tag{font-size:10px}.statecard{display:flex;align-items:flex-start;justify-content:center;flex-direction:column;padding:32px}.statecard strong{font-size:22px}.statecard span{font-size:14px;max-width:650px}.statecard .scanline{width:100%;max-width:500px}.statecard .btn{margin-top:12px}.previousresult{font-size:12px;color:#667183}
-  dialog{max-height:calc(100dvh - 32px);overflow:auto}#contextdialog{width:min(1020px,calc(100% - 32px));background:#fff}#contextdialog .add{margin:0;border:0;box-shadow:none}.dialogclose{float:right;margin:12px 14px;position:relative;z-index:1}.addhead{min-height:56px;padding:15px 18px}.addhead .hint{font-size:12px}.form{padding:14px 18px}.ssvcblock{grid-template-columns:repeat(3,minmax(0,1fr));padding:10px}.ssvcblock .derived{grid-column:1/-1;display:flex;align-items:center;gap:15px;padding:9px 12px}.derivednote{max-width:350px;font-size:11px}.derivedlabel .standardtag{display:none}.derivedvalue{flex:1}.derivedvalue span{font-size:11px}.ssvcfield .standardtag{display:none}.fieldq{font-size:12px;min-height:35px}.fieldnow{font-size:12px}.fieldnow.fallback{font-size:11.5px}.form>.hint{font-size:12px}.ssvcabout{font-size:12px}.advcols{grid-template-columns:1fr 1fr}.fieldhelp{font-size:12px}#helpdialog{width:min(1100px,calc(100% - 32px));background:var(--void);color:var(--ink)}#helpdialog .hero{grid-template-columns:1fr;padding:24px;gap:20px}#helpdialog h1{font-size:40px}#helpdialog .hero p{font-size:16px}#helpdialog .benchmark{padding:0 24px 24px;margin:0;grid-template-columns:1fr}#helpdialog .benchmarkcopy{padding:18px}#helpdialog .benchmarkcopy h2{font-size:25px}#helpdialog .proof{padding:18px}.toast{z-index:100;max-width:min(440px,calc(100vw - 32px));font-size:13px;pointer-events:none}
+  dialog{max-height:calc(100dvh - 32px);overflow:auto}#contextdialog{width:min(1020px,calc(100% - 32px));background:#fff}#contextdialog .add{margin:0;border:0;box-shadow:none}.dialogclose{float:right;margin:12px 14px;position:relative;z-index:1}.addhead{min-height:56px;padding:15px 18px}.addhead .hint{font-size:12px}.form{padding:14px 18px}.ssvcblock{grid-template-columns:repeat(3,minmax(0,1fr));padding:10px}.ssvcblock .derived{grid-column:1/-1;display:flex;align-items:center;gap:15px;padding:9px 12px}.derivednote{max-width:350px;font-size:11px}.derivedlabel .standardtag{display:none}.derivedvalue{flex:1}.derivedvalue span{font-size:11px}.ssvcfield .standardtag{display:none}.fieldq{font-size:12px;min-height:35px}.fieldnow{font-size:12px}.fieldnow.fallback{font-size:11.5px}.form>.hint{font-size:12px}.ssvcabout{font-size:12px}.advcols{grid-template-columns:1fr 1fr}.fieldhelp{font-size:12px}.toast{z-index:100;max-width:min(440px,calc(100vw - 32px));font-size:13px;pointer-events:none}
   @media(min-width:1001px) and (max-height:760px){.workspace{padding-top:12px;padding-bottom:12px}.sectiontitle{margin-bottom:8px}.outcomesummary{margin-bottom:8px;padding:7px 12px;grid-template-columns:56px minmax(0,1fr)}.outcomesummary .donut{width:52px;height:52px}.resulthead{padding:10px 14px}.resultpanel{padding:10px 14px}.treecanvas svg{max-height:210px}.pathsources{margin-top:7px}.treepick{margin:5px 0 7px}.treelegend{margin-top:5px}.evidencelinks{margin-top:7px}}
   @media(max-width:1100px){.workspaceinner{grid-template-columns:220px minmax(0,1fr);gap:14px}.sidebar{padding-right:12px}.outcomerows{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.outcomerow .name{font-size:11px}.outcomerow .count small{display:none}.resulthead{grid-template-columns:110px minmax(0,1fr)}.reportlinks{grid-column:1/-1;display:flex;gap:16px}.pathsources{gap:6px}.brand small{display:none}}
   @media(max-width:1000px){body{height:auto;min-height:100dvh;display:block;overflow:auto}.workspace{overflow:visible;min-height:calc(100dvh - 104px)}.workspaceinner{height:auto}.sidebar{max-height:650px}.decisionpane{min-height:650px}.results{min-height:500px}.resultpanel{max-height:720px;overflow:auto}.kpis{gap:16px}.kpi .label{font-size:9px}.kpi .value{font-size:15px}.treecanvas{overflow-x:auto}.treecanvas svg{min-width:740px}.pathsources{grid-template-columns:repeat(2,minmax(0,1fr))}.treepick{flex-wrap:wrap}.ssvcblock{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -213,22 +213,99 @@ _TEMPLATE = r"""<!doctype html>
   @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 
   @media(min-width:1001px){.kpis{height:36px}.workspace{padding-top:12px;padding-bottom:12px}.sectiontitle{margin-bottom:8px}.sectiontitle span{font-family:inherit;font-size:12px}.outcomesummary{padding:7px 14px;grid-template-columns:50px minmax(0,1fr);margin-bottom:10px;min-height:64px}.outcomesummary .donut{width:48px;height:48px}.resulthead{padding:10px 16px}.resultpanel{padding:10px 16px}.treepick{margin:4px 0 8px}.treecanvas svg{max-height:210px}.pathsources{margin-top:7px}.pathcontext{margin-top:6px}.evidencelinks{margin-top:7px}.treelegend{margin-top:5px}}
+
+  /* Keep the introduction as the entry page; the workspace has its own viewport. */
+  body{font-size:16px}
+  a.btn,.brand{text-decoration:none}
+  .landing{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;justify-content:center;gap:28px;padding:28px clamp(24px,4vw,64px)}
+  .landing .hero{width:100%;max-width:1500px;padding:0;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:40px}
+  .landing h1{font-size:clamp(52px,5.5vw,80px);line-height:1.03;margin:16px 0 20px}
+  .landing .hero p{font-size:18px;line-height:1.6;margin-bottom:24px}
+  .landing .eyebrow{font-size:12px;letter-spacing:.1em}
+  .landing .btn{font-size:16px;padding:11px 16px}
+  .landing .proof{padding:20px}.landing .proofhead{font-size:12px;letter-spacing:.03em;margin-bottom:16px}
+  .landing .node{padding:12px 10px;min-height:126px}.landing .node small{font-size:14px}.landing .nodecode{font-size:11px}
+  .landing .decision{padding:12px;gap:12px}.landing .decision b{font-size:16px}.landing .decision span{font-size:13px}.landing .decision .outcome-now{font-size:20px}
+  .landing .benchmark{width:100%;max-width:1500px;padding:0;margin:0 auto;grid-template-columns:minmax(0,.85fr) minmax(0,2fr)}
+  .landing .benchmarkcopy{padding:20px}.landing .benchmarkcopy h2{font-size:28px;margin:12px 0}.landing .benchmarkcopy p{font-size:14px}
+  .landing .outcome{padding:16px 12px}.landing .outcome strong{font-size:17px}.landing .factorquestion{font-size:14px}.landing .outcome small{font-size:13px}
+
+  /* Use the sidebar's spare height for totals instead of shrinking every label. */
+  .workspaceinner{grid-template-columns:248px minmax(0,1fr);gap:18px}
+  .sidebar{padding-right:16px}.sidebarhint{font-size:14px}
+  .sidebar .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;height:auto;min-height:0;padding:16px 0 4px;background:none;border-top:1px solid #d9deea;margin-top:16px}
+  .sidebar .kpi{display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+  .sidebar .kpi:last-child{grid-column:1/-1}.sidebar .kpi .value{font-size:20px;color:#28344c}
+  .sidebar .kpi .label{font-size:12px;color:#5b667b;text-transform:none;letter-spacing:0}
+  .btn.small,.brand small,.sidebarfoot .hint{font-size:14px}.brand{font-size:16px}
+  .targetname{font-size:16px}.targetmeta,.targetstate{font-size:14px}.targetselect{padding:12px}
+  .sectiontitle h2{font-size:22px}.sectiontitle span{font-family:inherit;font-size:14px;color:#5b667b}
+  .enginevalue,.enginecontrol select{font-size:14px}.enginelabel{font-size:11px}
+  .outcomesummary .microtitle{font-family:inherit;font-size:12px;letter-spacing:0;color:#5b667b}
+  .outcomerow .name{font-size:14px}.outcomerow .count small{font-size:12px}
+  .resulthead{grid-template-columns:110px minmax(0,1fr) auto;gap:12px}
+  .priority{font-size:14px}.prioritymeaning{font-size:11px}.prioritydue{font-family:inherit;font-size:12px}
+  .rname{font-size:14px;color:#5b667b}.action{font-size:18px}.reportlink,.textbutton{font-size:14px}
+  .resulttab{font-size:15px;padding:10px 0}.tabcount{font-size:12px}
+  .treepick label{font-size:14px}.treepick select{font-size:15px;max-width:none}
+  .tree .node text,.tree .leaf text{font-size:16px}.tree .root text{font-size:14px}.tree .colhead{font-size:13px;letter-spacing:0}
+  .treelegend{font-size:13px;color:#596579}.pathsource{font-size:13px;color:#596579}.pathsource strong{font-size:14px}
+  .pathcontext{font-size:13px;gap:5px 12px}.evidencelinks a,.evidencelinks span{font-size:13px}
+  .queuetable,.ssvcinputtable{font-size:14px}.queuetable th,.ssvcinputtable th{font-size:12px}.queuetable .cves,.inputsource{font-size:13px}
+  .ssvcinputtable select,.metric,.fieldq,.fieldnow,.fieldnow.fallback,.fieldhelp,.derivedvalue span,.derivednote,.ssvcabout,.form>.hint,.addhead .hint{font-size:14px}
+  .emptycontent p,.statecard span{font-size:16px}.startstep{font-size:14px}.emptycontent .eyebrow{font-size:13px}
+  .resultnotice,.toast,.privacy{font-size:14px}
+  @media(min-width:1001px) and (max-height:700px){.workspace{padding-top:8px;padding-bottom:8px}.sectiontitle{margin-bottom:6px}.outcomesummary{min-height:46px;grid-template-columns:34px minmax(0,1fr);padding:5px 12px;margin-bottom:8px}.outcomesummary .donut{width:32px;height:32px}.outcomesummary .microtitle{display:none}.resulthead{padding-top:6px;padding-bottom:6px}.resultpanel{padding-top:8px;padding-bottom:8px}.resulttab{padding:8px 0}}
+  @media(min-width:1001px) and (max-height:760px){.landing{gap:24px;padding-top:24px;padding-bottom:24px}.landing h1{font-size:60px}.landing .benchmarkcopy h2{font-size:25px}.landing .outcome{padding-top:12px;padding-bottom:12px}}
+  @media(max-width:1100px){.brand small{display:none}.workspaceinner{grid-template-columns:220px minmax(0,1fr)}.landing{justify-content:flex-start}.landing .hero,.landing .benchmark{grid-template-columns:1fr}.landing .proof{margin-top:8px}.landing .benchmarkcopy{border-bottom:0}}
+  @media(max-width:1000px){.sidebar .kpis{flex:none}.treecanvas svg{min-width:920px}.landing{overflow:visible}.landing .hero{gap:24px}.landing .outcomes{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:700px){.brand{font-size:14px}.topbar{height:auto;min-height:64px;gap:8px}.topactions .btn{font-size:13px;padding:7px 9px}.topactions{flex-wrap:wrap;justify-content:flex-end;padding:8px 0}.workspaceinner{display:flex}.sidebar{max-height:none}.sidebar .kpis{grid-template-columns:repeat(3,1fr);gap:10px;padding-top:12px}.sidebar .kpi:last-child{grid-column:auto}.sidebar .kpi .value{font-size:18px}.sidebarfoot .hint{display:none}.targetlist{max-height:180px}.sectiontitle span{font-size:14px}.outcomerow .name{font-size:14px}.resulthead{grid-template-columns:100px minmax(0,1fr)}.resulttabs{gap:18px}.landing{padding:28px 20px;gap:24px}.landing h1{font-size:52px}.landing .hero p{font-size:17px}.landing .proofhead{flex-wrap:wrap;gap:5px}.landing .node{min-height:0}.landing .decision{flex-wrap:wrap}.landing .outcome{border-left:1px solid var(--line)}.landing .heroactions{flex-direction:column;align-items:stretch}.landing .heroactions .btn{text-align:center}}
 </style></head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span><small>Patch decision workspace</small></div>
-  <div class="topactions"><button class="btn small ghost" id="help-open">How it works</button><button class="btn small run-control" id="demo">Run the offline demo</button></div>
+  <a class="brand" href="#home" aria-label="PatchTriage home"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span><small>Patch decision workspace</small></a>
+  <div class="topactions"><a class="btn small ghost" id="home-link" href="#home" hidden>Overview</a><a class="btn small ghost" id="workspace-link" href="#workspace">Open workspace →</a><button class="btn small run-control" id="demo">Run the offline demo</button></div>
 </header>
-
-<section class="kpis" aria-label="Workspace totals">
-  <div class="kpi"><div class="value" id="k-targets">0</div><div class="label">targets in scope</div></div>
-  <div class="kpi"><div class="value" id="k-kev">0</div><div class="label">known exploited</div></div>
-  <div class="kpi"><div class="value" id="k-immediate">0</div><div class="label">Immediate decisions</div></div>
-  <div class="kpi"><div class="value" id="k-audit">—</div><div class="label">decisions verified</div></div>
-  <div class="kpi" title="Share of Exploitation and Automatable values taken from a published or analyst-confirmed source instead of a conservative assumption."><div class="value" id="k-authoritative">—</div><div class="label">inputs from authority</div></div>
+<main class="landing" id="home" aria-labelledby="home-title">
+<section class="hero">
+  <div>
+    <div class="eyebrow">Evidence-informed deployment decisions</div>
+    <h1 id="home-title" tabindex="-1">Patch what matters <em>first.</em></h1>
+    <p>Turn vulnerability evidence and your system context into a clear patching priority — with a decision path you can explain.</p>
+    <div class="heroactions"><a class="btn primary" href="#workspace">Open workspace →</a><button class="btn ghost run-control" id="landing-demo">Try the offline demo</button></div>
+  </div>
+  <div class="proof" aria-label="PatchTriage decision flow">
+    <div class="proofhead"><span>Why this patch first?</span><span>auditable signal path</span></div>
+    <div class="flow">
+      <div class="node"><span class="nodecode">01 / FIND</span><strong>Scanner evidence</strong><small>CVE · package · fixed version</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="nodecode">02 / THREAT</span><strong>Exploitation state</strong><small>Active · Public PoC · None · EPSS watch signal</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="nodecode">03 / STAKEHOLDER</span><strong>SSVC factors</strong><small>Exposure · Automatable · Human impact</small></div>
+      <div class="decision"><div><b>Upgrade spring-beans on web-frontend</b><br><span>Active · Open · Automatable · High human impact → Immediate</span></div><div class="outcome-now">Immediate</div></div>
+    </div>
+  </div>
 </section>
 
-<section class="workspace" id="workspace">
+<section class="benchmark" aria-label="SSVC decision model">
+  <div class="benchmarkcopy">
+    <div class="eyebrow">CERT/CC SSVC · Deployer model</div>
+    <h2>Severity informs. Your environment decides.</h2>
+    <p>Four SSVC factors connect threat evidence to the impact on your system.</p>
+  </div>
+  <div class="outcomes">
+    <div class="outcome"><span class="factorcode">SSVC · E</span><strong>Exploitation</strong><span class="factorquestion">What are attackers doing?</span><small><b>Active</b> (CISA KEV) · <b>Public PoC</b> · <b>None</b></small></div>
+    <div class="outcome"><span class="factorcode">SSVC · EXP</span><strong>System exposure</strong><span class="factorquestion">How reachable is this system?</span><small><b>Open</b> · <b>Controlled</b> · <b>Small</b></small></div>
+    <div class="outcome"><span class="factorcode">SSVC · A</span><strong>Automatable</strong><span class="factorquestion">Can exploitation be automated?</span><small><b>Yes</b> · <b>No</b> · reviewed per vulnerability</small></div>
+    <div class="outcome"><span class="factorcode">SSVC · HI</span><strong>Human impact</strong><span class="factorquestion">What happens if exploitation succeeds?</span><small><b>Low</b> · <b>Medium</b> · <b>High</b> · <b>Very high</b>, from mission + safety</small></div>
+  </div>
+</section>
+
+</main>
+
+
+
+<section class="workspace" id="workspace" hidden>
   <div class="workspaceinner">
     <aside class="sidebar">
       <div class="sectiontitle"><h2>Targets</h2><button class="btn primary small" id="new-target">+ Add target</button></div>
@@ -236,11 +313,18 @@ _TEMPLATE = r"""<!doctype html>
       <div class="privacy" id="privacy-note" hidden><b>Public service:</b> Do not upload confidential scanner output or private repository data. Anonymous evidence is retained temporarily.</div>
 
       <div class="targetlist" id="targetlist" aria-label="Registered targets"></div>
+      <section class="kpis" aria-label="Workspace totals">
+  <div class="kpi"><div class="value" id="k-targets">0</div><div class="label">Targets</div></div>
+  <div class="kpi"><div class="value" id="k-kev">0</div><div class="label">known exploited</div></div>
+  <div class="kpi"><div class="value" id="k-immediate">0</div><div class="label">Immediate decisions</div></div>
+  <div class="kpi"><div class="value" id="k-audit">—</div><div class="label">Decisions verified</div></div>
+  <div class="kpi" title="Share of Exploitation and Automatable values taken from a published or analyst-confirmed source instead of a conservative assumption."><div class="value" id="k-authoritative">—</div><div class="label">Inputs from authority</div></div>
+</section>
       <div class="sidebarfoot"><button class="btn small" id="fleet-open">Import organization…</button><div class="hint">Scanner JSON · SBOM · Repository</div></div>
     </aside>
 
     <main class="decisionpane" aria-label="Patch decisions">
-      <div class="sectiontitle"><div><h2>Patch decisions</h2><span id="workspace-step">1. Add a target → 2. Add evidence → 3. Run triage</span></div><div class="decisionactions">
+      <div class="sectiontitle"><div><h2 id="workspace-title" tabindex="-1">Patch decisions</h2><span id="workspace-step">1. Add a target → 2. Add evidence → 3. Run triage</span></div><div class="decisionactions">
         <div class="enginecontrol" aria-label="Decision engine"><small class="enginelabel">Decision engine</small><strong class="enginevalue" id="backend-static">SSVC deterministic</strong><select id="backend" aria-label="Decision engine" hidden></select></div>
         <button class="btn small run-control" id="runall">Run all</button>
       </div></div>
@@ -325,45 +409,7 @@ _TEMPLATE = r"""<!doctype html>
         </div>
       </section>
 </dialog>
-<dialog id="helpdialog" aria-label="How PatchTriage works"><button class="dialogclose btn small" id="help-close">Close ×</button>
-<section class="hero">
-  <div>
-    <div class="eyebrow">Evidence-informed deployment decisions</div>
-    <h1>Patch what matters <em>first.</em></h1>
-    <p>Combine global threat evidence with your system exposure, mission impact, and safety context to make one defensible SSVC deployment decision — without letting AI invent a score.</p>
-    <div class="heroactions">
 
-
-    </div>
-  </div>
-  <div class="proof" aria-label="PatchTriage decision flow">
-    <div class="proofhead"><span>Why this patch first?</span><span>auditable signal path</span></div>
-    <div class="flow">
-      <div class="node"><span class="nodecode">01 / FIND</span><strong>Scanner evidence</strong><small>CVE · package · fixed version</small></div>
-      <div class="arrow">→</div>
-      <div class="node"><span class="nodecode">02 / THREAT</span><strong>Exploitation state</strong><small>Active · Public PoC · None · EPSS watch signal</small></div>
-      <div class="arrow">→</div>
-      <div class="node"><span class="nodecode">03 / STAKEHOLDER</span><strong>SSVC factors</strong><small>Exposure · Automatable · Human impact</small></div>
-      <div class="decision"><div><b>Upgrade spring-beans on web-frontend</b><br><span>Active · Open · Automatable · High human impact → Immediate</span></div><div class="outcome-now">Immediate</div></div>
-    </div>
-  </div>
-</section>
-
-<section class="benchmark" aria-label="SSVC decision model">
-  <div class="benchmarkcopy">
-    <div class="eyebrow">CERT/CC SSVC · Deployer model</div>
-    <h2>Severity informs. Your environment decides.</h2>
-    <p>KEV and PoC evidence establish what attackers are doing. SSVC combines that state with how your system is deployed and what failure means to your organization.</p>
-  </div>
-  <div class="outcomes">
-    <div class="outcome"><span class="factorcode">SSVC · E</span><strong>Exploitation</strong><span class="factorquestion">What are attackers doing?</span><small><b>Active</b> (CISA KEV) · <b>Public PoC</b> · <b>None</b></small></div>
-    <div class="outcome"><span class="factorcode">SSVC · EXP</span><strong>System exposure</strong><span class="factorquestion">How reachable is this system?</span><small><b>Open</b> · <b>Controlled</b> · <b>Small</b></small></div>
-    <div class="outcome"><span class="factorcode">SSVC · A</span><strong>Automatable</strong><span class="factorquestion">Can exploitation be automated?</span><small><b>Yes</b> · <b>No</b> · reviewed per vulnerability</small></div>
-    <div class="outcome"><span class="factorcode">SSVC · HI</span><strong>Human impact</strong><span class="factorquestion">What happens if exploitation succeeds?</span><small><b>Low</b> · <b>Medium</b> · <b>High</b> · <b>Very high</b>, from mission + safety</small></div>
-  </div>
-</section>
-
-</dialog>
 
 <input type="file" id="filepick" class="filehidden" accept=".json">
 <dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Repository access follows the GitHub credentials configured for this deployment.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
@@ -691,7 +737,7 @@ function renderResult(summary){
   const context=summary.evaluated_context||{};
   return `<article class="result" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
     <div class="resulthead">
-      <div class="prioritybox"><div class="priority ${esc(cls)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"Top SSVC outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
+      <div class="prioritybox"><div class="priority ${esc(cls)}">${esc(outcome)}</div><div class="prioritymeaning" title="Highest-priority SSVC outcome">${hasFindings?"Top outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
       <div><div class="rname">${esc(summary.name)} · ${summary.total} findings · ${summary.actions} actions${summary.demo?" · offline demo":""}</div><div class="action">${esc(summary.top_action||"Assessment completed")}</div><div class="resulttools"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="manage">Manage evidence</button><button class="textbutton" data-action="run">Run again</button></div></div>
       <div class="reportlinks"><a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a><a class="reportlink" href="${esc(summary.report_url)}" download="${esc(reportFilename(summary))}">Download HTML report</a></div>
     </div>
@@ -755,7 +801,7 @@ async function refreshFleet(){
 }
 async function launchDemo(){
   const button=document.getElementById("demo");if(button.disabled)return;
-  button.disabled=true;
+  button.disabled=true;window.location.hash="workspace";showPage();
   try{notify("Loading bundled threat evidence…");const target=await api("POST","/api/demo",{});await loadTargets();selectTarget(target.id);const outcomes=await runTargets([target.id]);if(outcomes.every(Boolean))notify("Offline demo is ready. Select a finding to inspect its decision path.");}
   catch(error){notify(error.message,true);}
   finally{button.disabled=false;}
@@ -844,8 +890,17 @@ async function runTargets(ids){
 document.getElementById("demo").onclick=launchDemo;
 document.getElementById("new-target").onclick=openTargetForm;
 document.getElementById("context-close").onclick=()=>document.getElementById("contextdialog").close();
-document.getElementById("help-open").onclick=()=>document.getElementById("helpdialog").showModal();
-document.getElementById("help-close").onclick=()=>document.getElementById("helpdialog").close();
+document.getElementById("landing-demo").onclick=launchDemo;
+function showPage(focus=false){
+  const workspace=window.location.hash==="#workspace";
+  document.getElementById("home").hidden=workspace;
+  document.getElementById("workspace").hidden=!workspace;
+  document.getElementById("home-link").hidden=!workspace;
+  document.getElementById("workspace-link").hidden=workspace;
+  if(focus)document.getElementById(workspace?"workspace-title":"home-title").focus({preventScroll:true});
+}
+window.addEventListener("hashchange",()=>showPage(true));
+showPage();
 
 async function saveSsvcInputs(card){
   const id=card.dataset.result;
