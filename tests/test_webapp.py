@@ -226,7 +226,10 @@ def test_security_headers_are_present(server):
     assert "MI 2.0.0" in page
     assert "SI 2.0.1" in page
     assert "HI 2.0.2" in page
-    assert "Advanced context evidence" in page
+    # BOD 26-04 inputs and supporting evidence share one optional section.
+    assert page.count('<details class="advanced"') == 1
+    assert "Optional context · CISA BOD 26-04 policy and supporting evidence" in page
+    assert "Supporting context evidence" in page
     assert "Context evidence sources" in page
     assert "Review vulnerability-specific SSVC inputs" in page
     assert 'id="backend-static"' in page

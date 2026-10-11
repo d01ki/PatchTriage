@@ -445,7 +445,7 @@ def test_ui_exposes_repository_context_privacy_and_async_contract(
     assert 'id="repodialog"' in page
     assert "Import a repository" in page
     assert "repository code and package managers are never executed" in page
-    assert "Advanced context evidence" in page
+    assert "Supporting context evidence" in page
     assert 'id="privacy-note"' in page
     assert "Do not upload confidential scanner output" in page
     assert page.index('id="privacy-note"') < page.index('id="targetform"')

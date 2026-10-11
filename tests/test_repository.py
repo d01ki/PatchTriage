@@ -368,3 +368,67 @@ def test_generic_provider_is_explicitly_unsupported_without_network_request():
 def test_fetch_limits_must_be_positive(kwargs, message):
     with pytest.raises(ValueError, match=message):
         fetch_github_sbom("https://github.com/acme/widget", **kwargs)
+
+
+def _versionless(name, purl):
+    return {"SPDXID": f"SPDXRef-{name}", "name": name,
+            "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER",
+                              "referenceType": "purl",
+                              "referenceLocator": purl}]}
+
+
+def test_declared_ranges_dropped_by_github_are_restored_from_manifests():
+    """GitHub lists fastapi>=0.104.0 as a bare fastapi; only the range lets
+    a vulnerable declared floor be checked at all."""
+    files = {
+        "requirements.txt": "fastapi>=0.104.0\npython_multipart>=0.0.6\n",
+        "web/package.json": json.dumps({"dependencies": {"@acme/ui": "^1.2.0"}}),
+        "README.md": "fastapi==0.1",
+    }
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        if request.url.path.endswith("/dependency-graph/sbom"):
+            return httpx.Response(200, json=_github_payload([
+                _versionless("fastapi", "pkg:pypi/fastapi"),
+                _versionless("python-multipart", "pkg:pypi/python-multipart"),
+                _versionless("@acme/ui", "pkg:npm/%40acme/ui"),
+                _versionless("left-pad", "pkg:npm/left-pad"),
+            ]))
+        if "/git/trees/HEAD" in request.url.path:
+            return httpx.Response(200, json={"tree": [
+                {"path": path, "type": "blob"} for path in files]})
+        assert request.url.host == "raw.githubusercontent.com"
+        return httpx.Response(
+            200, text=files[request.url.path.split("/HEAD/", 1)[1]])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = fetch_github_sbom("https://github.com/acme/widget",
+                                   client=client)
+    packages = {p["name"]: p for p in json.loads(result.content)["packages"]}
+    assert packages["fastapi"]["versionInfo"] == ">=0.104.0"
+    # PEP 503: python_multipart in the manifest is python-multipart.
+    assert packages["python-multipart"]["versionInfo"] == ">=0.0.6"
+    assert packages["@acme/ui"]["versionInfo"] == "^1.2.0"
+    assert "requirements.txt" in packages["fastapi"]["sourceInfo"]
+    assert "versionInfo" not in packages["left-pad"]
+    assert not any("README.md" in url for url in requested)
+    assert any("3 of 4 were restored" in w for w in result.provenance.warnings)
+    assert any("1 dependencies have no declared range" in w
+               for w in result.provenance.warnings)
+
+
+def test_unavailable_file_list_leaves_sbom_usable_and_says_so():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/dependency-graph/sbom"):
+            return httpx.Response(200, json=_github_payload([
+                _versionless("fastapi", "pkg:pypi/fastapi")]))
+        return httpx.Response(403, json={"message": "rate limited"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = fetch_github_sbom("https://github.com/acme/widget",
+                                   client=client)
+    assert "versionInfo" not in json.loads(result.content)["packages"][0]
+    assert any("file list" in w and "HTTP 403" in w
+               for w in result.provenance.warnings)

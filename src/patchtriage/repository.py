@@ -22,11 +22,19 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import httpx
 
+from .ingest.sbom import _purl_from_spdx_pkg
+from .ingest.versions import declared_constraints, is_manifest, pypi_key
+from .models import parse_purl
+
 
 GITHUB_HOST = "github.com"
 GITHUB_API_ROOT = "https://api.github.com"
+GITHUB_RAW_ROOT = "https://raw.githubusercontent.com"
 DEFAULT_MAX_SBOM_BYTES = 32 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 45.0
+MAX_TREE_BYTES = 16 * 1024 * 1024
+MAX_MANIFESTS = 40
+MAX_MANIFEST_BYTES = 1024 * 1024
 
 _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
@@ -365,6 +373,106 @@ def _parse_github_sbom(raw: bytes) -> tuple[dict[str, Any], int]:
     return sbom, len(packages)
 
 
+def _get_bounded(client: httpx.Client, url: str, headers: dict[str, str],
+                 timeout: float, max_bytes: int) -> bytes:
+    with client.stream("GET", url, headers=headers, timeout=timeout,
+                       follow_redirects=False) as response:
+        if response.status_code != 200:
+            raise RepositoryFetchError(f"HTTP {response.status_code}")
+        return _read_response(response, max_bytes)
+
+
+def _registry_key(package: dict) -> tuple[str, str] | None:
+    """(OSV ecosystem, package key) for a PyPI or npm SPDX package."""
+    purl_type, namespace, name, _ = parse_purl(_purl_from_spdx_pkg(package))
+    if purl_type == "pypi" and name:
+        return "PyPI", pypi_key(name)
+    if purl_type == "npm" and name:
+        return "npm", f"{namespace}/{name}" if namespace else name
+    return None
+
+
+def _restore_declared_ranges(sbom: dict[str, Any],
+                             reference: RepositoryReference,
+                             client: httpx.Client, headers: dict[str, str],
+                             timeout: float) -> list[str]:
+    """Put back the version ranges GitHub's SBOM drops, as ``versionInfo``.
+
+    The Dependency Graph lists ``fastapi>=0.104.0`` as a bare ``fastapi``.
+    Without the range, the only release left to check is the newest, which
+    is usually the patched one -- so a vulnerable declared floor such as
+    ``python-multipart>=0.0.6`` would never be reported. The manifests are
+    read as text through GitHub's tree API and raw file host; nothing in the
+    repository is executed.
+    """
+    missing = [p for p in sbom.get("packages") or []
+               if not str(p.get("versionInfo") or "").strip()
+               and _registry_key(p) is not None]
+    if not missing:
+        return []
+    ref = quote(reference.ref or "HEAD", safe="")
+    repo = f"{quote(reference.owner or '', safe='')}/" \
+           f"{quote(reference.name or '', safe='')}"
+    try:
+        tree = json.loads(_get_bounded(
+            client, f"{GITHUB_API_ROOT}/repos/{repo}/git/trees/{ref}"
+            "?recursive=1", headers, timeout, MAX_TREE_BYTES))
+        entries = tree.get("tree") if isinstance(tree, dict) else None
+        if not isinstance(entries, list):
+            raise RepositoryResponseError("unexpected tree response")
+    except (RepositoryFetchError, httpx.HTTPError, ValueError) as exc:
+        return [f"{len(missing)} PyPI/npm dependencies are listed without "
+                "their declared version range, and the repository file list "
+                f"needed to restore it was unavailable ({exc})."]
+    paths = sorted(
+        (e["path"] for e in entries
+         if isinstance(e, dict) and e.get("type") == "blob"
+         and isinstance(e.get("path"), str) and is_manifest(e["path"])),
+        key=lambda p: (p.count("/"), p))
+    warnings: list[str] = []
+    if tree.get("truncated"):
+        warnings.append("GitHub truncated the repository file list; some "
+                        "manifests may not have been read.")
+    if len(paths) > MAX_MANIFESTS:
+        warnings.append(f"Only the first {MAX_MANIFESTS} of {len(paths)} "
+                        "manifests were read.")
+        paths = paths[:MAX_MANIFESTS]
+
+    raw_headers = {k: v for k, v in headers.items()
+                   if k in {"Authorization", "User-Agent"}}
+    manifests: dict[str, str] = {}
+    for path in paths:
+        try:
+            manifests[path] = _get_bounded(
+                client, f"{GITHUB_RAW_ROOT}/{repo}/{ref}/"
+                f"{quote(path, safe='/')}", raw_headers, timeout,
+                MAX_MANIFEST_BYTES).decode("utf-8")
+        except (RepositoryFetchError, httpx.HTTPError,
+                UnicodeDecodeError) as exc:
+            warnings.append(f"{path} could not be read ({exc}).")
+    constraints, parse_warnings = declared_constraints(manifests)
+    warnings.extend(parse_warnings)
+
+    restored = 0
+    for package in missing:
+        constraint, sources = constraints.get(_registry_key(package), ("", []))
+        if constraint:
+            package["versionInfo"] = constraint
+            package["sourceInfo"] = (
+                f"Declared range from {', '.join(sources)}; restored by "
+                "PatchTriage because GitHub's SBOM omits version ranges.")
+            restored += 1
+    if restored:
+        warnings.insert(0, (
+            f"GitHub's SBOM omits declared version ranges; {restored} of "
+            f"{len(missing)} were restored from {len(manifests)} manifest(s)."))
+    if restored < len(missing):
+        warnings.append(
+            f"{len(missing) - restored} dependencies have no declared range "
+            "in a readable manifest and are checked at their newest release.")
+    return warnings
+
+
 def fetch_github_sbom(
     repository: str | RepositoryReference,
     *,
@@ -423,16 +531,18 @@ def fetch_github_sbom(
         except httpx.RequestError as exc:
             raise RepositoryFetchError(
                 f"GitHub SBOM request failed: {exc.__class__.__name__}") from exc
+        sbom, component_count = _parse_github_sbom(raw)
+        warnings = [
+            "Coverage is limited to dependencies represented in GitHub's "
+            "Dependency Graph; it is not proof that every manifest was "
+            "discovered or that the repository has no vulnerable components."
+        ]
+        warnings.extend(_restore_declared_ranges(
+            sbom, reference, client, headers, timeout))
     finally:
         if owns_client:
             client.close()
 
-    sbom, component_count = _parse_github_sbom(raw)
-    warnings = [
-        "Coverage is limited to dependencies represented in GitHub's "
-        "Dependency Graph; it is not proof that every manifest was discovered "
-        "or that the repository has no vulnerable components."
-    ]
     coverage_status = "provider_reported"
     if reference.ref:
         coverage_status = "partial"

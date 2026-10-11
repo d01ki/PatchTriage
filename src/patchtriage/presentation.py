@@ -118,11 +118,6 @@ def decision_quality(findings: list[Finding]) -> dict:
     }
 
 
-def priority_display(priority: str | None) -> str:
-    definition = priority_definition(priority)
-    return f"{definition['code']} - {definition['label']}"
-
-
 def priority_evidence(finding: Finding) -> list[dict[str, str]]:
     """Present the exact SSVC decision points without a parallel score model."""
     ssvc = (finding.triage or {}).get("ssvc") or {}

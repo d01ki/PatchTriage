@@ -159,9 +159,9 @@ def _result_message(findings: list, actions: list, incomplete: bool,
         str(eco) for eco in (coverage.get("queried_ecosystems") or [])]
     inferred = int(coverage.get("inferred_components") or 0)
     inferred_note = (
-        f" {inferred} component(s) listed without an exact version were "
-        "checked at the newest registry release matching their declared "
-        "constraint, which reflects a fresh install, not "
+        f" {inferred} component(s) had only a declared constraint or none, "
+        "so each was checked at a registry release chosen from it (the "
+        "oldest a lower-bounded range permits, otherwise the newest), not "
         "necessarily the deployed version." if inferred else "")
 
     if findings:

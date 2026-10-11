@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from patchtriage.ingest.parsers import (detect_sbom, load_file,
+from patchtriage.ingest.parsers import (load_file,
                                         load_file_with_metadata, parse_osv,
                                         select_osv_fixed_version)
 from patchtriage.ingest.sbom import (_fetch_vuln, _osv_cache_load,
@@ -31,7 +31,6 @@ def _load(name):
 def test_detects_cyclonedx_and_spdx():
     assert is_sbom(_load("sbom_cyclonedx.json")) == "cyclonedx"
     assert is_sbom(_load("sbom_spdx.json")) == "spdx"
-    assert detect_sbom(_load("sbom_spdx.json")) == "SPDX"
     # a scanner file is not an SBOM
     assert is_sbom(_load("trivy_sample.json")) is None
 
@@ -443,7 +442,8 @@ def test_versionless_and_wildcard_components_are_resolved_per_ecosystem():
     resolved, inferred, errors = _resolve_versions(packages, client)
     assert errors == []
     assert [p.version for p in resolved] == ["2.11.7", "3.1.0", "6.0.1"]
-    assert all(p.version_source.startswith("registry:") for p in resolved)
+    assert [p.version_source.split(" (")[0] for p in resolved] == [
+        "newest release", "newest release", "newest release matching 6.*.*"]
     assert inferred[2]["constraint"] == "6.*.*"
 
     result = _query_ids(resolved, client)
@@ -519,16 +519,15 @@ def _action_advisory(vid, events=None, versions_=None):
                             {"last_affected": "45.0.9"}]), True),
     (_action_advisory("D", [{"introduced": "46.0.0"}]), False),
     (_action_advisory("E", versions_=["v45.0.9"]), True),
-    (_action_advisory("F", [{"introduced": "0"}, {"fixed": "not-a-ver"}]),
-     True),                     # unevaluable: keep, never assume safe
+    (_action_advisory("F", [{"introduced": "45.0.0"}]), True),   # never fixed
 ])
 def test_github_action_advisories_are_matched_against_ranges_locally(
         record, affected):
-    from patchtriage.ingest.sbom import _affects
+    from patchtriage.ingest.parsers import osv_affects
     action = Package(name="tj-actions/changed-files", version="45.0.9",
                      ecosystem="githubactions",
                      purl="pkg:githubactions/tj-actions/changed-files@45.0.9")
-    assert _affects(record, action) is affected
+    assert osv_affects(record, action) is affected
 
 
 def test_sbom_load_drops_action_advisories_outside_the_installed_range(

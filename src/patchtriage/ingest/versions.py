@@ -1,16 +1,23 @@
-"""Resolve SBOM version constraints to a concrete release for OSV lookup.
+"""Pick the concrete release to check when evidence gives only a constraint.
 
-Provider SBOMs often record what a manifest *declares* rather than what is
-installed: GitHub's Dependency Graph drops ``pydantic>=2.5`` to a package with
-no version, and records ``uses: actions/checkout@v6`` as ``6.*.*``. OSV can
-only match concrete versions, so such components would otherwise go
-unchecked -- or worse, be sent as an opaque string and come back "clean".
+Provider SBOMs record what a manifest *declares* rather than what is
+installed: GitHub's Dependency Graph lists ``fastapi>=0.104.0`` with no
+version (``repository`` restores the constraint from the manifest) and
+``uses: actions/checkout@v6`` as ``6.*.*``. OSV only matches concrete
+versions, so this module asks each ecosystem's registry for its releases and
+picks one, with the basis recorded:
 
-This module asks each ecosystem's public registry for its releases and picks
-the newest stable release that satisfies the declared constraint (the newest
-release overall when there is none). That is what a fresh install resolves
-today, not necessarily what a deployment runs, so every resolved version is
-labelled as inferred and the caller keeps coverage incomplete.
+* a range with a lower bound (``>=0.104.0``, ``^1.2.3``, ``~=2.0``) is checked
+  at the **oldest release it permits** -- the range still allows installing
+  it, and a vulnerable floor is exactly what "raise the minimum version"
+  remediates. Checking the newest release instead finds almost nothing,
+  because the newest release is usually the patched one;
+* a floating ref (``6.*.*``, ``1.x``, ``==1.2.*``) or a bare upper bound is
+  checked at the **newest matching release**, which is what actually runs;
+* no constraint at all is checked at the **newest release**.
+
+None of these is necessarily what a deployment runs, so the caller labels
+the version as inferred and keeps coverage incomplete.
 """
 
 from __future__ import annotations
@@ -19,7 +26,6 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Callable
 from urllib.parse import quote
 
@@ -67,36 +73,6 @@ def _parse(value: str) -> Version | None:
         return Version(str(value).strip().lstrip("vV"))
     except InvalidVersion:
         return None
-
-
-def parse(value: str) -> Version | None:
-    """Public form of the release parser, tolerant of a leading "v"."""
-    return _parse(value)
-
-
-def in_range(version: Version, events: list) -> bool | None:
-    """Evaluate one OSV ECOSYSTEM/SEMVER range; None when unparseable."""
-    bounds = []
-    for event in events:
-        if not isinstance(event, dict) or len(event) != 1:
-            return None
-        kind, value = next(iter(event.items()))
-        if kind == "limit":
-            continue
-        bound = Version("0") if str(value) == "0" else _parse(value)
-        if bound is None or kind not in {"introduced", "fixed",
-                                         "last_affected"}:
-            return None
-        bounds.append((bound, kind))
-    affected = False
-    for bound, kind in sorted(bounds, key=lambda item: item[0]):
-        if kind == "introduced" and version >= bound:
-            affected = True
-        elif kind == "fixed" and version >= bound:
-            affected = False
-        elif kind == "last_affected" and version > bound:
-            affected = False
-    return affected
 
 
 def _wildcard_prefix(constraint: str) -> tuple[int, ...] | None:
@@ -154,9 +130,14 @@ def _specifier(constraint: str) -> SpecifierSet:
             f"constraint '{constraint}' is not a version range") from exc
 
 
+def _newest(matching: list[Release]) -> Release:
+    # A floating major tag ("v6") equals 6.0.0; prefer the full release.
+    return max(matching, key=lambda r: (r.parsed, r.version.count(".")))
+
+
 def choose(releases: list[Release], constraint: str,
-           preferred: str = "") -> Release:
-    """Newest stable release satisfying ``constraint``.
+           preferred: str = "") -> tuple[Release, str]:
+    """The release to check for ``constraint`` and the basis for choosing it.
 
     ``preferred`` is the registry's own "latest" pointer (npm dist-tag),
     honoured when there is no constraint because that is what a plain install
@@ -165,24 +146,145 @@ def choose(releases: list[Release], constraint: str,
     stable = [r for r in releases if not r.parsed.is_prerelease]
     constraint = str(constraint or "").strip()
     if not constraint:
-        if preferred:
-            for release in stable:
-                if release.version == preferred:
-                    return release
-        matching = stable
+        if not stable:
+            raise ResolutionError("the registry lists no stable release")
+        chosen = next((r for r in stable if r.version == preferred), None)
+        return chosen or _newest(stable), "newest release"
+    prefix = _wildcard_prefix(constraint)
+    if prefix is not None:
+        matching = [r for r in stable
+                    if r.parsed.release[:len(prefix)] == prefix]
+        floor = False
     else:
-        prefix = _wildcard_prefix(constraint)
-        if prefix is not None:
-            matching = [r for r in stable
-                        if r.parsed.release[:len(prefix)] == prefix]
-        else:
-            spec = _specifier(constraint)
-            matching = [r for r in stable if spec.contains(r.parsed)]
+        spec = _specifier(constraint)
+        matching = [r for r in stable if spec.contains(r.parsed)]
+        floor = any(s.operator in {">=", ">", "~=", "==="}
+                    or (s.operator == "==" and "*" not in s.version)
+                    for s in spec)
     if not matching:
-        raise ResolutionError(
-            f"no stable release satisfies '{constraint or 'any'}'")
-    # A floating major tag ("v6") equals 6.0.0; prefer the full release.
-    return max(matching, key=lambda r: (r.parsed, r.version.count(".")))
+        raise ResolutionError(f"no stable release satisfies '{constraint}'")
+    if floor:
+        return (min(matching, key=lambda r: r.parsed),
+                f"oldest release permitted by {constraint}")
+    return _newest(matching), f"newest release matching {constraint}"
+
+
+# ------------------------------------------------------------ manifests
+MANIFEST_NAMES = ("pyproject.toml", "package.json")
+# requirements.txt, requirements-dev.in, dev-requirements.txt, and any .txt
+# under a requirements/ directory.
+_REQUIREMENTS_RE = re.compile(
+    r"(^|/)([^/]*requirements[^/]*\.(txt|in)|requirements/[^/]+\.txt)$",
+    re.IGNORECASE)
+
+
+def is_manifest(path: str) -> bool:
+    """Manifests whose declared ranges GitHub's SBOM drops."""
+    if any(part in {"node_modules", "vendor", "site-packages"}
+           for part in path.split("/")):
+        return False
+    return (path.rsplit("/", 1)[-1] in MANIFEST_NAMES
+            or bool(_REQUIREMENTS_RE.search(path)))
+
+
+def pypi_key(name: str) -> str:
+    """PEP 503 normalized project name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _requirement_specs(lines) -> list[tuple[str, str]]:
+    from packaging.requirements import InvalidRequirement, Requirement
+    out = []
+    for line in lines:
+        line = str(line).split(" #", 1)[0].strip()
+        if not line or line.startswith(("#", "-")) or "://" in line:
+            continue
+        try:
+            requirement = Requirement(line)
+        except InvalidRequirement:
+            continue
+        out.append((requirement.name, str(requirement.specifier)))
+    return out
+
+
+def _pyproject_specs(text: str) -> list[tuple[str, str]]:
+    try:
+        import tomllib
+    except ModuleNotFoundError:       # Python 3.10
+        import tomli as tomllib
+    data = tomllib.loads(text)
+    project = data.get("project") or {}
+    lines = list(project.get("dependencies") or [])
+    lines.extend((data.get("build-system") or {}).get("requires") or [])
+    for group in (project.get("optional-dependencies") or {}).values():
+        lines.extend(group or [])
+    for group in (data.get("dependency-groups") or {}).values():
+        lines.extend(item for item in group or [] if isinstance(item, str))
+    specs = _requirement_specs(lines)
+    # Poetry: {name = "^1.2"} or {name = {version = "^1.2", ...}}
+    poetry = (data.get("tool") or {}).get("poetry") or {}
+    tables = [poetry.get("dependencies"), poetry.get("dev-dependencies")]
+    tables += [(g or {}).get("dependencies")
+               for g in (poetry.get("group") or {}).values()]
+    for table in tables:
+        for name, value in (table or {}).items():
+            if isinstance(value, dict):
+                value = value.get("version")
+            if name.lower() != "python" and isinstance(value, str):
+                specs.append((name, "" if value.strip() == "*" else value))
+    return specs
+
+
+def _package_json_specs(text: str) -> list[tuple[str, str]]:
+    data = json.loads(text)
+    specs = []
+    for key in ("dependencies", "devDependencies", "optionalDependencies"):
+        for name, value in (data.get(key) or {}).items():
+            value = str(value).strip()
+            # file:, git+, workspace:, npm: aliases and URLs are not ranges.
+            if ":" in value or "/" in value:
+                continue
+            specs.append((name, "" if value in {"*", "latest", "x"} else value))
+    return specs
+
+
+def declared_constraints(manifests: dict[str, str]
+                         ) -> tuple[dict[tuple[str, str], tuple[str, list[str]]],
+                                    list[str]]:
+    """Map (OSV ecosystem, package key) -> (constraint, declaring paths).
+
+    PyPI ranges declared in several files are intersected (pip must satisfy
+    all of them); for npm the shallowest manifest wins, as for a workspace
+    root. Unparseable manifests are reported, never guessed at.
+    """
+    found: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
+    warnings: list[str] = []
+    for path in sorted(manifests, key=lambda p: (p.count("/"), p)):
+        text, base = manifests[path], path.rsplit("/", 1)[-1]
+        try:
+            if base == "package.json":
+                ecosystem, specs = "npm", _package_json_specs(text)
+            elif base == "pyproject.toml":
+                ecosystem, specs = "PyPI", _pyproject_specs(text)
+            else:
+                ecosystem = "PyPI"
+                # Join backslash line continuations before parsing.
+                specs = _requirement_specs(
+                    re.sub(r"\\\r?\n", " ", text).splitlines())
+        except (ValueError, TypeError, AttributeError, ImportError) as exc:
+            warnings.append(f"{path} could not be parsed: "
+                            f"{str(exc) or exc.__class__.__name__}")
+            continue
+        for name, spec in specs:
+            key = (ecosystem, pypi_key(name) if ecosystem == "PyPI" else name)
+            constraints, paths = found.setdefault(key, ([], []))
+            if path not in paths:
+                paths.append(path)
+            if spec and spec not in constraints and (
+                    ecosystem == "PyPI" or not constraints):
+                constraints.append(spec)
+    return ({key: (",".join(c), paths) for key, (c, paths) in found.items()},
+            warnings)
 
 
 # ------------------------------------------------------------ registries
@@ -319,6 +421,7 @@ class Request:
 class Resolution:
     request: Request
     version: str = ""
+    basis: str = ""
     error: str = ""
 
 
@@ -339,7 +442,7 @@ def resolve(requests: list[Request], client: httpx.Client
                     and _wildcard_prefix(request.constraint) is None):
                 _specifier(request.constraint)
             releases, preferred = fetch(request.name, client)
-            chosen = choose(releases, request.constraint, preferred)
+            chosen, basis = choose(releases, request.constraint, preferred)
         except ResolutionError as exc:
             return Resolution(request, error=(
                 f"{request.name} ({request.constraint or 'no version'}): "
@@ -351,13 +454,10 @@ def resolve(requests: list[Request], client: httpx.Client
                 f"{request.name} ({request.constraint or 'no version'}): "
                 f"{REGISTRY_LABELS[request.ecosystem]} lookup failed: "
                 f"{detail}"))
-        return Resolution(request, version=chosen.version)
+        return Resolution(request, version=chosen.version, basis=basis)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         results = list(pool.map(one, requests))
     errors.extend(r.error for r in results if r.error)
     return results, errors
 
-
-def retrieved_at() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")

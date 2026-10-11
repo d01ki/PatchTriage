@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from urllib.parse import unquote
 
-from .models import Finding, Package, RawFinding, Severity
+from .models import (Finding, Package, RawFinding, Severity,
+                     normalize_ecosystem, parse_purl)
 
 _SEV_ORDER = {
     Severity.UNKNOWN: -1,
@@ -32,60 +32,10 @@ _SEV_ORDER = {
 
 _PKG_NORM = re.compile(r"[^a-z0-9]+")
 
-_ECOSYSTEM_ALIASES = {
-    "apk": "alpine",
-    "cargo": "crates.io",
-    "composer": "packagist",
-    "cratesio": "crates.io",
-    "deb": "debian",
-    "gem": "rubygems",
-    "go": "golang",
-    # Java coordinates arrive under several scanner spellings: Trivy reports
-    # "jar"/"pom"/"gradle", Grype "java-archive". They all identify the same
-    # Maven groupId:artifactId, so they must share one dedup ecosystem.
-    "gradle": "maven",
-    "jar": "maven",
-    "java": "maven",
-    "javaarchive": "maven",
-    "pom": "maven",
-    "node": "npm",
-    "nodejs": "npm",
-    "nuget": "nuget",
-    "pip": "pypi",
-    "python": "pypi",
-    "unknown": "",
-}
-
 
 def _norm_pkg(name: str) -> str:
     """python_dateutil / python-dateutil / Python.Dateutil -> pythondateutil"""
     return _PKG_NORM.sub("", name.lower())
-
-
-def _norm_ecosystem(value: str) -> str:
-    """Normalize scanner spelling without collapsing distinct distributions."""
-    normalized = re.sub(r"[\s_.-]+", "", (value or "").strip().lower())
-    return _ECOSYSTEM_ALIASES.get(normalized, normalized)
-
-
-def _purl_parts(purl: str) -> tuple[str, str, str]:
-    """Return the purl type, namespace and leaf name, or empty values.
-
-    Qualifiers, versions and fragments are intentionally excluded: installed
-    version is represented separately in the dedup identity.
-    """
-    value = (purl or "").strip()
-    if not value.lower().startswith("pkg:"):
-        return "", "", ""
-    body = value[4:].split("#", 1)[0].split("?", 1)[0]
-    if "/" not in body:
-        return "", "", ""
-    purl_type, path = body.split("/", 1)
-    path = path.rsplit("@", 1)[0]
-    parts = [unquote(part) for part in path.split("/") if part]
-    if not parts:
-        return "", "", ""
-    return purl_type, "/".join(parts[:-1]), parts[-1]
 
 
 def package_identity(package: Package) -> tuple[str, str, str, str]:
@@ -95,8 +45,9 @@ def package_identity(package: Package) -> tuple[str, str, str, str]:
     namespace-bearing package spellings are interpreted so they can still
     correlate with a purl-producing scanner.
     """
-    purl_type, namespace, purl_name = _purl_parts(package.purl)
-    ecosystem = _norm_ecosystem(package.ecosystem or purl_type)
+    # The version is a separate identity field, not part of the name.
+    purl_type, namespace, purl_name, _ = parse_purl(package.purl)
+    ecosystem = normalize_ecosystem(package.ecosystem or purl_type)
     name = (purl_name or package.name).strip()
 
     if not purl_name:
@@ -213,9 +164,9 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
         component = max(
             group,
             key=lambda r: (
-                bool(_purl_parts(r.package.purl)[1]),
+                bool(parse_purl(r.package.purl)[1]),
                 bool(r.package.purl),
-                bool(_norm_ecosystem(r.package.ecosystem)),
+                bool(normalize_ecosystem(r.package.ecosystem)),
             ),
         )
         pkg = component.package.model_copy(update={

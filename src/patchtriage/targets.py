@@ -500,14 +500,6 @@ def invalidate_result(target_id: str, workspace_id: str | None = None) -> None:
             candidate.unlink(missing_ok=True)
 
 
-def bump_input_revision(target_id: str, workspace_id: str | None = None,
-                        *, clear_overrides: bool = False) -> dict | None:
-    """Mark target context as changed and invalidate stale run artifacts."""
-    return update_target_inputs(
-        target_id, workspace_id=workspace_id,
-        clear_overrides=clear_overrides)
-
-
 def update_source_provenance_if_current(
         target_id: str, provenance: dict, expected_revision: int,
         expected_source_sha256: str,

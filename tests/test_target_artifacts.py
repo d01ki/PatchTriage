@@ -20,7 +20,7 @@ def test_stale_run_cannot_republish_report_after_input_change(
     )
     evaluated = targets.get_target(target["id"])
     assert evaluated is not None
-    targets.bump_input_revision(target["id"])
+    targets.update_target_inputs(target["id"])
 
     with pytest.raises(targets.StaleInputError, match="stale result"):
         targets.save_run_artifacts(
