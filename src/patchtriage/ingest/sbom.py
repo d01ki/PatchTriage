@@ -18,27 +18,22 @@ from __future__ import annotations
 
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 import httpx
 
 from ..models import Asset, Package, RawFinding, Severity
+from . import versions
 from .parsers import _prefer_cve, select_osv_fixed_version
+from .versions import is_concrete
 
 OSV_QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/"
 OSV_CACHE_MAX_AGE_HOURS = 24 * 7
 
-PYPI_JSON_URL = "https://pypi.org/pypi/{name}/json"
-NPM_LATEST_URL = "https://registry.npmjs.org/{name}/latest"
-REGISTRY_TIMEOUT_SECONDS = 15
-REGISTRY_MAX_WORKERS = 4
-MAX_REGISTRY_LOOKUPS = 200
 
 
 @dataclass
@@ -62,8 +57,8 @@ class OsvCoverage:
     unqueryable_names: list[str] = field(default_factory=list)
     queried_ecosystems: list[str] = field(default_factory=list)
     unqueryable_ecosystems: list[str] = field(default_factory=list)
-    # Components the SBOM listed without a version, checked at the latest
-    # registry release instead. That is what a fresh install resolves today,
+    # Components the SBOM listed without an exact version, checked at the
+    # newest registry release matching their declared constraint instead. That is what a fresh install resolves today,
     # not necessarily what is deployed, so it never counts as complete.
     inferred_components: int = 0
     inferred_versions: list[dict[str, str]] = field(default_factory=list)
@@ -169,10 +164,22 @@ def _components_cyclonedx(data: dict) -> list[Package]:
 
 
 def _components_spdx(data: dict) -> list[Package]:
+    # The package the document DESCRIBES is the SBOM's subject. GitHub
+    # records the repository itself that way at a branch ("main"), which is
+    # not a dependency and not a version OSV can check.
+    described = set(data.get("documentDescribes") or []) | {
+        r.get("relatedSpdxElement")
+        for r in data.get("relationships") or []
+        if isinstance(r, dict) and r.get("relationshipType") == "DESCRIBES"
+        and r.get("spdxElementId") == data.get("SPDXID", "SPDXRef-DOCUMENT")
+    }
     out: list[Package] = []
     for p in data.get("packages", []) or []:
         name = p.get("name", "")
         if not name:
+            continue
+        if (p.get("SPDXID") in described
+                and not is_concrete(p.get("versionInfo", ""))):
             continue
         purl = _purl_from_spdx_pkg(p)
         out.append(Package(
@@ -269,17 +276,6 @@ def _purl_has_version(purl: str) -> bool:
     return bool(_purl_version(purl))
 
 
-# A range or wildcard ("4.*.*", ">= 2.5", "^1.2") is a constraint, not an
-# installed version. OSV would match it as an opaque string and report
-# nothing, which reads as a clean result for a package that was never checked.
-_UNRESOLVED_VERSION_CHARS = set("*<>=~^|, ")
-
-
-def _is_resolved_version(value: str) -> bool:
-    value = str(value or "").strip()
-    return bool(value) and not (_UNRESOLVED_VERSION_CHARS & set(value))
-
-
 def _osv_ecosystem(value: str) -> str:
     normalized = str(value or "").strip().lower()
     return {
@@ -294,12 +290,85 @@ def _osv_ecosystem(value: str) -> str:
         "gem": "RubyGems",
         "cargo": "crates.io",
         "crates.io": "crates.io",
+        "composer": "Packagist",
+        "packagist": "Packagist",
+        "githubactions": "GitHub Actions",
+        "github actions": "GitHub Actions",
     }.get(normalized, value)
 
 
+def _purl_name(purl: str) -> str:
+    """``pkg:npm/%40scope/name@1`` -> ``@scope/name``."""
+    if not str(purl or "").startswith("pkg:"):
+        return ""
+    main = purl[4:].split("?", 1)[0].split("#", 1)[0]
+    path = main.split("/", 1)[1] if "/" in main else ""
+    at = path.rfind("@")
+    if at > 0:
+        path = path[:at]
+    return unquote(path)
+
+
+# OSV's query API does not compare versions in these ecosystems: a versioned
+# query for tj-actions/changed-files@45.0.7 returns nothing although
+# GHSA-mrrh-fwg8-r2c3 affects every version below 46.0.1 (checked
+# 2026-10-11). Query the package alone and evaluate the ranges locally.
+_LOCAL_RANGE_ECOSYSTEMS = {"GitHub Actions"}
+
+
 def _component_query(component: Package) -> dict | None:
+    query = _versioned_query(component)
+    ecosystem = _osv_ecosystem(component.ecosystem)
+    if query is not None and ecosystem in _LOCAL_RANGE_ECOSYSTEMS:
+        return {"package": {
+            "name": _purl_name(component.purl) or component.name,
+            "ecosystem": ecosystem}}
+    return query
+
+
+def _affects(vuln: dict, component: Package) -> bool:
+    """Whether an OSV record's ranges cover ``component``'s version.
+
+    Used only where OSV cannot match versions itself. A range that cannot
+    be evaluated keeps the finding: absent evidence is not proof of safety.
+    """
+    name = (_purl_name(component.purl) or component.name).lower()
+    ecosystem = _osv_ecosystem(component.ecosystem)
+    installed = versions.parse(component.version
+                               or _purl_version(component.purl))
+    for affected in vuln.get("affected") or []:
+        package = (affected or {}).get("package") or {}
+        if (str(package.get("name", "")).lower() != name
+                or package.get("ecosystem") != ecosystem):
+            continue
+        listed = {str(v).lstrip("vV") for v in affected.get("versions") or []}
+        if installed is None or str(installed) in listed or any(
+                versions.parse(v) == installed for v in listed):
+            return True
+        for range_ in affected.get("ranges") or []:
+            if range_.get("type") == "GIT":
+                continue
+            covered = versions.in_range(installed, range_.get("events") or [])
+            if covered is not False:
+                return True
+    return False
+
+
+def _versioned_query(component: Package) -> dict | None:
+    if component.version_source:
+        # Resolved by PatchTriage: query by ecosystem and name, since the
+        # purl still carries (or lacks) the original constraint.
+        return {
+            "package": {
+                "name": _purl_name(component.purl) or component.name,
+                "ecosystem": _osv_ecosystem(component.ecosystem)},
+            "version": component.version,
+        }
     purl_version = _purl_version(component.purl)
-    if not _is_resolved_version(purl_version or component.version):
+    # A range or wildcard ("4.*.*", ">= 2.5") is not an installed version.
+    # OSV would match it as an opaque string and report nothing, which reads
+    # as a clean result for a package that was never checked.
+    if not is_concrete(purl_version or component.version):
         return None
     if component.purl:
         query: dict[str, Any] = {"package": {"purl": component.purl}}
@@ -315,95 +384,45 @@ def _component_query(component: Package) -> dict | None:
     return None
 
 
-def _purl_name(purl: str) -> str:
-    """``pkg:npm/%40scope/name@1`` -> ``@scope/name``."""
-    if not str(purl or "").startswith("pkg:"):
-        return ""
-    main = purl[4:].split("?", 1)[0].split("#", 1)[0]
-    path = main.split("/", 1)[1] if "/" in main else ""
-    at = path.rfind("@")
-    if at > 0:
-        path = path[:at]
-    return unquote(path)
+def _resolve_versions(components: list[Package], client: httpx.Client
+                      ) -> tuple[list[Package], list[dict[str, str]],
+                                 list[str]]:
+    """Give components listed without an exact version a concrete release.
 
-
-def _registry_latest(ecosystem: str, name: str,
-                     client: httpx.Client) -> str:
-    """Latest stable release a fresh install would resolve, or ''."""
-    if ecosystem == "PyPI":
-        response = client.get(
-            PYPI_JSON_URL.format(name=quote(name, safe="")),
-            timeout=REGISTRY_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        info = response.json().get("info")
-        version = info.get("version") if isinstance(info, dict) else ""
-    elif ecosystem == "npm":
-        response = client.get(
-            NPM_LATEST_URL.format(name=quote(name, safe="@/")),
-            timeout=REGISTRY_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        version = response.json().get("version")
-    else:
-        return ""
-    version = str(version or "").strip()
-    if not _is_resolved_version(version) or len(version) > 64:
-        raise ValueError(f"registry returned no usable version for {name}")
-    return version
-
-
-def _resolve_unversioned(components: list[Package], client: httpx.Client
-                         ) -> tuple[list[Package], list[dict[str, str]],
-                                    list[str]]:
-    """Check versionless registry packages at their latest release.
-
-    GitHub's Dependency Graph drops range specifiers such as ``>=2.5`` and
-    lists the package with no version, so without this every application
-    dependency of a repository with no lockfile goes unchecked. The inferred
-    version is recorded on the package and in coverage; it is evidence about
-    a fresh install, not about what a particular deployment runs.
+    The SBOM may carry no version (GitHub drops ``>=2.5``) or a constraint
+    (``6.*.*``, ``^1.2``). Each is checked at the newest stable release that
+    satisfies it; see ``versions``. The inferred version is recorded on the
+    package and in coverage because it describes a fresh install, not what a
+    particular deployment runs.
     """
-    candidates: list[tuple[int, str, str]] = []
+    requests: list[versions.Request] = []
     for index, component in enumerate(components):
         if _component_query(component) is not None:
             continue
         ecosystem = _osv_ecosystem(component.ecosystem)
         name = _purl_name(component.purl) or component.name
-        if ecosystem in {"PyPI", "npm"} and name:
-            candidates.append((index, ecosystem, name))
-    if not candidates:
+        if ecosystem in versions.REGISTRIES and name:
+            constraint = (_purl_version(component.purl)
+                          or component.version).strip()
+            requests.append(versions.Request(index, ecosystem, name, constraint))
+    if not requests:
         return components, [], []
 
-    errors: list[str] = []
-    if len(candidates) > MAX_REGISTRY_LOOKUPS:
-        errors.append(
-            f"{len(candidates) - MAX_REGISTRY_LOOKUPS} versionless "
-            "component(s) exceeded the registry lookup limit")
-        candidates = candidates[:MAX_REGISTRY_LOOKUPS]
-
-    def lookup(candidate):
-        _, ecosystem, name = candidate
-        try:
-            return _registry_latest(ecosystem, name, client), ""
-        except (httpx.HTTPError, json.JSONDecodeError, AttributeError,
-                TypeError, ValueError) as exc:
-            return "", (f"{ecosystem} latest-version lookup for {name} "
-                        f"failed: {str(exc) or exc.__class__.__name__}")
-
-    with ThreadPoolExecutor(max_workers=REGISTRY_MAX_WORKERS) as pool:
-        outcomes = list(pool.map(lookup, candidates))
-
-    retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    results, errors = versions.resolve(requests, client)
+    retrieved_at = versions.retrieved_at()
     resolved = list(components)
     inferred: list[dict[str, str]] = []
-    for (index, ecosystem, name), (version, error) in zip(candidates, outcomes):
-        if error:
-            errors.append(error)
+    for result in results:
+        if result.error:
             continue
-        source = f"registry-latest:{ecosystem}@{retrieved_at}"
-        resolved[index] = components[index].model_copy(
-            update={"version": version, "version_source": source})
-        inferred.append({"name": name, "ecosystem": ecosystem,
-                         "version": version, "source": source})
+        request = result.request
+        source = (f"registry:{versions.REGISTRY_LABELS[request.ecosystem]}"
+                  f"@{retrieved_at}")
+        resolved[request.index] = components[request.index].model_copy(
+            update={"version": result.version, "version_source": source})
+        inferred.append({"name": request.name, "ecosystem": request.ecosystem,
+                         "constraint": request.constraint,
+                         "version": result.version, "source": source})
     return resolved, inferred, errors
 
 
@@ -501,7 +520,9 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
     """Resolve an SBOM and return findings with completeness evidence."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     components = parse_sbom_components(data)
-    if not components:
+    # An SPDX document listing only its own subject has no dependencies to
+    # check; that is an empty result, not a malformed SBOM.
+    if not components and not data.get("packages"):
         raise ValueError(f"{path}: SBOM parsed but contained no components")
 
     default_asset = asset or Asset(identifier=Path(path).name, kind="sbom")
@@ -509,7 +530,7 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
     cache_updates: dict[str, dict] = {}
     findings: list[RawFinding] = []
     with httpx.Client(headers={"user-agent": "patchtriage"}) as client:
-        components, inferred, resolution_errors = _resolve_unversioned(
+        components, inferred, resolution_errors = _resolve_versions(
             components, client)
         query_result = _query_ids(components, client, progress)
         coverage = query_result.coverage
@@ -533,6 +554,9 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
                     coverage.errors.append(f"{vid}: {message}")
                     continue
                 coverage.vulnerability_details_resolved += 1
+                if (_osv_ecosystem(pkg.ecosystem) in _LOCAL_RANGE_ECOSYSTEMS
+                        and not _affects(vuln, pkg)):
+                    continue
                 findings.append(raw_from_osv_vuln(vuln, pkg, default_asset))
     _osv_cache_save(cache_updates)
     return SbomLoadResult(findings, coverage)

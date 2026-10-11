@@ -210,9 +210,9 @@ def render_html(findings: list[Finding], actions: list[Action],
             more = (f" and {len(inferred) - 10} more"
                     if len(inferred) > 10 else "")
             warnings.append(
-                "Listed without a version; checked at the latest registry "
-                f"release (a fresh install, not necessarily what is "
-                f"deployed): {shown}{more}")
+                "Listed without an exact version; checked at the newest "
+                "registry release matching the declared constraint (a fresh "
+                f"install, not necessarily what is deployed): {shown}{more}")
         checked_ecosystems = [
             str(eco).lower()
             for eco in (coverage.get("queried_ecosystems") or [])
@@ -470,7 +470,7 @@ def render_html(findings: list[Finding], actions: list[Action],
         <tr>
           <td><span class="pri" style="background:{_PRI_COLOR.get(p, '#6B7280')}">{_esc(priority_definition(p)['ssvc_outcome'])}</span></td>
           <td class="mono">{_esc(f.vuln_id)}</td>
-          <td class="mono">{_esc(f.package.name)} {_esc(f.package.version)}{' <span class="small">(inferred: latest release)</span>' if f.package.version_source else ''}</td>
+          <td class="mono">{_esc(f.package.name)} {_esc(f.package.version)}{' <span class="small">(inferred: newest matching release)</span>' if f.package.version_source else ''}</td>
           <td class="num">{e.nvd_cvss_score or f.cvss_score or "–"}</td>
           <td class="num">{f"{e.epss_score:.3f}" if e.epss_score is not None else "–"}</td>
           <td class="num">{_kev_display(f, compact=True)}</td>

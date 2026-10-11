@@ -14,7 +14,7 @@ from patchtriage.ingest.parsers import (detect_sbom, load_file,
                                         load_file_with_metadata, parse_osv,
                                         select_osv_fixed_version)
 from patchtriage.ingest.sbom import (_fetch_vuln, _osv_cache_load,
-                                      _resolve_unversioned,
+                                      _resolve_versions,
                                       _osv_cache_save, _query_ids,
                                       IncompleteOsvCoverageError, is_sbom,
                                       parse_sbom_components,
@@ -374,12 +374,32 @@ def test_ranges_and_wildcards_are_not_sent_to_osv_as_versions(package):
     assert result.coverage.queried_components == 0
 
 
-class _RegistryClient:
-    """Fake PyPI/npm registry plus OSV querybatch, recording requests."""
+class _Stream:
+    def __init__(self, url, body):
+        self.url, self.body = url, body
 
-    def __init__(self, versions, failing=()):
-        self.versions = versions
-        self.failing = set(failing)
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def raise_for_status(self):
+        if self.body is None:
+            request = httpx.Request("GET", self.url)
+            raise httpx.HTTPStatusError(
+                "404", request=request,
+                response=httpx.Response(404, request=request))
+
+    def iter_bytes(self):
+        yield json.dumps(self.body).encode()
+
+
+class _RegistryClient:
+    """Fake registries keyed by URL substring, plus OSV querybatch."""
+
+    def __init__(self, routes):
+        self.routes = routes
         self.queries = []
 
     def __enter__(self):
@@ -388,52 +408,72 @@ class _RegistryClient:
     def __exit__(self, *args):
         return None
 
-    def get(self, url, **kwargs):
-        name = next((n for n in self.versions if f"/{n}/" in url
-                     or f"/{n.replace('/', '%2F')}/" in url), None)
-        request = httpx.Request("GET", url)
-        if name is None or name in self.failing:
-            raise httpx.ConnectError("registry unreachable", request=request)
-        version = self.versions[name]
-        if "pypi.org" in url:
-            return _BatchResponse({"info": {"version": version}})
-        return _BatchResponse({"version": version})
+    def stream(self, method, url, **kwargs):
+        body = next((b for part, b in self.routes.items() if part in url), None)
+        return _Stream(url, body)
 
     def post(self, url, json=None, **kwargs):
         self.queries.extend(json["queries"])
         return _BatchResponse({"results": [{} for _ in json["queries"]]})
 
 
-def test_versionless_registry_packages_are_checked_at_latest_release():
-    """GitHub's Dependency Graph drops ">=2.5" and lists no version at all."""
-    client = _RegistryClient({"pydantic": "2.11.7", "@scope/ui": "3.1.0"})
+def _pypi(*versions):
+    return {"releases": {v: [{"yanked": False}] for v in versions}}
+
+
+def test_versionless_and_wildcard_components_are_resolved_per_ecosystem():
+    """GitHub drops ">=2.5" entirely and records actions/checkout@v6 as 6.*.*."""
+    client = _RegistryClient({
+        "pypi.org/pypi/pydantic/": _pypi("2.10.0", "2.11.7", "3.0.0b1"),
+        "registry.npmjs.org/@scope/ui": {
+            "dist-tags": {"latest": "3.1.0"},
+            "versions": {"3.1.0": {}, "3.2.0-rc.1": {}, "2.9.9": {}}},
+        "repos/actions/checkout/git/matching-refs/tags": [
+            {"ref": "refs/tags/v5.0.0"}, {"ref": "refs/tags/v6.0.1"},
+            {"ref": "refs/tags/v6"}, {"ref": "refs/tags/v7.0.0-beta"}],
+    })
     packages = [
         Package(name="pydantic", ecosystem="pypi", purl="pkg:pypi/pydantic"),
         Package(name="@scope/ui", ecosystem="npm",
                 purl="pkg:npm/%40scope/ui"),
+        Package(name="actions/checkout", version="6.*.*",
+                ecosystem="githubactions",
+                purl="pkg:githubactions/actions/checkout@6.%2A.%2A"),
     ]
-    resolved, inferred, errors = _resolve_unversioned(packages, client)
+    resolved, inferred, errors = _resolve_versions(packages, client)
     assert errors == []
-    assert [p.version for p in resolved] == ["2.11.7", "3.1.0"]
-    assert all(p.version_source.startswith("registry-latest:")
-               for p in resolved)
-    assert [(i["name"], i["version"]) for i in inferred] == [
-        ("pydantic", "2.11.7"), ("@scope/ui", "3.1.0")]
+    assert [p.version for p in resolved] == ["2.11.7", "3.1.0", "6.0.1"]
+    assert all(p.version_source.startswith("registry:") for p in resolved)
+    assert inferred[2]["constraint"] == "6.*.*"
 
     result = _query_ids(resolved, client)
-    assert result.coverage.queried_components == 2
-    assert {"package": {"purl": "pkg:pypi/pydantic"},
+    assert result.coverage.queried_components == 3
+    assert {"package": {"name": "pydantic", "ecosystem": "PyPI"},
             "version": "2.11.7"} in client.queries
+    # OSV cannot compare GitHub Actions versions; ranges are checked locally.
+    assert {"package": {"name": "actions/checkout",
+                        "ecosystem": "GitHub Actions"}} in client.queries
 
 
-def test_failed_registry_lookup_stays_unchecked_and_visible():
-    client = _RegistryClient({"pydantic": "2.11.7"}, failing={"pydantic"})
-    packages = [Package(name="pydantic", ecosystem="pypi",
-                        purl="pkg:pypi/pydantic")]
-    resolved, inferred, errors = _resolve_unversioned(packages, client)
-    assert resolved[0].version == ""
+def test_unresolvable_refs_and_failed_lookups_stay_unchecked_and_visible():
+    client = _RegistryClient({})       # every registry request 404s
+    packages = [
+        Package(name="pydantic", ecosystem="pypi", purl="pkg:pypi/pydantic"),
+        # A branch ref is not a version constraint.
+        Package(name="pypa/gh-action-pypi-publish", version="release/v1",
+                ecosystem="githubactions",
+                purl="pkg:githubactions/pypa/gh-action-pypi-publish"
+                     "@release%2Fv1"),
+    ]
+    resolved, inferred, errors = _resolve_versions(packages, client)
+    assert [p.version_source for p in resolved] == ["", ""]
     assert inferred == []
-    assert "pydantic" in errors[0]
+    assert len(errors) == 2
+    assert any("pydantic" in error for error in errors)
+    assert any("release/v1" in error and "not a version range" in error
+               for error in errors)
+    # Neither is sent to OSV as though it had been checked.
+    assert _query_ids(resolved, client).coverage.queried_components == 0
 
 
 def test_inferred_versions_never_make_sbom_coverage_complete(monkeypatch,
@@ -450,11 +490,88 @@ def test_inferred_versions_never_make_sbom_coverage_complete(monkeypatch,
         }],
     }), encoding="utf-8")
     monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr(sbom.httpx, "Client",
-                        lambda **kwargs: _RegistryClient({"pydantic": "2.11.7"}))
+    monkeypatch.setattr(
+        sbom.httpx, "Client",
+        lambda **kwargs: _RegistryClient(
+            {"pypi.org/pypi/pydantic/": _pypi("2.11.7")}))
     result = load_file_with_metadata(sbom_path)
     assert result.coverage["queried_components"] == 1
     assert result.coverage["unqueryable_components"] == 0
     assert result.coverage["inferred_components"] == 1
     assert result.coverage["inferred_versions"][0]["version"] == "2.11.7"
     assert result.coverage["complete"] is False
+
+
+def _action_advisory(vid, events=None, versions_=None):
+    affected = {"package": {"name": "tj-actions/changed-files",
+                            "ecosystem": "GitHub Actions"}}
+    if events is not None:
+        affected["ranges"] = [{"type": "ECOSYSTEM", "events": events}]
+    if versions_ is not None:
+        affected["versions"] = versions_
+    return {"id": vid, "aliases": [], "affected": [affected]}
+
+
+@pytest.mark.parametrize("record, affected", [
+    (_action_advisory("A", [{"introduced": "0"}, {"fixed": "46.0.1"}]), True),
+    (_action_advisory("B", [{"introduced": "0"}, {"fixed": "45.0.8"}]), False),
+    (_action_advisory("C", [{"introduced": "45.0.0"},
+                            {"last_affected": "45.0.9"}]), True),
+    (_action_advisory("D", [{"introduced": "46.0.0"}]), False),
+    (_action_advisory("E", versions_=["v45.0.9"]), True),
+    (_action_advisory("F", [{"introduced": "0"}, {"fixed": "not-a-ver"}]),
+     True),                     # unevaluable: keep, never assume safe
+])
+def test_github_action_advisories_are_matched_against_ranges_locally(
+        record, affected):
+    from patchtriage.ingest.sbom import _affects
+    action = Package(name="tj-actions/changed-files", version="45.0.9",
+                     ecosystem="githubactions",
+                     purl="pkg:githubactions/tj-actions/changed-files@45.0.9")
+    assert _affects(record, action) is affected
+
+
+def test_sbom_load_drops_action_advisories_outside_the_installed_range(
+        monkeypatch, tmp_path):
+    import patchtriage.ingest.sbom as sbom
+    records = {
+        "GHSA-IN": _action_advisory(
+            "GHSA-IN", [{"introduced": "0"}, {"fixed": "46.0.1"}]),
+        "GHSA-OUT": _action_advisory(
+            "GHSA-OUT", [{"introduced": "0"}, {"fixed": "40.0.0"}]),
+    }
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, json=None, **kwargs):
+            assert json["queries"] == [{"package": {
+                "name": "tj-actions/changed-files",
+                "ecosystem": "GitHub Actions"}}]
+            return _BatchResponse({"results": [
+                {"vulns": [{"id": "GHSA-IN"}, {"id": "GHSA-OUT"}]}]})
+
+        def get(self, url, **kwargs):
+            return _BatchResponse(records[url.rsplit("/", 1)[1]])
+
+    sbom_path = tmp_path / "actions.spdx.json"
+    sbom_path.write_text(json.dumps({
+        "spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT",
+        "packages": [{
+            "name": "tj-actions/changed-files", "SPDXID": "SPDXRef-a",
+            "versionInfo": "45.0.9",
+            "externalRefs": [{
+                "referenceCategory": "PACKAGE-MANAGER",
+                "referenceType": "purl",
+                "referenceLocator":
+                    "pkg:githubactions/tj-actions/changed-files@45.0.9"}],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(sbom.httpx, "Client", lambda **kwargs: Client())
+    result = load_file_with_metadata(sbom_path)
+    assert [f.vuln_id for f in result.findings] == ["GHSA-IN"]

@@ -74,6 +74,25 @@ Every result carries source provenance and a coverage status:
   produced no package inventory; zero findings are therefore not a clean bill
   of health.
 
+### Components without an exact version
+
+Provider SBOMs often record what a manifest declares rather than what is
+installed. GitHub's Dependency Graph lists `pydantic>=2.5` with no version and
+`uses: actions/checkout@v6` as `6.*.*`. OSV can only match concrete versions,
+so PatchTriage checks such a component at the newest stable release that
+satisfies its constraint (the newest release when there is none), taken from
+PyPI, npm, crates.io, RubyGems, NuGet, the Go module proxy, Packagist, or the
+action repository's public tags. The version is labelled *inferred* in the
+summary, decision path, and report, and coverage stays `incomplete`: it
+describes a fresh install, not necessarily what is deployed.
+
+Refs such as `release/v1` or `main`, unsupported range syntax (`||`), Maven,
+and failed registry lookups stay unchecked and are named in the result. The
+SPDX document's own subject (GitHub's `pkg:github/owner/repo@main`) is not
+counted as a dependency. OSV's API does not compare GitHub Actions versions,
+so actions are queried by name and OSV's affected ranges are evaluated
+locally; a range that cannot be evaluated keeps the finding.
+
 `No findings reported` describes the record count only. It is never converted
 into “no vulnerabilities,” and any non-`complete` coverage status remains a
 prominent warning in both the GUI and HTML report. The summary retains

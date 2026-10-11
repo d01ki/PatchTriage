@@ -104,8 +104,8 @@ def test_inferred_versions_are_named_as_fresh_install_not_deployment():
     coverage["inferred_components"] = 9
     message = _result_message([], [], True, "provider_reported", coverage)
     assert "11 of 14" in message
-    assert "9 component(s) listed without a version" in message
-    assert "latest registry release" in message
+    assert "9 component(s) listed without an exact version" in message
+    assert "newest registry release" in message
     assert "no application dependency was actually assessed" not in message
 
 
@@ -113,5 +113,5 @@ def test_all_versions_inferred_still_is_not_a_clean_bill():
     coverage = _coverage(total=9, checked=9, skipped=0)
     coverage["inferred_components"] = 9
     message = _result_message([], [], True, "provider_reported", coverage)
-    assert "latest registry release" in message
+    assert "newest registry release" in message
     assert "lockfile" in message
