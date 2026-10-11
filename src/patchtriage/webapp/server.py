@@ -201,6 +201,9 @@ def _execute_job(job_id: str) -> None:
 
 
 def _start_job(workspace: str, target_id: str, backend: str) -> dict:
+    target = tstore.get_target(target_id, workspace)
+    if target is None:
+        raise RequestError("no such target", 404)
     with _JOB_LOCK:
         _prune_jobs_locked()
         active = next((job for job in _JOBS.values()
@@ -223,6 +226,8 @@ def _start_job(workspace: str, target_id: str, backend: str) -> dict:
             "job_id": job_id, "workspace": workspace,
             "target_id": target_id, "backend": backend,
             "state": "queued", "created_at": time.time(),
+            "input_revision": int(target.get("input_revision") or 0),
+            "source_sha256": str(target.get("source_sha256") or ""),
         }
         _JOBS[job_id] = job
     threading.Thread(target=_execute_job, args=(job_id,), daemon=True).start()
@@ -451,13 +456,29 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/fleet/summary":
             return self._send_json(fleetmod.aggregate_fleet(workspace))
         if path == "/api/jobs":
+            include_latest = "latest=1" in urlsplit(self.path).query.split("&")
             with _JOB_LOCK:
+                _prune_jobs_locked()
                 visible_jobs = [
-                    job
+                    dict(job)
                     for job in _JOBS.values()
                     if job["workspace"] == workspace
-                    and job["state"] in {"queued", "running"}
+                    and (include_latest or job["state"] in {"queued", "running"})
                 ]
+            if include_latest:
+                # A refresh must recover a just-finished or failed run, but
+                # never resurrect a job for superseded evidence/context.
+                current = {t["id"]: t for t in tstore.load_targets(workspace)}
+                latest = {}
+                for job in sorted(visible_jobs, key=lambda j: j["created_at"]):
+                    target = current.get(job["target_id"])
+                    if (target is not None
+                            and job.get("input_revision") == int(
+                                target.get("input_revision") or 0)
+                            and job.get("source_sha256") == str(
+                                target.get("source_sha256") or "")):
+                        latest[job["target_id"]] = job
+                visible_jobs = list(latest.values())
             jobs = [_public_job(job) for job in visible_jobs]
             return self._send_json(jobs)
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{24})", path)

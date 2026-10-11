@@ -233,6 +233,47 @@ def test_jobs_are_isolated_by_anonymous_session(enhanced_server):
     assert _poll_job(owner, enhanced_server, job["job_id"])["state"] == "succeeded"
 
 
+def test_latest_jobs_recovers_completed_run_without_leaking_sessions(enhanced_server):
+    owner, stranger = _opener(), _opener()
+    target = _create_demo(owner, enhanced_server)
+    _, job = _api(owner, "POST", enhanced_server +
+                  f"/api/targets/{target['id']}/runs", {"backend": "rules"})
+    _poll_job(owner, enhanced_server, job["job_id"])
+    assert _api(owner, "GET", enhanced_server + "/api/jobs") == (200, [])
+    status, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert status == 200 and len(latest) == 1
+    assert latest[0]["summary"]["total"] == 4
+    assert "workspace" not in latest[0]
+    assert _api(stranger, "GET", enhanced_server + "/api/jobs?latest=1") == (200, [])
+    _api(owner, "POST", enhanced_server + f"/api/targets/{target['id']}/context",
+         {"system_exposure": "controlled"})
+    assert _api(owner, "GET", enhanced_server + "/api/jobs?latest=1") == (200, [])
+
+
+def test_latest_jobs_preserves_failure_and_replaces_it_after_retry(
+        enhanced_server, monkeypatch):
+    owner = _opener()
+    target = _create_demo(owner, enhanced_server)
+    real_run = webserver.run_target
+
+    def fail_run(*args, **kwargs):
+        raise RuntimeError("fixture pipeline failed")
+
+    monkeypatch.setattr(webserver, "run_target", fail_run)
+    path = enhanced_server + f"/api/targets/{target['id']}/runs"
+    _, job = _api(owner, "POST", path, {"backend": "rules"})
+    assert _poll_job(owner, enhanced_server, job["job_id"])["state"] == "failed"
+    _, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert latest[0]["state"] == "failed"
+    assert "fixture pipeline failed" in latest[0]["error"]
+    monkeypatch.setattr(webserver, "run_target", real_run)
+    _, retry = _api(owner, "POST", path, {"backend": "rules"})
+    _poll_job(owner, enhanced_server, retry["job_id"])
+    _, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert len(latest) == 1 and latest[0]["job_id"] == retry["job_id"]
+    assert latest[0]["summary"]["total"] == 4
+
+
 def test_uploaded_source_exposes_filename_hash_and_size(enhanced_server):
     opener = _opener()
     status, target = _api(

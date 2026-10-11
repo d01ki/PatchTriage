@@ -563,12 +563,18 @@ def save_run_artifacts(target_id: str, summary: dict, report_html: str,
             summary_tmp.unlink(missing_ok=True)
             report.unlink(missing_ok=True)
             raise
-        legacy = report_path(target_id, workspace_id)
-        legacy.unlink(missing_ok=True)
-        for candidate in targets_dir(workspace_id).glob(
-                f"{target_id}_report_*.html"):
+        # The manifest above is the commit point. A viewer or antivirus may
+        # still hold an older report open (especially on Windows); cleanup
+        # must not turn an already published assessment into a failed job.
+        obsolete = [report_path(target_id, workspace_id)]
+        obsolete.extend(targets_dir(workspace_id).glob(
+            f"{target_id}_report_*.html"))
+        for candidate in obsolete:
             if candidate != report:
-                candidate.unlink(missing_ok=True)
+                try:
+                    candidate.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def load_summary(target_id: str, workspace_id: str | None = None) -> dict | None:

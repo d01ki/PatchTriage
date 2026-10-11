@@ -85,11 +85,11 @@ The repository workflow stays in the browser; no host path or Python virtual
 environment is required:
 
 1. Run `./run.sh` and open the printed localhost URL.
-2. In the **Add a target** panel, enter a system name, answer the SSVC context
+2. Select **+ Add target**, enter a system name, answer the SSVC context
    questions you know, and select **Add target**.
-3. On the new target, select **Import repository**.
+3. In the selected target's workspace, select **Import repository**.
 4. Paste the HTTPS repository URL and select **Import evidence**.
-5. After the imported component count appears, select **Run**.
+5. After the imported component count appears, select **Run triage**.
 6. Select **Open full report** when the assessment finishes.
 
 For a public GitHub repository, no token is required until GitHub's anonymous
@@ -386,11 +386,15 @@ SSVC produces a categorical deployment decision, not a numerical risk score.
 The day targets are PatchTriage workflow defaults; they are not additional
 CERT/CC decision values. Organizations should map them to their own policy.
 
-In the GUI, **Patch decisions** opens with a donut chart and the number of
-Immediate, Out-of-Cycle, Scheduled and Defer findings across all assessed
-targets. Each target result then shows:
+The desktop GUI keeps the target list on the left and the selected result on
+the right. At typical laptop viewport sizes (1280×720 and 1366×768), the demo's
+Decision path, sources, and report links fit without scrolling the page.
+Long queues and detailed evidence scroll within their tab; narrow screens
+use a stacked layout. **How it works** opens the model explanation separately.
 
-- its own outcome breakdown;
+**Patch decisions** shows a compact outcome breakdown across assessed targets.
+Select a target to see its highest-priority action and four result tabs:
+
 - **Decision path**: pick a finding to see its route through the CERT/CC
   Deployer tree (Exploitation → System Exposure → Automatable → Human
   Impact → outcome), the alternatives at each level, and what each Human
@@ -399,8 +403,21 @@ targets. Each target result then shows:
   finding are listed below the tree;
 - **Action queue**: one row per package change with its SSVC outcome,
   workflow target, CISA BOD 26-04 result and effective deadline;
-- **Open full report** and **Download HTML report** for the self-contained
-  report.
+- **Evidence & policy**: the highest-priority finding's supporting signals,
+  policy details, audit evidence, and optional ranking comparison;
+- **Review inputs**: confirm vulnerability-specific SSVC inputs and rerun.
+
+**Open full report** and **Download HTML report** remain above the tabs.
+**Review context** opens the target form; **Manage evidence** lets you replace
+the scan/SBOM or import a repository. The full report retains all findings and
+actions, including any beyond the GUI's display limits.
+
+**Run all** queues work within the advertised concurrency limit. Brief polling
+failures reconnect to the same server job; longer interruptions offer a
+reconnect action rather than claiming that triage failed. Refreshing restores
+current results, recent job failures, active jobs, and this tab's queued work.
+Queued work is tied to the target's input revision, so changing the evidence
+does not silently run a previously queued assessment against new inputs.
 
 ### Where GUI data is stored
 
@@ -792,6 +809,7 @@ reported and disabled rather than implemented as a separate interface.
 ```bash
 python -m pip install -e ".[dev]"
 pytest -q
+node --test tests/webapp_state.test.cjs  # GUI recovery/queue tests; Node 20+
 patchtriage verify --repeats 25 --output verification_report.json
 ```
 
