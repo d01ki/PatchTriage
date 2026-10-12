@@ -588,3 +588,51 @@ def fetch_repository_sbom(
             f"repository provider '{reference.provider}' is not supported; "
             "only github.com Dependency Graph SBOM imports are available")
     return fetch_github_sbom(reference, **kwargs)
+
+
+@dataclass(frozen=True)
+class RepositoryEvidence:
+    """Evidence acquired from a repository URL, ready for ingestion."""
+
+    content: str
+    format: str
+    provenance: dict[str, Any]
+
+
+def generic_repository_enabled() -> bool:
+    """Generic HTTPS Git scanning is opt-in and never offered when public."""
+    mode = os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower()
+    enabled = os.environ.get(
+        "PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES", "false").lower()
+    return mode != "public" and enabled in {"1", "true", "yes", "on"}
+
+
+def acquire_repository_evidence(
+    repository_url: str,
+    *,
+    github_token: str | None,
+    max_bytes: int,
+    allow_generic: bool,
+) -> RepositoryEvidence:
+    """Acquire evidence for a repository URL the same way for GUI and CLI.
+
+    github.com uses the Dependency Graph SBOM (no clone, no execution). Other
+    HTTPS Git hosts are statically scanned only when ``allow_generic``.
+    """
+    reference = normalize_repository_url(repository_url)
+    if reference.provider == "github":
+        imported = fetch_repository_sbom(
+            reference, github_token=github_token, max_bytes=max_bytes)
+        return RepositoryEvidence(
+            imported.content, "spdx", imported.provenance.to_dict())
+    if not allow_generic:
+        raise RepositoryError(
+            "this deployment imports public GitHub repositories; "
+            "generic HTTPS Git scanning is available only in an "
+            "explicitly enabled local/Docker deployment")
+    from .repository_local import scan_public_repository
+
+    scanned = scan_public_repository(
+        reference.normalized_url, max_output_bytes=max_bytes)
+    return RepositoryEvidence(
+        scanned.content, scanned.format, scanned.provenance)

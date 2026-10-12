@@ -31,10 +31,9 @@ from ..repository import (
     RepositoryNotFoundError,
     RepositoryRateLimitError,
     RepositoryTooLargeError,
-    fetch_repository_sbom,
-    normalize_repository_url,
+    acquire_repository_evidence,
+    generic_repository_enabled,
 )
-from ..repository_local import scan_public_repository
 from ..triage.providers import has_ai_configuration, resolve_provider_name
 from .page import INDEX_HTML
 from .runner import MAX_WEB_SSVC_INPUTS, run_target
@@ -81,10 +80,7 @@ def _validate_backend(backend: str) -> str:
 
 
 def _generic_repository_enabled() -> bool:
-    mode = os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower()
-    enabled = os.environ.get(
-        "PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES", "false").lower()
-    return mode != "public" and enabled in {"1", "true", "yes", "on"}
+    return generic_repository_enabled()
 
 
 def _github_import_token() -> str | None:
@@ -766,29 +762,15 @@ class Handler(BaseHTTPRequestHandler):
                 )
             try:
                 try:
-                    reference = normalize_repository_url(repository_url)
-                    if reference.provider == "github":
-                        imported = fetch_repository_sbom(
-                            reference,
-                            github_token=_github_import_token(),
-                            max_bytes=MAX_SOURCE_BYTES,
-                        )
-                        content = imported.content
-                        fmt = "spdx"
-                        provenance = imported.provenance.to_dict()
-                    elif _generic_repository_enabled():
-                        scanned = scan_public_repository(
-                            reference.normalized_url,
-                            max_output_bytes=MAX_SOURCE_BYTES,
-                        )
-                        content = scanned.content
-                        fmt = scanned.format
-                        provenance = scanned.provenance
-                    else:
-                        raise RepositoryError(
-                            "this deployment imports public GitHub repositories; "
-                            "generic HTTPS Git scanning is available only in an "
-                            "explicitly enabled local/Docker deployment")
+                    evidence = acquire_repository_evidence(
+                        repository_url,
+                        github_token=_github_import_token(),
+                        max_bytes=MAX_SOURCE_BYTES,
+                        allow_generic=_generic_repository_enabled(),
+                    )
+                    content = evidence.content
+                    fmt = evidence.format
+                    provenance = evidence.provenance
                 except RepositoryRateLimitError as exc:
                     return self._send_json({"error": str(exc)}, 429)
                 except RepositoryAccessDeniedError as exc:

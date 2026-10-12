@@ -399,7 +399,8 @@ def test_repository_endpoint_saves_source_and_provenance(
         return RepositorySbom(content=content, provenance=provenance)
 
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    monkeypatch.setattr(webserver, "fetch_repository_sbom", fake_fetch)
+    monkeypatch.setattr(
+        "patchtriage.repository.fetch_repository_sbom", fake_fetch)
     status, imported = _api(
         opener, "POST",
         f"{enhanced_server}/api/targets/{target['id']}/repository",

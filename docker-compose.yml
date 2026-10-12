@@ -76,6 +76,8 @@ services:
       - GITHUB_TOKEN
       - GH_TOKEN
       - PATCHTRIAGE_IN_CONTAINER=1
+      # Same repository import paths as the local GUI (see the gui service).
+      - PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=${PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES:-true}
     volumes:
       - ./:/work
       - ./out:/out
