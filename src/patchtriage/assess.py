@@ -159,16 +159,17 @@ def result_message(findings: list, actions: list, incomplete: bool,
     return "The attached evidence reported no vulnerability findings."
 
 
-def _load(path: Path, fmt: str | None, asset: Asset | None, progress):
+def _load(path: Path, fmt: str | None, asset: Asset | None):
     """Load one file, applying target context the same way for every caller.
 
     A named asset replaces the scanner's asset; an unnamed one only fills in
     the context values that were actually supplied.
     """
     replace_identity = bool(asset and asset.identifier)
+    # The loader's own progress hook reports (done, total) batch counts, not
+    # messages, so it is deliberately not wired to ``progress``.
     loaded = load_file_with_metadata(
-        path, fmt=fmt, asset=asset if replace_identity else None,
-        progress=progress)
+        path, fmt=fmt, asset=asset if replace_identity else None)
     if asset and not replace_identity:
         updates = {
             key: getattr(asset, key) for key in _ASSET_CONTEXT_FIELDS
@@ -211,7 +212,7 @@ def assess(
     file_coverage = []
     for path in files:
         progress(f"reading {path} (SBOMs are resolved online via OSV.dev)...")
-        loaded = _load(Path(path), fmt, asset, progress)
+        loaded = _load(Path(path), fmt, asset)
         progress(f"ingested {len(loaded.findings):>5} findings from {path}")
         raw += loaded.findings
         file_coverage.append(dict(loaded.coverage or {}))

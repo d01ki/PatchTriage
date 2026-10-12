@@ -116,3 +116,42 @@ def test_file_coverage_merge_never_hides_an_incomplete_file():
     assert merged["source_type"] == "scanner:trivy+sbom:osv"
     single = {"source_type": "scanner:grype", "complete": True}
     assert assessmod.merge_file_coverage([single]) == single
+
+
+def test_cli_progress_output_survives_a_real_sbom_load(monkeypatch, tmp_path):
+    """The SBOM loader reports (done, total); the CLI prints messages."""
+    import patchtriage.ingest.sbom as sbom
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": [{}, {}]}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, *args, **kwargs):
+            return Response()
+
+    _offline(monkeypatch)
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(sbom.httpx, "Client", Client)
+    report = tmp_path / "report.json"
+
+    result = CliRunner().invoke(
+        cli.app, ["run", str(FIX / "sbom_spdx.json"), "-o", str(report)])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["coverage"]["queried_components"] == 2
