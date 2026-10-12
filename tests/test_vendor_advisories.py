@@ -223,6 +223,43 @@ def test_exploitdb_is_queried_live_and_never_written_to_disk(
     assert assess(hit).exploitation.value == "public_poc"
 
 
+def test_per_cve_lookups_overlap_within_the_concurrency_bound(
+        tmp_path, monkeypatch):
+    # Sequential per-CVE lookups pushed a 33-CVE SBOM past the GUI's
+    # synchronous request timeout; they must overlap, but only boundedly.
+    import threading
+    import time
+
+    from patchtriage.enrich import vendors
+
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    lock = threading.Lock()
+    active = peak = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+        return httpx.Response(200, json={"draw": 1, "data": []})
+
+    findings = []
+    for n in range(12):
+        finding = _finding()
+        finding.vuln_id = f"CVE-2020-{n:04d}"
+        findings.append(finding)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        summary = enrich_vendor_advisories(findings, sources="exploitdb",
+                                           client=client)
+    assert summary["errors"] == 0
+    assert 1 < peak <= vendors.PER_CVE_CONCURRENCY
+    assert all("exploitdb" in f.enrichment.exploit_sources_checked
+               for f in findings)
+
+
 def test_failed_exploitdb_search_is_not_reported_as_searched(
         tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))

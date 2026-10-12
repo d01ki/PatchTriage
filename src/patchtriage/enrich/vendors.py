@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import httpx
@@ -25,6 +26,8 @@ GHSA_URL = "https://api.github.com/advisories"
 # live for every run and never written to disk.
 EXPLOITDB_URL = "https://www.exploit-db.com/search"
 EXPLOITDB_MAX_RESULTS = 10
+# Concurrent per-CVE requests shared across Exploit-DB, MSRC, Ubuntu and GHSA.
+PER_CVE_CONCURRENCY = 4
 MSRC_GUIDE_URL = "https://msrc.microsoft.com/update-guide/vulnerability/"
 
 ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa", "exploitdb")
@@ -270,6 +273,14 @@ def auto_sources(finding: Finding) -> tuple[str, ...]:
 
 def _fetch_one(source: str, cve: str, client: httpx.Client,
                github_token: str | None) -> list[dict]:
+    if source == "exploitdb":
+        response = client.get(EXPLOITDB_URL, params={
+            "cve": cve.upper().removeprefix("CVE-"), "draw": "1",
+            "start": "0", "length": str(EXPLOITDB_MAX_RESULTS),
+        }, headers={"X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        return parse_exploitdb(response.json(), cve)
     if source == "msrc":
         response = client.get(f"{MSRC_URL}{cve}", timeout=30)
         if response.status_code == 404:  # Microsoft has no record for it
@@ -366,28 +377,22 @@ def enrich_vendor_advisories(
                 for cve in source_cves["debian"]:
                     cache["debian"][cve] = parse_debian(debian, cve)
 
-        # Exploit-DB is searched live per CVE; results stay in memory only.
-        for cve in sorted(source_cves["exploitdb"]):
-            try:
-                response = client.get(EXPLOITDB_URL, params={
-                    "cve": cve.upper().removeprefix("CVE-"), "draw": "1",
-                    "start": "0", "length": str(EXPLOITDB_MAX_RESULTS),
-                }, headers={"X-Requested-With": "XMLHttpRequest",
-                            "Accept": "application/json"}, timeout=30)
-                response.raise_for_status()
-                cache["exploitdb"][cve] = parse_exploitdb(response.json(), cve)
-            except (httpx.HTTPError, ValueError, TypeError,
-                    KeyError, AttributeError) as exc:
-                errors[("exploitdb", cve)] = str(exc)
+        # Per-CVE lookups (Exploit-DB is always live; results stay in memory
+        # only) run a few at a time so a large SBOM stays within request time.
+        token = (github_token or os.environ.get("GITHUB_TOKEN")
+                 or os.environ.get("GH_TOKEN"))
+        jobs = [(source, cve) for source in ("exploitdb", "msrc", "usn", "ghsa")
+                for cve in sorted(source_cves[source])
+                if cve not in cache[source]]
 
-        for source in ("msrc", "usn", "ghsa"):
-            for cve in sorted(source_cves[source]):
-                if cve in cache[source]:
-                    continue
+        def lookup(job: tuple[str, str]) -> list[dict]:
+            return _fetch_one(job[0], job[1], client, token)
+
+        with ThreadPoolExecutor(max_workers=PER_CVE_CONCURRENCY) as pool:
+            futures = {pool.submit(lookup, job): job for job in jobs}
+            for future, (source, cve) in futures.items():
                 try:
-                    cache[source][cve] = _fetch_one(
-                        source, cve, client, github_token or
-                        os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+                    cache[source][cve] = future.result()
                 except (httpx.HTTPError, ValueError, TypeError,
                         KeyError, AttributeError) as exc:
                     errors[(source, cve)] = str(exc)
