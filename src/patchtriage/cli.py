@@ -33,20 +33,12 @@ from rich.console import Console
 from rich.table import Table
 
 from . import config as cfgmod
-from .context import apply_context, load_inventory
-from .dedup import dedup
-from .enrich.clients import enrich
-from .evalcmp import evaluate
-from .ingest.parsers import load_file
+from .assess import assess, result_message
 from .models import Asset
-from .bod2604 import apply_policy as apply_response_policy
 from .bod2604 import summarize as summarize_response_policy
-from .plan import Action, build_plan
+from .plan import Action
 from .presentation import priority_definition
 from .report.html import render_html
-from .ssvc import ssvc_order_key
-from .triage.audit import audit_all
-from .triage.engine import get_backend, run_triage, run_triage_batch
 from .triage.providers import has_ai_configuration
 
 app = typer.Typer(
@@ -76,95 +68,25 @@ def _load_config() -> None:
 def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
               triage_backend, model, limit, escalation_model=None, jobs=4,
               batch=False, vendor_sources="auto", github_token=None,
-              ai_provider=None, ai_base_url=None, use_vulnrichment=True):
-    # Layer 1 - ingest
-    raw = []
-    for f in files:
-        with console.status(f"reading {f} "
-                            "(SBOMs are resolved online via OSV.dev)..."):
-            replace_identity = bool(
-                asset_override and asset_override.identifier)
-            parsed = load_file(
-                f, fmt=fmt,
-                asset=asset_override if replace_identity else None,
-            )
-            if asset_override and not replace_identity:
-                updates = {
-                    key: value for key, value in {
-                        "criticality": asset_override.criticality,
-                        "internet_exposed": asset_override.internet_exposed,
-                        "reachable": asset_override.reachable,
-                        "runtime_observed": asset_override.runtime_observed,
-                        "system_exposure": asset_override.system_exposure,
-                        "automatable": asset_override.automatable,
-                        "mission_impact": asset_override.mission_impact,
-                        "safety_impact": asset_override.safety_impact,
-                        "publicly_exposed": asset_override.publicly_exposed,
-                        "bod2604_applicability":
-                            asset_override.bod2604_applicability,
-                    }.items()
-                    if value is not None and value != "unknown"
-                }
-                for raw_finding in parsed:
-                    raw_finding.asset = raw_finding.asset.model_copy(
-                        update=updates)
-        console.print(f"[dim]ingested {len(parsed):>5} findings from {f}[/dim]")
-        raw += parsed
-
-    # Layer 2 - dedup
-    findings = dedup(raw)
-    console.print(f"[bold]{len(raw)} raw -> {len(findings)} deduplicated findings[/bold]")
-
-    # Layer 4 - context (before triage so the AI sees it)
-    if inventory_path:
-        matched = apply_context(findings, load_inventory(inventory_path))
-        console.print(f"[dim]asset context applied to {matched} findings "
-                      f"from {inventory_path}[/dim]")
-
-    # Layer 3 - enrich
-    source_label = " + vendor advisories" if vendor_sources else ""
-    with console.status(
-            f"enriching with EPSS / CISA KEV / Vulnrichment / NVD{source_label}..."):
-        enrich(findings, nvd_api_key=nvd_api_key, use_nvd=use_nvd,
-               vendor_sources=vendor_sources, github_token=github_token,
-               use_vulnrichment=use_vulnrichment)
-
-    # Layer 5 - deterministic SSVC screening comes before --limit. Scanner
-    # severity alone must never exclude a low-CVSS KEV or context-urgent item.
-    rules_backend = get_backend("rules")
-    run_triage(findings, rules_backend, jobs=1)
-    ranked = sorted(findings, key=ssvc_order_key)
-    subset = ranked[:limit] if limit else ranked
-    if batch and triage_backend in {"ai", "claude"}:
-        run_triage_batch(
-            subset,
-            model,
-            progress=lambda msg: console.print(f"[dim]{msg}[/dim]"),
-            provider=("anthropic" if triage_backend == "claude"
-                      else ai_provider),
-        )
-    elif batch:
-        raise ValueError(
-            "--batch is supported only with the 'ai' backend and the "
-            "Anthropic provider"
-        )
-    elif triage_backend != "rules":
-        backend = get_backend(
-            triage_backend,
-            model,
-            escalation_model,
-            provider=ai_provider,
-            base_url=ai_base_url,
-        )
-        n_jobs = max(1, jobs)
-        with console.status(f"triaging {len(subset)} findings via "
-                            f"'{triage_backend}' ({n_jobs} workers)..."):
-            run_triage(subset, backend, jobs=n_jobs)
-        if triage_backend == "cascade":
-            esc = sum(1 for f in subset
-                      if (f.triage or {}).get("escalated"))
-            console.print(f"[dim]cascade: {esc}/{len(subset)} findings "
-                          f"escalated to the frontier model[/dim]")
+              ai_provider=None, ai_base_url=None, use_vulnrichment=True,
+              provider_status="provider_reported"):
+    # Local files are treated exactly like a GUI upload: the scanner chose
+    # its scope, so coverage is reported rather than independently verified.
+    result = assess(
+        files, fmt=fmt, asset=asset_override, inventory=inventory_path,
+        provider_status=provider_status,
+        use_nvd=use_nvd, nvd_api_key=nvd_api_key,
+        vendor_sources=vendor_sources, github_token=github_token,
+        use_vulnrichment=use_vulnrichment, backend=triage_backend,
+        model=model, escalation_model=escalation_model,
+        ai_provider=ai_provider, ai_base_url=ai_base_url, jobs=jobs,
+        batch=batch, limit=limit,
+        progress=lambda msg: console.print(f"[dim]{msg}[/dim]"))
+    subset = result.subset
+    if triage_backend == "cascade":
+        esc = sum(1 for f in subset if (f.triage or {}).get("escalated"))
+        console.print(f"[dim]cascade: {esc}/{len(subset)} findings "
+                      f"escalated to the frontier model[/dim]")
     fell_back = sum(1 for f in subset
                     if (f.triage or {}).get("backend") == "rules_fallback")
     if fell_back:
@@ -172,7 +94,7 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
                       f"baseline after API errors (tagged in the report)[/yellow]")
 
     # Audit - every AI decision is machine-verified against its signals
-    summary = audit_all(subset)
+    summary = result.audit
     if summary["flagged"]:
         console.print(f"[yellow]audit: {summary['verified']}/{summary['total']} "
                       f"decisions verified; {len(summary['flagged'])} flagged "
@@ -182,34 +104,34 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
     else:
         console.print(f"[green]audit: {summary['verified']}/{summary['total']} "
                       f"decisions verified against deterministic signals[/green]")
-
-    # Separate response policy: CISA BOD 26-04 is evaluated next to, never
-    # instead of, the SSVC Deployer result.
-    apply_response_policy(findings)
-
-    # Layer 6 - plan
-    actions = build_plan(subset)
-    # practicality evaluation
-    eval_rows = evaluate(subset)
-    return findings, subset, actions, eval_rows
+    return result
 
 
-def _emit(findings, subset, actions, eval_rows, output, html):
-    _print_actions(actions)
-    _print_eval(eval_rows)
-    _print_decision_quality(subset)
+def _emit(result, output, html):
+    _print_actions(result.actions)
+    _print_eval(result.eval_rows)
+    _print_decision_quality(result.subset)
+    coverage = result.coverage
+    message = result_message(
+        result.findings, result.actions, not coverage.get("complete"),
+        str(coverage.get("status") or ""), coverage)
+    if message:
+        console.print(f"[yellow]{message}[/yellow]")
     if html:
         html_path = Path(html)
         html_path.parent.mkdir(parents=True, exist_ok=True)
-        html_path.write_text(render_html(subset, actions, eval_rows),
-                             encoding="utf-8")
+        html_path.write_text(
+            render_html(result.subset, result.actions, result.eval_rows,
+                        coverage=coverage),
+            encoding="utf-8")
         console.print(f"HTML report: [bold]{_output_location(html_path)}[/bold]")
     if output:
         report = {
-            "findings": [f.model_dump(mode="json") for f in findings],
-            "actions": [a.model_dump(mode="json") for a in actions],
-            "evaluation": [r.model_dump(mode="json") for r in eval_rows],
-            "response_policy": summarize_response_policy(findings),
+            "findings": [f.model_dump(mode="json") for f in result.findings],
+            "actions": [a.model_dump(mode="json") for a in result.actions],
+            "evaluation": [r.model_dump(mode="json") for r in result.eval_rows],
+            "response_policy": summarize_response_policy(result.findings),
+            "coverage": coverage,
         }
         output_path = Path(output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -313,14 +235,14 @@ def run(
                          safety_impact=ssvc_safety_impact,
                          publicly_exposed=publicly_exposed,
                          bod2604_applicability=bod2604)
-    findings, subset, actions, eval_rows = _pipeline(
+    result = _pipeline(
         files, fmt, override, assets, not no_nvd, nvd_api_key, triage, model,
         limit, escalation_model=escalation_model, jobs=jobs, batch=batch,
         vendor_sources=None if no_vendor_advisories else vendor_sources,
         github_token=github_token or os.environ.get("GH_TOKEN"),
         ai_provider=provider, ai_base_url=ai_base_url,
         use_vulnrichment=not no_vulnrichment)
-    _emit(findings, subset, actions, eval_rows, output, html)
+    _emit(result, output, html)
 
 
 def _prompt_existing_path(
@@ -955,7 +877,7 @@ def start():
     output = typer.prompt("JSON report path", default=output_default).strip()
 
     try:
-        findings, subset, actions, eval_rows = _pipeline(
+        result = _pipeline(
             files, None, override, inventory, use_nvd,
             os.environ.get("NVD_API_KEY"), backend, None, None,
             vendor_sources="auto",
@@ -964,11 +886,11 @@ def start():
     except ValueError as exc:  # unrecognized format
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
-    _emit(findings, subset, actions, eval_rows, Path(output), Path(html))
+    _emit(result, Path(output), Path(html))
     _offer_browser(Path(html))
     if any(
         action.kind == "upgrade" and action.target_version
-        for action in actions
+        for action in result.actions
     ):
         console.print(
             "\n[bold]5. Local patch[/bold] - PatchTriage can now prepare "
@@ -1163,10 +1085,12 @@ def demo(
                            encoding="utf-8")
 
     try:
-        findings, subset, actions, eval_rows = _pipeline(
+        result = _pipeline(
             files, None, None, assets_yaml, True, None, "rules", None, None,
-            vendor_sources=None)
-        _emit(findings, subset, actions, eval_rows, output, html)
+            vendor_sources=None,
+            # Bundled fixtures, exactly like the GUI's demo target.
+            provider_status="complete")
+        _emit(result, output, html)
     finally:
         if previous_cache_dir is None:
             os.environ.pop("PATCHTRIAGE_CACHE_DIR", None)

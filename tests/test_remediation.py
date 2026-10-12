@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from patchtriage.assess import Assessment
 from patchtriage.cli import app
 from patchtriage.plan import Action
 from patchtriage.remediation import (
@@ -318,7 +319,7 @@ def test_start_offers_guided_remediation_after_report(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "patchtriage.cli._pipeline",
-        lambda *_args, **_kwargs: ([], [], [_action()], []),
+        lambda *_args, **_kwargs: Assessment([], [], [_action()], [], {}),
     )
     monkeypatch.setattr(
         "patchtriage.cli._emit", lambda *_args, **_kwargs: None
