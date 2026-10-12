@@ -80,6 +80,43 @@ The input manifest contains SHA-256 hashes for the official expectation data,
 fixed scanner samples, frozen enrichment snapshots, target inventory, SSVC
 engine, and GUI-to-engine target conversion.
 
+## CISA BOD 26-04 policy checks
+
+`patchtriage verify` covers the SSVC Deployer only; it is not BOD
+verification. The separate BOD 26-04 policy (`cisa:DT_BOD2604:1.0.0`) is
+checked by the offline test suite:
+
+```bash
+python -m pytest tests/test_bod2604.py -q
+```
+
+Expected outcomes live in `tests/fixtures/bod2604_decision_table.json`,
+transcribed from the CERT/CC CSV (`data/csv/cisa/cisa_bod_26_04_1_0_0.csv`,
+commit `396ade5`) together with that file's SHA-256. The tests compare all 16
+input combinations and cover unresolved KEV lookups, CISA's
+Automatable/Technical Impact default and its limits, Publicly Exposed staying
+distinct from System Exposure, provisional outcomes, forensic-triage and
+fix-on-upgrade obligations, and the named effective-deadline rules. Table
+conformance does not establish legal compliance.
+
+## Live evidence connectors and GUI views
+
+The offline proof uses frozen snapshots, so live connectors are outside it.
+NVD, CISA KEV, Vulnrichment, Microsoft, Red Hat, Ubuntu, Debian, GitHub and
+Exploit-DB lookups are tested offline with mocked responses
+(`tests/test_vendor_advisories.py`, `tests/test_enrichment_clients.py`),
+including failure isolation. Exploit-DB is queried live per CVE and never
+stored; an entry there is public PoC evidence for SSVC Exploitation, so live
+runs can differ from the frozen demo. The only network-marked test
+(`python -m pytest tests -q -m network`) exercises a live SBOM run and can
+approach its 60-second client timeout when the providers are slow; exclude it
+with `-m "not network"` and report the exclusion.
+
+The GUI decision-tree view draws branch outcomes supplied by the engine
+(`ssvc.human_impact_branches`); `tests/test_web_enhancements.py` checks every
+served branch against the Deployer table and the outcome counts against the
+findings.
+
 ## What this proof does not establish
 
 This is a conformance, input-propagation, integrity, and reproducibility proof.

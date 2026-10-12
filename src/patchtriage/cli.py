@@ -39,6 +39,8 @@ from .enrich.clients import enrich
 from .evalcmp import evaluate
 from .ingest.parsers import load_file
 from .models import Asset
+from .bod2604 import apply_policy as apply_response_policy
+from .bod2604 import summarize as summarize_response_policy
 from .plan import Action, build_plan
 from .presentation import priority_definition
 from .report.html import render_html
@@ -97,6 +99,9 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
                         "automatable": asset_override.automatable,
                         "mission_impact": asset_override.mission_impact,
                         "safety_impact": asset_override.safety_impact,
+                        "publicly_exposed": asset_override.publicly_exposed,
+                        "bod2604_applicability":
+                            asset_override.bod2604_applicability,
                     }.items()
                     if value is not None and value != "unknown"
                 }
@@ -178,6 +183,10 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
         console.print(f"[green]audit: {summary['verified']}/{summary['total']} "
                       f"decisions verified against deterministic signals[/green]")
 
+    # Separate response policy: CISA BOD 26-04 is evaluated next to, never
+    # instead of, the SSVC Deployer result.
+    apply_response_policy(findings)
+
     # Layer 6 - plan
     actions = build_plan(subset)
     # practicality evaluation
@@ -200,6 +209,7 @@ def _emit(findings, subset, actions, eval_rows, output, html):
             "findings": [f.model_dump(mode="json") for f in findings],
             "actions": [a.model_dump(mode="json") for a in actions],
             "evaluation": [r.model_dump(mode="json") for r in eval_rows],
+            "response_policy": summarize_response_policy(findings),
         }
         output_path = Path(output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,6 +243,14 @@ def run(
     ssvc_safety_impact: str = typer.Option(
         "unknown", "--ssvc-safety-impact",
         help="SSVC Safety Impact: negligible|marginal|critical|catastrophic|unknown"),
+    bod2604: str = typer.Option(
+        "unknown", "--bod2604",
+        help="CISA BOD 26-04 applicability: required|voluntary|"
+             "not_applicable|unknown (evaluated separately from SSVC)"),
+    publicly_exposed: str = typer.Option(
+        "unknown", "--publicly-exposed",
+        help="CISA BOD 26-04 Publicly Exposed: yes|no|unknown "
+             "(not SSVC System Exposure)"),
     reachable: Optional[bool] = typer.Option(
         None, "--reachable/--not-reachable",
         help="Static analysis says the vulnerable path is reachable"),
@@ -247,7 +265,7 @@ def run(
              "Automatable, Technical Impact)"),
     nvd_api_key: Optional[str] = typer.Option(None, envvar="NVD_API_KEY"),
     vendor_sources: str = typer.Option(
-        "auto", help="Vendor advisories: auto|all|msrc,rhsa,usn,debian,ghsa"),
+        "auto", help="Vendor/exploit sources: auto|all|msrc,rhsa,usn,debian,ghsa,exploitdb"),
     no_vendor_advisories: bool = typer.Option(
         False, "--no-vendor-advisories",
         help="Skip Microsoft/RHSA/USN/Debian/GHSA lookups"),
@@ -283,7 +301,8 @@ def run(
             or runtime_observed is not None or criticality != "unknown"
             or ssvc_exposure != "unknown" or ssvc_automatable != "unknown"
             or ssvc_mission_impact != "unknown"
-            or ssvc_safety_impact != "unknown"):
+            or ssvc_safety_impact != "unknown"
+            or bod2604 != "unknown" or publicly_exposed != "unknown"):
         override = Asset(identifier=asset_id or "", kind="host",
                          criticality=criticality, internet_exposed=exposed,
                          reachable=reachable,
@@ -291,7 +310,9 @@ def run(
                          system_exposure=ssvc_exposure,
                          automatable=ssvc_automatable,
                          mission_impact=ssvc_mission_impact,
-                         safety_impact=ssvc_safety_impact)
+                         safety_impact=ssvc_safety_impact,
+                         publicly_exposed=publicly_exposed,
+                         bod2604_applicability=bod2604)
     findings, subset, actions, eval_rows = _pipeline(
         files, fmt, override, assets, not no_nvd, nvd_api_key, triage, model,
         limit, escalation_model=escalation_model, jobs=jobs, batch=batch,
@@ -1343,9 +1364,22 @@ def _print_decision_quality(findings) -> None:
         )
 
 
+def _bod_cell(action) -> str:
+    policy = action.bod2604 or {}
+    if not policy:
+        return "-"
+    text = policy["label"]
+    if policy["status"] != "resolved":
+        text += " (provisional)"
+    if policy["forensic_triage"] and "forensic" not in text:
+        text += " +forensic triage"
+    return text if policy["applied"] else f"ref: {text}"
+
+
 def _print_actions(actions) -> None:
     table = Table(title="Remediation plan - SSVC deployment outcome first")
-    for col in ("#", "SSVC outcome", "Action", "CVEs", "KEV", "Due"):
+    for col in ("#", "SSVC outcome", "Action", "CVEs", "KEV", "Workflow",
+                "BOD 26-04", "Effective"):
         table.add_column(col)
     for i, a in enumerate(actions[:15], 1):
         style = {"P1": "bold red", "P2": "yellow"}.get(a.top_priority, "")
@@ -1354,8 +1388,14 @@ def _print_actions(actions) -> None:
         pri = f"[{style}]{pri_text}[/{style}]" if style else pri_text
         table.add_row(str(i), pri, a.summary[:60], str(len(a.cves)),
                       str(a.kev_count) if a.kev_count else "-",
-                      f"{a.deadline_days}d")
+                      f"{a.deadline_days}d", _bod_cell(a),
+                      "-" if a.effective_deadline_days is None
+                      else f"{a.effective_deadline_days}d")
     console.print(table)
+    if any((a.bod2604 or {}).get("applied") for a in actions):
+        console.print("[dim]Effective = deadline after applying CISA BOD "
+                      "26-04 next to the SSVC workflow target; see the report "
+                      "for the rule and any forensic-triage obligation.[/dim]")
 
 
 def _print_eval(rows) -> None:

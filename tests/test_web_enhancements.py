@@ -8,6 +8,7 @@ contracts that unit tests of the target store alone cannot exercise.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import socket
 import threading
@@ -232,6 +233,47 @@ def test_jobs_are_isolated_by_anonymous_session(enhanced_server):
     assert _poll_job(owner, enhanced_server, job["job_id"])["state"] == "succeeded"
 
 
+def test_latest_jobs_recovers_completed_run_without_leaking_sessions(enhanced_server):
+    owner, stranger = _opener(), _opener()
+    target = _create_demo(owner, enhanced_server)
+    _, job = _api(owner, "POST", enhanced_server +
+                  f"/api/targets/{target['id']}/runs", {"backend": "rules"})
+    _poll_job(owner, enhanced_server, job["job_id"])
+    assert _api(owner, "GET", enhanced_server + "/api/jobs") == (200, [])
+    status, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert status == 200 and len(latest) == 1
+    assert latest[0]["summary"]["total"] == 4
+    assert "workspace" not in latest[0]
+    assert _api(stranger, "GET", enhanced_server + "/api/jobs?latest=1") == (200, [])
+    _api(owner, "POST", enhanced_server + f"/api/targets/{target['id']}/context",
+         {"system_exposure": "controlled"})
+    assert _api(owner, "GET", enhanced_server + "/api/jobs?latest=1") == (200, [])
+
+
+def test_latest_jobs_preserves_failure_and_replaces_it_after_retry(
+        enhanced_server, monkeypatch):
+    owner = _opener()
+    target = _create_demo(owner, enhanced_server)
+    real_run = webserver.run_target
+
+    def fail_run(*args, **kwargs):
+        raise RuntimeError("fixture pipeline failed")
+
+    monkeypatch.setattr(webserver, "run_target", fail_run)
+    path = enhanced_server + f"/api/targets/{target['id']}/runs"
+    _, job = _api(owner, "POST", path, {"backend": "rules"})
+    assert _poll_job(owner, enhanced_server, job["job_id"])["state"] == "failed"
+    _, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert latest[0]["state"] == "failed"
+    assert "fixture pipeline failed" in latest[0]["error"]
+    monkeypatch.setattr(webserver, "run_target", real_run)
+    _, retry = _api(owner, "POST", path, {"backend": "rules"})
+    _poll_job(owner, enhanced_server, retry["job_id"])
+    _, latest = _api(owner, "GET", enhanced_server + "/api/jobs?latest=1")
+    assert len(latest) == 1 and latest[0]["job_id"] == retry["job_id"]
+    assert latest[0]["summary"]["total"] == 4
+
+
 def test_uploaded_source_exposes_filename_hash_and_size(enhanced_server):
     opener = _opener()
     status, target = _api(
@@ -444,10 +486,148 @@ def test_ui_exposes_repository_context_privacy_and_async_contract(
     assert 'id="repodialog"' in page
     assert "Import a repository" in page
     assert "repository code and package managers are never executed" in page
-    assert "Advanced context evidence" in page
+    assert "Supporting context evidence" in page
     assert 'id="privacy-note"' in page
     assert "Do not upload confidential scanner output" in page
     assert page.index('id="privacy-note"') < page.index('id="targetform"')
     assert 'api("GET","/api/summaries")' in page
     assert "/api/targets/${id}/runs" in page
     assert "/api/jobs/${jobId}" in page
+
+
+def test_summary_action_queue_matches_report_actions_for_gui(enhanced_server):
+    """The GUI action queue renders only these server-computed fields.
+
+    The browser must not recompute outcomes, so each queue row has to carry
+    the SSVC outcome label, its workflow target, and the findings it closes.
+    """
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    _, job = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target['id']}/runs",
+        {"backend": "rules"},
+    )
+    summary = _poll_job(opener, enhanced_server, job["job_id"])["summary"]
+    queue = summary["action_queue"]
+    assert len(queue) == summary["actions"] and queue
+    assert summary["action_queue_truncated"] is False
+    allowed = {"Immediate", "Out-of-Cycle", "Scheduled", "Defer"}
+    for row in queue:
+        assert row["outcome_label"] in allowed
+        assert row["kind"] in {"upgrade", "mitigate"}
+        assert row["finding_count"] >= len(row["cves"]) >= 1
+        assert isinstance(row["deadline_days"], int)
+    # Highest outcome first, matching the report's action ordering.
+    rank = {"Immediate": 0, "Out-of-Cycle": 1, "Scheduled": 2, "Defer": 3}
+    ranks = [rank[row["outcome_label"]] for row in queue]
+    assert ranks == sorted(ranks)
+    assert queue[0]["summary"] == summary["top_action"]
+
+
+def test_ui_renders_action_queue_and_persistent_run_failures(enhanced_server):
+    with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
+        page = response.read().decode("utf-8")
+    assert "summary.action_queue" in page
+    assert "Workflow target" in page
+    assert "not an SSVC or regulatory deadline" in page
+    # A failed job must leave a visible, retryable state instead of only a
+    # transient toast, and must not display an older decision as current.
+    assert "Assessment failed:" in page
+    assert "retry-run" in page
+    assert 'role="alert"' in page
+    # The self-contained report can be saved directly from the console.
+    assert "Download HTML report" in page
+    assert 'download="${esc(reportFilename(summary))}"' in page
+
+
+def test_bod2604_context_is_separate_invalidates_and_reaches_report(
+        enhanced_server):
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    target_id = target["id"]
+    before = _run_demo(opener, enhanced_server, target_id)
+    assert before["response_policy"]["applied"] is False
+
+    status, error = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target_id}/context",
+        {"bod2604_applicability": "maybe"},
+    )
+    assert status == 400 and "bod2604_applicability" in error["error"]
+
+    status, updated = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target_id}/context",
+        {"bod2604_applicability": "voluntary", "publicly_exposed": "yes"},
+    )
+    assert status == 200
+    assert updated["bod2604_applicability"] == "voluntary"
+    # Policy inputs are decision inputs: the old result must disappear.
+    assert _api(opener, "GET", enhanced_server + "/api/summaries") == (200, [])
+    assert _report_status(opener, enhanced_server, target_id) == 404
+
+    after = _run_demo(opener, enhanced_server, target_id)
+    # The SSVC Deployer result is unchanged by adopting the policy.
+    assert after["outcomes"] == before["outcomes"]
+    assert after["top_ssvc_decision"] == before["top_ssvc_decision"]
+    assert after["explanation"]["ssvc"] == before["explanation"]["ssvc"]
+    policy = after["response_policy"]
+    assert policy["applied"] is True and policy["evaluated"] == after["total"]
+    assert policy["policy"] == "cisa:DT_BOD2604:1.0.0"
+    top = after["action_queue"][0]
+    assert top["bod2604"]["applied"] is True
+    assert top["effective_rule"] != "ssvc_only"
+    assert after["explanation"]["bod2604"]["inputs"]["publicly_exposed"][
+        "value"] == "yes"
+
+    with opener.open(f"{enhanced_server}/report/{target_id}",
+                     timeout=15) as response:
+        report = response.read().decode("utf-8")
+    assert "CISA BOD 26-04 response policy (separate from SSVC)" in report
+    assert html.escape(top["bod2604"]["label"]) in report
+    assert "not a compliance attestation" in report
+
+
+def test_decision_paths_come_from_the_engine_table(enhanced_server):
+    """The GUI tree draws server-computed branches; it never recomputes SSVC."""
+    from patchtriage.ssvc import (
+        Automatable, Exploitation, HumanImpact, SystemExposure,
+        deployer_decision)
+
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    summary = _run_demo(opener, enhanced_server, target["id"])
+    paths = summary["decision_paths"]
+    assert len(paths) == summary["total"]
+    assert summary["decision_paths_truncated"] is False
+    for path in paths:
+        points = path["points"]
+        assert path["asset"] == "Demo"
+        assert path["model"] == "ssvc:DT_DP:1.0.0"
+        assert [b["human_impact"] for b in path["branches"]] == [
+            "low", "medium", "high", "very_high"]
+        for branch in path["branches"]:
+            assert branch["decision"] == deployer_decision(
+                Exploitation(points["exploitation"]["value"]),
+                SystemExposure(points["system_exposure"]["value"]),
+                Automatable(points["automatable"]["value"]),
+                HumanImpact(branch["human_impact"])).value
+        chosen = next(b for b in path["branches"]
+                      if b["human_impact"] == points["human_impact"]["value"])
+        assert chosen["decision"] == path["decision"]
+        assert path["evidence"][0]["source"] == "NVD"
+        assert path["evidence"][0]["url"].startswith(
+            "https://nvd.nist.gov/vuln/detail/CVE-")
+    counts = {}
+    for path in paths:
+        counts[path["decision"]] = counts.get(path["decision"], 0) + 1
+    assert {k: v for k, v in summary["outcomes"].items() if v} == counts
+
+
+def test_ui_has_outcome_donut_and_decision_tree(enhanced_server):
+    with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
+        page = response.read().decode("utf-8")
+    assert 'id="outcomesummary"' in page
+    assert "function donutSvg" in page and "function treeSvg" in page
+    assert "Decision path · why each finding reached its SSVC outcome" in page
+    # The browser draws the branches it is given instead of a local table.
+    assert "path.branches" in page
+    assert "_DEPLOYER_TABLE" not in page

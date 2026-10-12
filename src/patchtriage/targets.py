@@ -10,6 +10,8 @@ a list of them, each with:
                   straight to it
   * system_exposure, automatable, mission_impact, safety_impact
                   explicit SSVC Deployer context
+  * publicly_exposed, bod2604_applicability
+                  CISA BOD 26-04 policy inputs, kept separate from SSVC
   * reachable/runtime_observed
                   supplemental confidence evidence
   * source        an attached scan (Trivy/Grype/OSV JSON) or SBOM
@@ -49,6 +51,12 @@ _SSVC_CHOICES = {
     "safety_impact": {
         "negligible", "marginal", "critical", "catastrophic", "unknown",
     },
+}
+
+_POLICY_CHOICES = {
+    "publicly_exposed": {"yes", "no", "unknown"},
+    "bod2604_applicability": {"required", "voluntary", "not_applicable",
+                              "unknown"},
 }
 
 
@@ -117,6 +125,14 @@ def _clean_ssvc(value: str | None, field: str) -> str:
     normalized = str(value or "unknown").strip().lower().replace("-", "_")
     if normalized not in _SSVC_CHOICES[field]:
         allowed = ", ".join(sorted(_SSVC_CHOICES[field]))
+        raise ValueError(f"{field} must be one of: {allowed}")
+    return normalized
+
+
+def _clean_policy(value: str | None, field: str) -> str:
+    normalized = str(value or "unknown").strip().lower().replace("-", "_")
+    if normalized not in _POLICY_CHOICES[field]:
+        allowed = ", ".join(sorted(_POLICY_CHOICES[field]))
         raise ValueError(f"{field} must be one of: {allowed}")
     return normalized
 
@@ -197,6 +213,8 @@ def add_target(name: str, url: str = "", criticality: str = "unknown",
                automatable: str = "unknown",
                mission_impact: str = "unknown",
                safety_impact: str = "unknown",
+               publicly_exposed: str = "unknown",
+               bod2604_applicability: str = "unknown",
                context_sources: list[str] | None = None,
                demo: bool = False,
                workspace_id: str | None = None, *,
@@ -221,6 +239,10 @@ def add_target(name: str, url: str = "", criticality: str = "unknown",
             "automatable": _clean_ssvc(automatable, "automatable"),
             "mission_impact": _clean_ssvc(mission_impact, "mission_impact"),
             "safety_impact": _clean_ssvc(safety_impact, "safety_impact"),
+            "publicly_exposed": _clean_policy(
+                publicly_exposed, "publicly_exposed"),
+            "bod2604_applicability": _clean_policy(
+                bod2604_applicability, "bod2604_applicability"),
             "context_sources": _clean_sources(context_sources),
             "ssvc_overrides": {},
             "demo": bool(demo),
@@ -253,6 +275,9 @@ def _apply_target_fields(target: dict, fields: dict) -> None:
     for key in _SSVC_CHOICES:
         if key in fields and fields[key] is not None:
             target[key] = _clean_ssvc(fields[key], key)
+    for key in _POLICY_CHOICES:
+        if key in fields and fields[key] is not None:
+            target[key] = _clean_policy(fields[key], key)
     if fields.get("context_sources") is not None:
         target["context_sources"] = _clean_sources(fields["context_sources"])
     for key in (
@@ -329,7 +354,8 @@ def delete_target(target_id: str, workspace_id: str | None = None) -> bool:
             return False
         directory = targets_dir(workspace_id)
         invalidate_result(target_id, workspace_id)
-        source = Path(str((removed_target or {}).get("source_file") or ""))
+        source = cfgmod.filesystem_path(
+            Path(str((removed_target or {}).get("source_file") or "")))
         if (source.name.startswith(f"{target_id}_source")
                 and source.parent.resolve() == directory.resolve()):
             source.unlink(missing_ok=True)
@@ -348,7 +374,7 @@ def get_target(target_id: str, workspace_id: str | None = None) -> dict | None:
 
 def _managed_source_path(value: str, directory: Path,
                          target_id: str | None = None) -> Path | None:
-    path = Path(str(value or ""))
+    path = cfgmod.filesystem_path(Path(str(value or "")))
     try:
         valid_parent = path.parent.resolve() == directory.resolve()
     except OSError:
@@ -475,14 +501,6 @@ def invalidate_result(target_id: str, workspace_id: str | None = None) -> None:
             candidate.unlink(missing_ok=True)
 
 
-def bump_input_revision(target_id: str, workspace_id: str | None = None,
-                        *, clear_overrides: bool = False) -> dict | None:
-    """Mark target context as changed and invalidate stale run artifacts."""
-    return update_target_inputs(
-        target_id, workspace_id=workspace_id,
-        clear_overrides=clear_overrides)
-
-
 def update_source_provenance_if_current(
         target_id: str, provenance: dict, expected_revision: int,
         expected_source_sha256: str,
@@ -546,12 +564,18 @@ def save_run_artifacts(target_id: str, summary: dict, report_html: str,
             summary_tmp.unlink(missing_ok=True)
             report.unlink(missing_ok=True)
             raise
-        legacy = report_path(target_id, workspace_id)
-        legacy.unlink(missing_ok=True)
-        for candidate in targets_dir(workspace_id).glob(
-                f"{target_id}_report_*.html"):
+        # The manifest above is the commit point. A viewer or antivirus may
+        # still hold an older report open (especially on Windows); cleanup
+        # must not turn an already published assessment into a failed job.
+        obsolete = [report_path(target_id, workspace_id)]
+        obsolete.extend(targets_dir(workspace_id).glob(
+            f"{target_id}_report_*.html"))
+        for candidate in obsolete:
             if candidate != report:
-                candidate.unlink(missing_ok=True)
+                try:
+                    candidate.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def load_summary(target_id: str, workspace_id: str | None = None) -> dict | None:

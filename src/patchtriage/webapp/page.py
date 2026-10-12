@@ -92,7 +92,7 @@ _TEMPLATE = r"""<!doctype html>
   .kpi{background:var(--panel);border:1px solid var(--line);padding:15px 18px}.kpi+.kpi{border-left:0}
   .kpi .value{font:750 28px "SFMono-Regular",Consolas,monospace}.kpi .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.07em}
   .workspace{background:var(--paper);color:var(--dark);border-radius:22px 22px 0 0;min-height:720px;padding:34px clamp(20px,4vw,64px) 70px}
-  .workspaceinner{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:340px minmax(0,1fr);gap:28px}
+  .workspaceinner{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:30px}
   .sectiontitle{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
   .sectiontitle h2{margin:0;font-size:22px;letter-spacing:-.02em}.sectiontitle span{font:13px "SFMono-Regular",Consolas,monospace;color:#70798a;text-transform:uppercase;letter-spacing:.07em}
   .decisionactions{display:flex;align-items:center;gap:8px}.enginecontrol{display:grid;gap:2px;min-width:190px}.enginelabel{color:#70798a;font:700 10.5px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.07em;text-transform:uppercase}.enginevalue{border:1px solid #cfd5e2;border-radius:5px;background:#f7f8fb;color:#313a49;padding:7px 10px;font-size:13px;line-height:1.2}.enginecontrol select{width:auto;min-width:190px;padding:6px 9px;font-size:13px}
@@ -100,7 +100,7 @@ _TEMPLATE = r"""<!doctype html>
   .lightpanel{background:#fff;border:1px solid #d9deea;border-radius:10px;box-shadow:0 10px 28px rgba(30,40,65,.06)}
   details.add{margin-bottom:14px}details.add>summary{list-style:none;padding:14px 16px;font-weight:700;cursor:pointer;display:flex;justify-content:space-between}
   details.add>summary::-webkit-details-marker{display:none}details.add>summary:after{content:"+";color:#697386}details.add[open]>summary:after{content:"−"}
-  .form{border-top:1px solid #e4e7ee;padding:14px;display:grid;gap:11px}
+  .form{border-top:1px solid #e4e7ee;padding:16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}.form>.addrow,.form>.ssvcblock,.form>.advanced,.form>.hint{grid-column:1/-1}.addhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:14px 16px}.addhead h3{margin:0;font-size:17px}.addrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:12px;align-items:end}.addrow .formactions{display:flex;gap:8px}.ssvcblock{grid-template-columns:repeat(4,minmax(0,1fr))}.ssvcblock>.ssvchead,.ssvcblock>.ssvcabout{grid-column:1/-1}details.add,section.add{margin-bottom:14px}
   input[type=text],select{width:100%;border:1px solid #cfd5e2;border-radius:5px;padding:9px 10px;background:#fff;color:#171b25}
   .contextintro{border:1px solid #cfd7e8;background:#f7f8fc;border-radius:6px;padding:12px;display:grid;gap:7px}.contexttitle{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.contexttitle strong{font-size:14px}.standardtag{display:inline-flex;border:1px solid #b9c5ed;border-radius:20px;background:#edf1ff;color:#3048a8;padding:3px 7px;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.04em;text-transform:uppercase}.contextintro span,.contextintro a{font-size:13px;color:#667183;line-height:1.45}.contextintro a{color:#4053ba;font-weight:700;text-decoration:none}.contextintro a:hover{text-decoration:underline}.patchtriagenote{border-left:3px solid #e6a32d;background:#fff8e8;padding:8px 9px;color:#66502b!important}.patchtriagenote b{color:#5a4015}
   .fieldlabel{display:grid;gap:5px;color:#697386;font-size:13px;font-weight:750;text-transform:uppercase;letter-spacing:.045em}.fieldtitle{display:flex;align-items:center;justify-content:space-between;gap:7px}.fieldlabel select,.fieldlabel input{font-size:14px;text-transform:none;letter-spacing:0}.fieldhelp{color:#70798a;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.45}.fieldhelp b{color:#4f596a}.formactions{display:flex;gap:7px}.formactions .btn{flex:1}
@@ -122,10 +122,10 @@ _TEMPLATE = r"""<!doctype html>
   .derivedlabel{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font:750 10px/1.2 "SFMono-Regular",Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;color:#4053ba}
   .derivedvalue{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.derivedvalue b{font-size:19px;color:#232a3a;letter-spacing:-.01em}.derivedvalue span{font-size:12.5px;color:#69738a}
   .derivednote{font-size:12px;color:#78819a;line-height:1.5}
-  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:flex;flex-direction:column;gap:9px}
+
+  .hint{font-size:13.5px;color:#70798a;line-height:1.45}.targetlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
   .privacy{border:1px solid #efc46d;background:#fff7e2;color:#725016;border-radius:6px;padding:10px 11px;font-size:12.5px;line-height:1.45}
-  .advanced{border:1px solid #dbe0ec;border-radius:6px;padding:8px 10px}.advanced summary{cursor:pointer;font-weight:750;color:#596579;font-size:13px;display:flex;justify-content:space-between}.advanced summary:after{content:"+"}.advanced[open] summary:after{content:"−"}.advancedgrid{display:grid;gap:9px;margin-top:10px}
+  .advanced{border:1px solid #dbe0ec;border-radius:6px;padding:8px 10px}.advanced summary{cursor:pointer;font-weight:750;color:#596579;font-size:13px;display:flex;justify-content:space-between}.advanced summary:after{content:"+"}.advanced[open] summary:after{content:"−"}.advcols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px;margin-top:10px}.advcol{display:grid;gap:8px;align-content:start;min-width:0}.advcol+.advcol{border-left:1px solid #e6e9f1;padding-left:16px}.advgroup{font-weight:750;font-size:13px;color:#29344a}.advfields{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;align-items:end}.advfields select,.advfields input{width:100%;min-width:0}
   .target{background:#fff;border:1px solid #d9deea;border-radius:8px;padding:13px;transition:.18s}
   .target:hover{border-color:#b8c1d3;transform:translateY(-1px)}.targettop{display:flex;justify-content:space-between;gap:8px}
   .targetname{font-weight:750;overflow-wrap:anywhere}.targetname a{text-decoration:none}.targetname a:hover{text-decoration:underline}
@@ -155,24 +155,124 @@ _TEMPLATE = r"""<!doctype html>
   .toast{position:fixed;right:22px;bottom:22px;background:#151a25;color:#fff;border:1px solid #343d50;padding:11px 15px;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.28);transform:translateY(90px);opacity:0;transition:.2s;z-index:30;max-width:420px}.toast.show{transform:none;opacity:1}.toast.error{border-color:#a63d36}
   .filehidden{display:none}
   dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
+  .bodpanel{margin-top:12px;border-top:1px dashed #cfd5e2;padding-top:10px}.bodpanel .factor small+small{margin-top:4px}.bodcell.reference b{color:#687285;font-weight:650}
+  :root{--c-immediate:#b8322a;--c-outofcycle:#eaa51a;--c-scheduled:#4f6be0;--c-defer:#7d8799}
+  .outcomesummary{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:center;padding:16px 20px;margin-bottom:14px}
+  .donut{display:block}.donut .seg{transition:opacity .15s}.donut:hover .seg{opacity:.55}.donut .seg:hover{opacity:1}
+  .donutlabel{font:800 26px "SFMono-Regular",Consolas,monospace;fill:#1f2633}.donutsub{font:600 11px system-ui,sans-serif;fill:#6b7486;letter-spacing:.04em}
+  .outcomerows{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .outcomerow{border:1px solid #e1e5ee;border-radius:8px;padding:10px 12px}
+  .outcomerow .name{display:flex;align-items:center;gap:7px;font-weight:750;color:#2d3441;font-size:14px}
+  .outcomerow .name i{width:10px;height:10px;border-radius:50%;flex:none}
+  .outcomerow .count{font:800 24px "SFMono-Regular",Consolas,monospace;color:#1f2633;margin-top:4px}.outcomerow .count small{font:600 12px system-ui,sans-serif;color:#6b7486;margin-left:6px}
+  .outcomerow .meaning{font-size:12.5px;color:#687285;line-height:1.4;margin-top:2px}
+  .breakdown{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 21px;border-bottom:1px solid #e5e8ef}
+  .breakdown .chips{display:flex;gap:8px;flex-wrap:wrap}.breakdown .chip{display:flex;align-items:center;gap:6px;border:1px solid #e1e5ee;border-radius:20px;padding:4px 10px;font-size:13px;color:#2d3441}.breakdown .chip i{width:9px;height:9px;border-radius:50%}.breakdown .chip b{font-family:"SFMono-Regular",Consolas,monospace}
+  .treeview{border-top:1px solid #e1e5ed;padding:18px 21px}.treeview>summary{cursor:pointer;font-weight:750;font-size:14px}
+  .treepick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}.treepick select{min-width:280px;max-width:100%}
+  .treecanvas{overflow-x:auto;border:1px solid #e1e5ee;border-radius:8px;background:#fbfcfe}
+  .treecanvas svg{display:block;min-width:820px;width:100%;height:auto}
+  .tree .edge{fill:none;stroke:#d3d8e3;stroke-width:1.2}.tree .edge.on{stroke:#1f2633;stroke-width:2.6}
+  .tree .node rect{fill:#fff;stroke:#cfd5e2;stroke-width:1}.tree .node text{font:600 12px system-ui,sans-serif;fill:#8a93a3}
+  .tree .node.on rect{fill:#1f2633;stroke:#1f2633}.tree .node.on text{fill:#fff;font-weight:750}
+  .tree .node.assumed rect{stroke-dasharray:4 3}.tree .node.on.assumed rect{fill:#3a4253;stroke:#eaa51a;stroke-width:2}
+  .tree .leaf text{font:700 12px system-ui,sans-serif;fill:#fff}.tree .leaf.off{opacity:.35}.tree .leaf.on rect{stroke:#1f2633;stroke-width:2.5}
+  .tree .colhead{font:700 11px system-ui,sans-serif;fill:#6b7486;letter-spacing:.06em;text-transform:uppercase}
+  .tree .root rect{fill:#eef1ff;stroke:#5368e8}.tree .root text{fill:#27336f;font:700 12px system-ui,sans-serif}
+  .pathsentence{margin:12px 0 6px;font-size:14px;line-height:1.6;color:#2d3441}.pathsentence b{white-space:nowrap}.pathsentence .src{color:#6b7486;font-size:12.5px}
+  .treelegend{font-size:12.5px;color:#687285;margin-top:6px}
+  .evidencelinks{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.evidencelinks a,.evidencelinks span{border:1px solid #d6dbe5;border-radius:4px;padding:3px 8px;font-size:12.5px;text-decoration:none;color:#3048c5;background:#fff}.evidencelinks span{color:#4f5969}
+  @media(max-width:1100px){.ssvcblock{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.outcomerows{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+  @media(max-width:820px){.form{grid-template-columns:minmax(0,1fr)}.advcols{grid-template-columns:minmax(0,1fr)}.advcol+.advcol{border-left:0;padding-left:0;border-top:1px solid #e6e9f1;padding-top:12px}.addrow{grid-template-columns:minmax(0,1fr)}.ssvcblock{grid-template-columns:minmax(0,1fr)}.outcomesummary{grid-template-columns:minmax(0,1fr);justify-items:center}.outcomerows{width:100%}}
+  .reportlinks{display:grid;gap:6px;justify-items:end}
+  .statecard{padding:16px 21px;display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.statecard.failed{border-left:4px solid var(--immediate)}.statecard.running{border-left:4px solid var(--scheduled)}.statecard strong{display:block;font-size:15px}.statecard span{display:block;color:#647083;font-size:13.5px;margin-top:3px;overflow-wrap:anywhere}
+  .actionqueue{border-top:1px solid #e1e5ed;padding:18px 21px}.actionqueue summary{cursor:pointer;font-weight:750;font-size:14px}.actionqueue p{color:#657083;font-size:13px;margin:7px 0 10px}.queuetable{width:100%;border-collapse:collapse;font-size:13px}.queuetable th,.queuetable td{text-align:left;padding:8px;border-top:1px solid #e2e6ee;vertical-align:top}.queuetable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:#6f7989}.queuetable td.num{white-space:nowrap;font-family:"SFMono-Regular",Consolas,monospace}.queuetable .cves{display:block;color:#778195;font-size:11.5px;margin-top:3px;overflow-wrap:anywhere}.outcomepill{display:inline-flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap}.outcomepill i{width:8px;height:8px;border-radius:50%;background:var(--defer)}.outcomepill.immediate i{background:var(--c-immediate)}.outcomepill.out-of-cycle i{background:var(--c-outofcycle)}.outcomepill.scheduled i{background:var(--c-scheduled)}.outcomepill i{background:var(--c-defer)}.kindtag{display:inline-block;font-size:11px;font-weight:750;border:1px solid #d6dbe5;border-radius:3px;padding:1px 5px;margin-right:6px;color:#4f5969}.kindtag.mitigate{border-color:#f0cf86;background:#fff7e4;color:#765017}
+.workspaceinner>*{min-width:0}
   @media(max-width:1100px){.hero{grid-template-columns:1fr}.benchmark{grid-template-columns:1fr}.workspaceinner{grid-template-columns:300px minmax(0,1fr)}.resultbody{grid-template-columns:1fr}.compare{border-right:0;border-bottom:1px solid #e4e7ed}}
-  @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:1fr}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlink{grid-column:2}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
-  @media(max-width:520px){h1{font-size:43px}.topbar{padding:0 16px}.brand{font-size:13px}.hero{padding-left:16px;padding-right:16px}.kpis{padding-left:16px;padding-right:16px}.prioritylegend{grid-template-columns:1fr 1fr}.prioritylegend>div{border-bottom:1px solid #e2e6ee}.sectiontitle{align-items:flex-start;gap:10px}.decisionactions{align-items:flex-end;flex-direction:column}.enginecontrol{min-width:0}.enginecontrol select{min-width:175px}.resulthead{padding:15px}.resultbody>div,.metricrow{padding-left:15px;padding-right:15px}.versus{grid-template-columns:1fr}.vs{text-align:center}.row2{grid-template-columns:1fr}}
+  @media(max-width:820px){.outcomes{grid-template-columns:1fr 1fr}.outcome{border-left:1px solid var(--line);border-top:0}.kpis{grid-template-columns:1fr 1fr}.kpi+.kpi{border-left:1px solid var(--line)}.workspaceinner{grid-template-columns:minmax(0,1fr)}.queuetable{display:block;overflow-x:auto}.empty{grid-template-columns:1fr}.resulthead{grid-template-columns:104px 1fr}.priority{height:54px}.reportlinks{grid-column:2;justify-items:start}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.decision{grid-column:1}.ssvcflow{grid-template-columns:1fr 1fr}.ssvcinputtable{display:block;overflow-x:auto}}
+  @media(max-width:520px){h1{font-size:43px}.topbar{padding:0 16px}.brand{font-size:13px}.hero{padding-left:16px;padding-right:16px}.kpis{padding-left:16px;padding-right:16px}.prioritylegend{grid-template-columns:1fr 1fr}.prioritylegend>div{border-bottom:1px solid #e2e6ee}.sectiontitle{align-items:flex-start;gap:10px}.decisionactions{align-items:flex-end;flex-direction:column}.enginecontrol{min-width:0}.enginecontrol select{min-width:175px}.resulthead{padding:15px}.resultbody>div,.metricrow{padding-left:15px;padding-right:15px}.versus{grid-template-columns:1fr}.vs{text-align:center}}
+
+  [hidden]{display:none!important}
+  body{font-size:14px;line-height:1.45;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{height:56px;flex:none;padding:0 24px;position:static}.brand{font-size:15px;gap:8px}.brand small{font-weight:400;letter-spacing:0;color:#a5afc1;margin-left:18px;font-size:12px}.topactions{display:flex;gap:8px}
+  .btn{padding:9px 13px;box-shadow:none!important}.btn.small{font-size:12px;padding:7px 10px}.btn:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid #4053ba;outline-offset:3px}
+  .kpis{width:100%;max-width:none;padding:0 24px;flex:none;display:flex;height:48px;margin:0;background:#10151f;gap:28px;align-items:center}.kpi,.kpi+.kpi{display:flex;gap:8px;align-items:baseline;border:0;padding:0;background:none}.kpi .value{font-size:18px}.kpi .label{font-size:10px;letter-spacing:.04em}
+  .workspace{flex:1;min-height:0;padding:18px 20px;border-radius:0;overflow:hidden;background:#f0f2f7}.workspaceinner{height:100%;max-width:none;grid-template-columns:256px minmax(0,1fr);gap:20px}
+  .sidebar,.decisionpane{display:flex;flex-direction:column;min-height:0;min-width:0}.sidebar{border-right:1px solid #d9deea;padding-right:18px}.sectiontitle{flex:none;align-items:center;margin:0 0 12px;gap:8px}.sectiontitle h2{font-size:20px}.sectiontitle span{font:12px/1.4 inherit;text-transform:none;letter-spacing:0;display:block;margin-top:3px}.sidebarhint{font-size:12px;color:#70798a;margin:0 0 14px}.targetlist{display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0;flex:1;padding:2px}.target{padding:0;box-shadow:none;flex:none}.target:hover{transform:none}.target.selected{border-color:#5368e8;box-shadow:0 0 0 1px #5368e8}.targetselect{width:100%;text-align:left;border:0;background:transparent;padding:12px;color:#242d40;border-radius:8px}.targetselect[aria-pressed=true]{background:#f0f2ff}.targetname{font-size:14px;font-weight:750;display:block}.targetmeta{font-size:11.5px;color:#697386;display:block;margin-top:5px;overflow-wrap:anywhere}.targetstate{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:9px;color:#4659bf}.targetstate:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.targetstate.failed{color:#b8322a}.sidebarfoot{padding-top:12px;display:grid;gap:8px}.sidebarfoot .btn{width:100%}.sidebarfoot .hint{font-size:11px;text-align:center}.privacy{font-size:11px;margin-bottom:10px}
+  .enginecontrol{min-width:0}.enginevalue{background:transparent;border:0;padding:0;font-size:12px}.enginelabel{font-size:9px}.enginecontrol select{font-size:12px;min-width:0}.decisionactions{gap:14px}
+  .outcomesummary{flex:none;display:grid;grid-template-columns:70px minmax(0,1fr);padding:9px 14px;gap:14px;margin-bottom:12px;box-shadow:none}.outcomesummary .donut{width:64px;height:64px}.outcomesummary .microtitle{margin:0 0 5px;font-size:10px;letter-spacing:.04em}.outcomerows{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.outcomerow{padding:0;border:0;display:flex;align-items:center;justify-content:space-between;gap:6px}.outcomerow .name{font-size:12px}.outcomerow .name i{width:7px;height:7px}.outcomerow .count{font-size:20px;margin:0}.outcomerow .count small{font-size:10px}.outcomerow .meaning{display:none}
+  #fleetbar{padding:7px 12px;margin-bottom:8px;font-size:12px;flex:none;max-height:125px;overflow:auto}#fleetbar summary{cursor:pointer;font-weight:650}
+  .results{flex:1;min-height:0;gap:10px}.result{min-height:0;display:flex;flex-direction:column;flex:1;box-shadow:0 4px 16px #1e284108}.resulthead{grid-template-columns:125px minmax(0,1fr) auto;padding:13px 16px;gap:14px;flex:none}.priority{height:auto;min-height:32px;font-size:12px;padding:7px}.prioritymeaning{font-size:9px;margin-top:3px}.prioritydue{font-size:10px;margin-top:2px}.rname{font-size:12px;margin-bottom:4px;overflow-wrap:anywhere}.action{font-size:17px;line-height:1.3;overflow-wrap:anywhere}.reportlinks{gap:5px}.reportlink{font-size:12px}.resulttools{display:flex;gap:8px;margin-top:6px;align-items:center}.textbutton{border:0;background:transparent;padding:0;color:#4053ba;font-size:12px;font-weight:650;text-decoration:underline;text-underline-offset:3px}
+  .resultnotice{flex:none;padding:6px 16px;background:#fff8e8;color:#785921;border-bottom:1px solid #ecd8ad;font-size:12px;overflow-wrap:anywhere}.resultnotice summary{cursor:pointer}.resultnotice p{margin:6px 0}.resulttabs{display:flex;gap:18px;padding:0 16px;border-bottom:1px solid #dfe4ee;flex:none}.resulttab{background:none;border:0;border-bottom:2px solid transparent;color:#6c7688;font-weight:650;font-size:12px;padding:10px 0;white-space:nowrap}.resulttab[aria-selected=true]{color:#3048c5;border-color:#5368e8}.tabcount{font-size:10px;background:#edf0f7;border-radius:9px;padding:1px 5px;margin-left:4px}.tabcount.warn{background:#fff0cf;color:#8b5918}.resultpanel{min-height:0;overflow:auto;flex:1;padding:14px 16px}.resultpanel:focus{outline-offset:-3px}.resultpanel .treeview{padding:0;border:0}.treeview>summary{font-size:14px}.treepick{margin:8px 0 10px;flex-wrap:nowrap}.treepick label{display:flex;align-items:center;gap:10px;min-width:0;flex:1;text-transform:none;letter-spacing:0;color:#697386;font-size:12px}.treepick select{min-width:0;max-width:650px;font-size:13px;padding:7px 10px}.treecanvas{overflow:hidden;border-color:#e3e7ef}.treecanvas svg{min-width:0;max-height:260px;width:100%;height:auto}.treelegend{font-size:11px;margin-top:7px}.pathsources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}.pathsource{border-left:2px solid #d9dfed;padding-left:9px;font-size:11px;color:#6c7688;overflow-wrap:anywhere}.pathsource strong{font-size:12px;color:#303a4c;display:block;margin-bottom:2px}.pathsource.assumed{border-color:#eaa51a;background:#fff9eb}.pathsource span{display:block}.evidencelinks{gap:5px;margin-top:10px}.evidencelinks a,.evidencelinks span{font-size:11px;padding:3px 7px}.pathcontext{display:flex;gap:12px;justify-content:space-between;font-size:12px;color:#5c677b;margin-top:8px;flex-wrap:wrap}.pathcontext b{color:#2d3441}.pathcontext .policyhint{color:#7b643c}
+  .actionqueue,.ssvcinputreview{padding:0;border:0}.actionqueue summary,.ssvcinputreview summary{font-size:14px}.queuetable{font-size:12px}.queuetable th{font-size:10px}.queuetable th,.queuetable td{padding:8px 6px}.queuewrap{overflow-x:auto}.queuetable .cves{font-size:11px}.resultbody{grid-template-columns:minmax(0,1fr)}.compare,.explain{padding:0;border:0}.resultpanel .metricrow{padding:8px 0;gap:5px;background:none}.metric{font-size:11px}.resultpanel .confirmbar{margin:8px 0}.resultpanel .signal{padding:8px}.resultpanel .signalgrid{margin-bottom:10px}.resultpanel .factor{padding:9px}.resultpanel .microtitle{margin-top:12px}.resultpanel .compare{margin-top:18px}.ssvcinputtable select{min-width:130px}.empty{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:24px}.emptycontent{max-width:610px;width:100%}.emptycontent .eyebrow{color:#5264d9;font-size:11px}.emptycontent h3{font-size:30px;line-height:1.15;letter-spacing:-.03em;margin:12px 0}.emptycontent p{color:#6b7486;font-size:14px;max-width:58ch;margin:0 0 22px}.startsteps{display:flex;gap:12px;margin-bottom:24px}.startstep{flex:1;background:#f6f8fc;padding:13px;border:1px solid #e3e7ef;border-radius:7px;font-size:12px;color:#657083}.startstep b{display:block;color:#323e57;margin-bottom:5px}.startstep span{color:#5368e8;font-family:Consolas,monospace;margin-right:5px}.startactions{display:flex;gap:10px;flex-wrap:wrap}.emptycontent .targetactions{margin-top:18px}.targetsummary{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}.targetsummary .tag{font-size:10px}.statecard{display:flex;align-items:flex-start;justify-content:center;flex-direction:column;padding:32px}.statecard strong{font-size:22px}.statecard span{font-size:14px;max-width:650px}.statecard .scanline{width:100%;max-width:500px}.statecard .btn{margin-top:12px}.previousresult{font-size:12px;color:#667183}
+  dialog{max-height:calc(100dvh - 32px);overflow:auto}#contextdialog{width:min(1020px,calc(100% - 32px));background:#fff}#contextdialog .add{margin:0;border:0;box-shadow:none}.dialogclose{float:right;margin:12px 14px;position:relative;z-index:1}.addhead{min-height:56px;padding:15px 18px}.addhead .hint{font-size:12px}.form{padding:14px 18px}.ssvcblock{grid-template-columns:repeat(3,minmax(0,1fr));padding:10px}.ssvcblock .derived{grid-column:1/-1;display:flex;align-items:center;gap:15px;padding:9px 12px}.derivednote{max-width:350px;font-size:11px}.derivedlabel .standardtag{display:none}.derivedvalue{flex:1}.derivedvalue span{font-size:11px}.ssvcfield .standardtag{display:none}.fieldq{font-size:12px;min-height:35px}.fieldnow{font-size:12px}.fieldnow.fallback{font-size:11.5px}.form>.hint{font-size:12px}.ssvcabout{font-size:12px}.advcols{grid-template-columns:1fr 1fr}.fieldhelp{font-size:12px}.toast{z-index:100;max-width:min(440px,calc(100vw - 32px));font-size:13px;pointer-events:none}
+  @media(min-width:1001px) and (max-height:760px){.workspace{padding-top:12px;padding-bottom:12px}.sectiontitle{margin-bottom:8px}.outcomesummary{margin-bottom:8px;padding:7px 12px;grid-template-columns:56px minmax(0,1fr)}.outcomesummary .donut{width:52px;height:52px}.resulthead{padding:10px 14px}.resultpanel{padding:10px 14px}.treecanvas svg{max-height:210px}.pathsources{margin-top:7px}.treepick{margin:5px 0 7px}.treelegend{margin-top:5px}.evidencelinks{margin-top:7px}}
+  @media(max-width:1100px){.workspaceinner{grid-template-columns:220px minmax(0,1fr);gap:14px}.sidebar{padding-right:12px}.outcomerows{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.outcomerow .name{font-size:11px}.outcomerow .count small{display:none}.resulthead{grid-template-columns:110px minmax(0,1fr)}.reportlinks{grid-column:1/-1;display:flex;gap:16px}.pathsources{gap:6px}.brand small{display:none}}
+  @media(max-width:1000px){body{height:auto;min-height:100dvh;display:block;overflow:auto}.workspace{overflow:visible;min-height:calc(100dvh - 104px)}.workspaceinner{height:auto}.sidebar{max-height:650px}.decisionpane{min-height:650px}.results{min-height:500px}.resultpanel{max-height:720px;overflow:auto}.kpis{gap:16px}.kpi .label{font-size:9px}.kpi .value{font-size:15px}.treecanvas{overflow-x:auto}.treecanvas svg{min-width:740px}.pathsources{grid-template-columns:repeat(2,minmax(0,1fr))}.treepick{flex-wrap:wrap}.ssvcblock{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(max-width:700px){.topbar{padding:0 12px}.brand{font-size:12px}.brandmark{display:none}.topactions{gap:4px}.topactions .btn{font-size:10px;padding:6px}.kpis{height:auto;min-height:48px;flex-wrap:wrap;gap:6px 16px;padding:8px 12px}.kpi .label{font-size:9px}.workspace{padding:14px 12px}.workspaceinner{display:flex;flex-direction:column;gap:18px}.sidebar{border:0;padding:0;max-height:250px}.sidebarhint,.sidebarfoot .hint{display:none}.targetlist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:160px;flex:none}.sidebarfoot{padding-top:8px}.decisionpane{min-height:600px}.sectiontitle h2{font-size:18px}.sectiontitle span{font-size:10px}.decisionactions{flex-direction:row;align-items:center;gap:8px}.enginecontrol{display:none}.outcomesummary{grid-template-columns:48px minmax(0,1fr);gap:10px}.outcomesummary .donut{width:44px;height:44px}.outcomerows{grid-template-columns:repeat(2,minmax(0,1fr))}.outcomerow .count{font-size:15px}.outcomerow .name{font-size:10px}.resulttabs{gap:14px;overflow-x:auto}.resulttab{font-size:11px}.resulthead{padding:12px;grid-template-columns:100px minmax(0,1fr);gap:10px}.action{font-size:15px}.resultpanel{padding:12px}.startsteps{flex-direction:column;gap:6px}.startstep{padding:10px}.emptycontent h3{font-size:26px}.empty{padding:20px}.addrow,.ssvcblock,.advcols{grid-template-columns:1fr}.ssvcblock .derived{display:grid}.derivednote{max-width:none}.form{padding:12px}.addhead{display:block;padding:14px}.addhead .hint{display:block;max-width:75%}.ssvcfield .fieldq{min-height:0}.advcol+.advcol{border-left:0;padding-left:0}.formactions{justify-content:flex-start}.formactions .btn{flex:none}}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+  @media(min-width:1001px){.kpis{height:36px}.workspace{padding-top:12px;padding-bottom:12px}.sectiontitle{margin-bottom:8px}.sectiontitle span{font-family:inherit;font-size:12px}.outcomesummary{padding:7px 14px;grid-template-columns:50px minmax(0,1fr);margin-bottom:10px;min-height:64px}.outcomesummary .donut{width:48px;height:48px}.resulthead{padding:10px 16px}.resultpanel{padding:10px 16px}.treepick{margin:4px 0 8px}.treecanvas svg{max-height:210px}.pathsources{margin-top:7px}.pathcontext{margin-top:6px}.evidencelinks{margin-top:7px}.treelegend{margin-top:5px}}
+
+  /* Keep the introduction as the entry page; the workspace has its own viewport. */
+  body{font-size:16px}
+  a.btn,.brand{text-decoration:none}
+  .landing{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;justify-content:center;gap:28px;padding:28px clamp(24px,4vw,64px)}
+  .landing .hero{width:100%;max-width:1500px;padding:0;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:40px}
+  .landing h1{font-size:clamp(52px,5.5vw,80px);line-height:1.03;margin:16px 0 20px}
+  .landing .hero p{font-size:18px;line-height:1.6;margin-bottom:24px}
+  .landing .eyebrow{font-size:12px;letter-spacing:.1em}
+  .landing .btn{font-size:16px;padding:11px 16px}
+  .landing .proof{padding:20px}.landing .proofhead{font-size:12px;letter-spacing:.03em;margin-bottom:16px}
+  .landing .node{padding:12px 10px;min-height:126px}.landing .node small{font-size:14px}.landing .nodecode{font-size:11px}
+  .landing .decision{padding:12px;gap:12px}.landing .decision b{font-size:16px}.landing .decision span{font-size:13px}.landing .decision .outcome-now{font-size:20px}
+  .landing .benchmark{width:100%;max-width:1500px;padding:0;margin:0 auto;grid-template-columns:minmax(0,.85fr) minmax(0,2fr)}
+  .landing .benchmarkcopy{padding:20px}.landing .benchmarkcopy h2{font-size:28px;margin:12px 0}.landing .benchmarkcopy p{font-size:14px}
+  .landing .outcome{padding:16px 12px}.landing .outcome strong{font-size:17px}.landing .factorquestion{font-size:14px}.landing .outcome small{font-size:13px}
+
+  /* Use the sidebar's spare height for totals instead of shrinking every label. */
+  .workspaceinner{grid-template-columns:248px minmax(0,1fr);gap:18px}
+  .sidebar{padding-right:16px}.sidebarhint{font-size:14px}
+  .sidebar .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;height:auto;min-height:0;padding:16px 0 4px;background:none;border-top:1px solid #d9deea;margin-top:16px}
+  .sidebar .kpi{display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+  .sidebar .kpi:last-child{grid-column:1/-1}.sidebar .kpi .value{font-size:20px;color:#28344c}
+  .sidebar .kpi .label{font-size:12px;color:#5b667b;text-transform:none;letter-spacing:0}
+  .btn.small,.brand small,.sidebarfoot .hint{font-size:14px}.brand{font-size:16px}
+  .targetname{font-size:16px}.targetmeta,.targetstate{font-size:14px}.targetselect{padding:12px}
+  .sectiontitle h2{font-size:22px}.sectiontitle span{font-family:inherit;font-size:14px;color:#5b667b}
+  .enginevalue,.enginecontrol select{font-size:14px}.enginelabel{font-size:11px}
+  .outcomesummary .microtitle{font-family:inherit;font-size:12px;letter-spacing:0;color:#5b667b}
+  .outcomerow .name{font-size:14px}.outcomerow .count small{font-size:12px}
+  .resulthead{grid-template-columns:110px minmax(0,1fr) auto;gap:12px}
+  .priority{font-size:14px}.prioritymeaning{font-size:11px}.prioritydue{font-family:inherit;font-size:12px}
+  .rname{font-size:14px;color:#5b667b}.action{font-size:18px}.reportlink,.textbutton{font-size:14px}
+  .resulttab{font-size:15px;padding:10px 0}.tabcount{font-size:12px}
+  .treepick label{font-size:14px}.treepick select{font-size:15px;max-width:none}
+  .tree .node text,.tree .leaf text{font-size:16px}.tree .root text{font-size:14px}.tree .colhead{font-size:13px;letter-spacing:0}
+  .treelegend{font-size:13px;color:#596579}.pathsource{font-size:13px;color:#596579}.pathsource strong{font-size:14px}
+  .pathcontext{font-size:13px;gap:5px 12px}.evidencelinks a,.evidencelinks span{font-size:13px}
+  .queuetable,.ssvcinputtable{font-size:14px}.queuetable th,.ssvcinputtable th{font-size:12px}.queuetable .cves,.inputsource{font-size:13px}
+  .ssvcinputtable select,.metric,.fieldq,.fieldnow,.fieldnow.fallback,.fieldhelp,.derivedvalue span,.derivednote,.ssvcabout,.form>.hint,.addhead .hint{font-size:14px}
+  .emptycontent p,.statecard span{font-size:16px}.startstep{font-size:14px}.emptycontent .eyebrow{font-size:13px}
+  .resultnotice,.toast,.privacy{font-size:14px}
+  @media(min-width:1001px) and (max-height:700px){.workspace{padding-top:8px;padding-bottom:8px}.sectiontitle{margin-bottom:6px}.outcomesummary{min-height:46px;grid-template-columns:34px minmax(0,1fr);padding:5px 12px;margin-bottom:8px}.outcomesummary .donut{width:32px;height:32px}.outcomesummary .microtitle{display:none}.resulthead{padding-top:6px;padding-bottom:6px}.resultpanel{padding-top:8px;padding-bottom:8px}.resulttab{padding:8px 0}}
+  @media(min-width:1001px) and (max-height:760px){.landing{gap:24px;padding-top:24px;padding-bottom:24px}.landing h1{font-size:60px}.landing .benchmarkcopy h2{font-size:25px}.landing .outcome{padding-top:12px;padding-bottom:12px}}
+  @media(max-width:1100px){.brand small{display:none}.workspaceinner{grid-template-columns:220px minmax(0,1fr)}.landing{justify-content:flex-start}.landing .hero,.landing .benchmark{grid-template-columns:1fr}.landing .proof{margin-top:8px}.landing .benchmarkcopy{border-bottom:0}}
+  @media(max-width:1000px){.sidebar .kpis{flex:none}.treecanvas svg{min-width:920px}.landing{overflow:visible}.landing .hero{gap:24px}.landing .outcomes{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:700px){.brand{font-size:14px}.topbar{height:auto;min-height:64px;gap:8px}.topactions .btn{font-size:13px;padding:7px 9px}.topactions{flex-wrap:wrap;justify-content:flex-end;padding:8px 0}.workspaceinner{display:flex}.sidebar{max-height:none}.sidebar .kpis{grid-template-columns:repeat(3,1fr);gap:10px;padding-top:12px}.sidebar .kpi:last-child{grid-column:auto}.sidebar .kpi .value{font-size:18px}.sidebarfoot .hint{display:none}.targetlist{max-height:180px}.sectiontitle span{font-size:14px}.outcomerow .name{font-size:14px}.resulthead{grid-template-columns:100px minmax(0,1fr)}.resulttabs{gap:18px}.landing{padding:28px 20px;gap:24px}.landing h1{font-size:52px}.landing .hero p{font-size:17px}.landing .proofhead{flex-wrap:wrap;gap:5px}.landing .node{min-height:0}.landing .decision{flex-wrap:wrap}.landing .outcome{border-left:1px solid var(--line)}.landing .heroactions{flex-direction:column;align-items:stretch}.landing .heroactions .btn{text-align:center}}
 </style></head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span></div>
+  <a class="brand" href="#home" aria-label="PatchTriage home"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span><small>Patch decision workspace</small></a>
+  <div class="topactions"><a class="btn small ghost" id="home-link" href="#home" hidden>Overview</a><a class="btn small ghost" id="workspace-link" href="#workspace">Open workspace →</a><button class="btn small run-control" id="demo">Run the offline demo</button></div>
 </header>
-
+<main class="landing" id="home" aria-labelledby="home-title">
 <section class="hero">
   <div>
     <div class="eyebrow">Evidence-informed deployment decisions</div>
-    <h1>Patch what matters <em>first.</em></h1>
-    <p>Combine global threat evidence with your system exposure, mission impact, and safety context to make one defensible SSVC deployment decision — without letting AI invent a score.</p>
-    <div class="heroactions">
-      <button class="btn primary run-control" id="demo">Run the offline demo</button>
-      <button class="btn ghost" id="jump">Open my workspace ↓</button>
-    </div>
+    <h1 id="home-title" tabindex="-1">Patch what matters <em>first.</em></h1>
+    <p>Turn vulnerability evidence and your system context into a clear patching priority — with a decision path you can explain.</p>
+    <div class="heroactions"><a class="btn primary" href="#workspace">Open workspace →</a><button class="btn ghost run-control" id="landing-demo">Try the offline demo</button></div>
   </div>
   <div class="proof" aria-label="PatchTriage decision flow">
     <div class="proofhead"><span>Why this patch first?</span><span>auditable signal path</span></div>
@@ -191,7 +291,7 @@ _TEMPLATE = r"""<!doctype html>
   <div class="benchmarkcopy">
     <div class="eyebrow">CERT/CC SSVC · Deployer model</div>
     <h2>Severity informs. Your environment decides.</h2>
-    <p>KEV and PoC evidence establish what attackers are doing. SSVC combines that state with how your system is deployed and what failure means to your organization.</p>
+    <p>Four SSVC factors connect threat evidence to the impact on your system.</p>
   </div>
   <div class="outcomes">
     <div class="outcome"><span class="factorcode">SSVC · E</span><strong>Exploitation</strong><span class="factorquestion">What are attackers doing?</span><small><b>Active</b> (CISA KEV) · <b>Public PoC</b> · <b>None</b></small></div>
@@ -201,24 +301,48 @@ _TEMPLATE = r"""<!doctype html>
   </div>
 </section>
 
-<section class="kpis" aria-label="Workspace totals">
-  <div class="kpi"><div class="value" id="k-targets">0</div><div class="label">targets in scope</div></div>
+</main>
+
+
+
+<section class="workspace" id="workspace" hidden>
+  <div class="workspaceinner">
+    <aside class="sidebar">
+      <div class="sectiontitle"><h2>Targets</h2><button class="btn primary small" id="new-target">+ Add target</button></div>
+      <p class="sidebarhint">Select a system to review its decisions.</p>
+      <div class="privacy" id="privacy-note" hidden><b>Public service:</b> Do not upload confidential scanner output or private repository data. Anonymous evidence is retained temporarily.</div>
+
+      <div class="targetlist" id="targetlist" aria-label="Registered targets"></div>
+      <section class="kpis" aria-label="Workspace totals">
+  <div class="kpi"><div class="value" id="k-targets">0</div><div class="label">Targets</div></div>
   <div class="kpi"><div class="value" id="k-kev">0</div><div class="label">known exploited</div></div>
   <div class="kpi"><div class="value" id="k-immediate">0</div><div class="label">Immediate decisions</div></div>
-  <div class="kpi"><div class="value" id="k-audit">—</div><div class="label">decisions verified</div></div>
-  <div class="kpi" title="Share of Exploitation and Automatable values taken from a published or analyst-confirmed source instead of a conservative assumption."><div class="value" id="k-authoritative">—</div><div class="label">inputs from authority</div></div>
+  <div class="kpi"><div class="value" id="k-audit">—</div><div class="label">Decisions verified</div></div>
+  <div class="kpi" title="Share of Exploitation and Automatable values taken from a published or analyst-confirmed source instead of a conservative assumption."><div class="value" id="k-authoritative">—</div><div class="label">Inputs from authority</div></div>
 </section>
+      <div class="sidebarfoot"><button class="btn small" id="fleet-open">Import organization…</button><div class="hint">Scanner JSON · SBOM · Repository</div></div>
+    </aside>
 
-<section class="workspace" id="workspace">
-  <div class="workspaceinner">
-    <aside>
-      <div class="sectiontitle"><h2>Targets</h2><span>asset context</span></div>
-      <div class="privacy" id="privacy-note" hidden><b>Public service:</b> Do not upload confidential scanner output or private repository data. Anonymous evidence is retained temporarily.</div>
-      <details class="add lightpanel" id="targetform">
-        <summary id="form-title">Add a target</summary>
+    <main class="decisionpane" aria-label="Patch decisions">
+      <div class="sectiontitle"><div><h2 id="workspace-title" tabindex="-1">Patch decisions</h2><span id="workspace-step">1. Add a target → 2. Add evidence → 3. Run triage</span></div><div class="decisionactions">
+        <div class="enginecontrol" aria-label="Decision engine"><small class="enginelabel">Decision engine</small><strong class="enginevalue" id="backend-static">SSVC deterministic</strong><select id="backend" aria-label="Decision engine" hidden></select></div>
+        <button class="btn small run-control" id="runall">Run all</button>
+      </div></div>
+      <div class="outcomesummary lightpanel" id="outcomesummary" aria-label="SSVC outcome breakdown"></div>
+      <details id="fleetbar" class="lightpanel" hidden></details>
+      <div class="results" id="results" aria-live="polite"></div>
+    </main>
+  </div>
+</section>
+<dialog id="contextdialog" aria-labelledby="form-title"><button class="dialogclose btn small" id="context-close" aria-label="Close target form">Close ×</button>
+      <section class="add lightpanel" id="targetform" aria-labelledby="form-title">
+        <div class="addhead"><h3 id="form-title">Add a target</h3><span class="hint">Name your system. Add evidence after saving.</span></div>
         <div class="form">
-          <input type="text" id="f-name" maxlength="120" placeholder="System name" aria-label="System name">
-          <input type="text" id="f-url" placeholder="Reference URL (optional; this field is not scanned)" aria-label="Reference link URL">
+          <div class="addrow">
+            <label class="fieldlabel">System name<input type="text" id="f-name" maxlength="120" placeholder="e.g. checkout-api" aria-label="System name"></label>
+            <label class="fieldlabel">Reference URL (optional)<input type="text" id="f-url" placeholder="Dashboard or repository link; not scanned" aria-label="Reference link URL"></label>
+            <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
+          </div>
           <div class="ssvcblock">
             <div class="ssvchead">
               <div><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC</span></div>
@@ -235,82 +359,57 @@ _TEMPLATE = r"""<!doctype html>
             </details>
             <label class="ssvcfield" id="fw-exposure">
               <span class="fieldhead"><span class="fieldnum">1</span><span class="fieldname">System Exposure</span><span class="standardtag">EXP 1.0.1</span></span>
-              <span class="fieldq">How reachable is this system from where an attacker stands?</span>
+              <span class="fieldq">Who can reach this system?</span>
               <select id="f-exposure"><option value="unknown" selected>Not assessed</option><option value="open">Open</option><option value="controlled">Controlled</option><option value="small">Small</option></select>
               <span class="fieldnow" id="d-exposure"></span>
             </label>
             <label class="ssvcfield" id="fw-mission">
               <span class="fieldhead"><span class="fieldnum">2</span><span class="fieldname">Mission Impact</span><span class="standardtag">MI 2.0.0</span></span>
-              <span class="fieldq">If this system fails, what happens to the work your organization must keep doing? A MEF is a Mission Essential Function.</span>
+              <span class="fieldq">What essential work stops if this system fails?</span>
               <select id="f-mission"><option value="unknown" selected>Not assessed</option><option value="degraded">Degraded</option><option value="mef_support_crippled">MEF Support Crippled</option><option value="mef_failure">MEF Failure</option><option value="mission_failure">Mission Failure</option></select>
               <span class="fieldnow" id="d-mission"></span>
             </label>
             <label class="ssvcfield" id="fw-safety">
               <span class="fieldhead"><span class="fieldnum">3</span><span class="fieldname">Safety Impact</span><span class="standardtag">SI 2.0.1</span></span>
-              <span class="fieldq">What is the worst credible harm to people — physical, operational, environmental, financial or psychological?</span>
+              <span class="fieldq">What is the worst credible harm if exploitation succeeds?</span>
               <select id="f-safety"><option value="unknown" selected>Not assessed</option><option value="negligible">Negligible</option><option value="marginal">Marginal</option><option value="critical">Critical</option><option value="catastrophic">Catastrophic</option></select>
               <span class="fieldnow" id="d-safety"></span>
             </label>
             <div class="derived">
               <span class="derivedlabel">Derived · Human Impact <span class="standardtag">HI 2.0.2</span></span>
               <span class="derivedvalue"><b id="d-human">—</b><span id="d-humanpath"></span></span>
-              <span class="derivednote">Questions 2 and 3 combine through the published Human Impact table — PatchTriage never adds them up. The two remaining decision points, <b>Exploitation</b> and <b>Automatable</b>, belong to the vulnerability rather than the system, so they come from CISA KEV and Vulnrichment per finding.</span>
+              <span class="derivednote">Mission + safety determine Human Impact. Exploitation and Automatable belong to the vulnerability rather than the system and are evaluated per finding.</span>
             </div>
           </div>
-          <details class="advanced">
-            <summary>Advanced context evidence</summary>
-            <div class="advancedgrid">
-              <span class="fieldhelp">Supporting evidence. These are PatchTriage fields, not SSVC decision points: they never override the three answers above, but they are recorded with the decision and used as a fallback when System Exposure is left unassessed.</span>
-              <label class="fieldlabel">Criticality<select id="f-criticality"><option value="unknown">Unknown</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
-              <div class="row2"><label class="fieldlabel">Internet exposed<select id="f-internet"><option value="unknown">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label><label class="fieldlabel">Code reachable<select id="f-reachable"><option value="unknown">Unknown</option><option value="true">Observed / confirmed</option><option value="false">Not reachable</option></select></label></div>
-              <label class="fieldlabel">Runtime observed<select id="f-runtime"><option value="unknown">Unknown</option><option value="true">Observed at runtime</option><option value="false">Not observed</option></select></label>
-              <label class="fieldlabel">Context evidence sources<input type="text" id="f-sources" maxlength="400" placeholder="CMDB, OpenTelemetry, Falco"></label>
+          <details class="advanced" id="bodform">
+            <summary>Optional context · CISA BOD 26-04 policy and supporting evidence</summary>
+            <div class="advcols">
+              <div class="advcol">
+                <span class="advgroup">CISA BOD 26-04 policy <span class="standardtag">separate from SSVC</span></span>
+                <span class="fieldhelp">Separate decision table (<a href="https://certcc.github.io/SSVC/howto/cisa_response/" target="_blank" rel="noopener">cisa:DT_BOD2604:1.0.0</a>) that never changes SSVC; binding only for US federal civilian systems. Publicly Exposed is CISA's question, not SSVC System Exposure; unassessed, it stays unresolved unless Internet exposed is Yes.</span>
+                <div class="advfields">
+                  <label class="fieldlabel">Applicability<select id="f-bod"><option value="unknown">Not recorded (reference only)</option><option value="required">Required: federal civilian system</option><option value="voluntary">Voluntary adoption</option><option value="not_applicable">Does not apply (reference only)</option></select></label>
+                  <label class="fieldlabel">Publicly Exposed (CISA)<select id="f-public"><option value="unknown">Not assessed</option><option value="yes">Yes: reachable by unauthenticated or untrusted users over a public network</option><option value="no">No: not reachable that way</option></select></label>
+                </div>
+              </div>
+              <div class="advcol">
+                <span class="advgroup">Supporting context evidence</span>
+                <span class="fieldhelp">PatchTriage fields, not SSVC decision points: they never override the three answers above, are recorded with the decision, and are used as a fallback when System Exposure is left unassessed.</span>
+                <div class="advfields">
+                  <label class="fieldlabel">Criticality<select id="f-criticality"><option value="unknown">Unknown</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+                  <label class="fieldlabel">Internet exposed<select id="f-internet"><option value="unknown">Unknown</option><option value="true">Yes</option><option value="false">No</option></select></label>
+                  <label class="fieldlabel">Code reachable<select id="f-reachable"><option value="unknown">Unknown</option><option value="true">Observed / confirmed</option><option value="false">Not reachable</option></select></label>
+                  <label class="fieldlabel">Runtime observed<select id="f-runtime"><option value="unknown">Unknown</option><option value="true">Observed at runtime</option><option value="false">Not observed</option></select></label>
+                  <label class="fieldlabel">Evidence sources<input type="text" id="f-sources" maxlength="400" placeholder="CMDB, OpenTelemetry, Falco"></label>
+                </div>
+              </div>
             </div>
           </details>
-          <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
-          <div class="hint">Answer what you know. Anything left on “Not assessed” still produces a decision — it just carries the conservative fallback and stays flagged for confirmation, and you can revisit it later with <b>Review context</b>.</div>
+          <div class="hint">You can leave answers unassessed. Conservative defaults stay flagged until you confirm them.</div>
         </div>
-      </details>
-      <div style="margin:8px 0"><button class="btn small" id="fleet-open" title="Import every recently active repository of a GitHub account as targets">Import organization…</button></div>
-      <div class="targetlist" id="targetlist"></div>
-    </aside>
+      </section>
+</dialog>
 
-    <div>
-      <div class="sectiontitle"><h2>Patch decisions</h2><div class="decisionactions">
-        <div class="enginecontrol" aria-label="Decision engine">
-          <small class="enginelabel">Decision engine</small>
-          <strong class="enginevalue" id="backend-static">SSVC deterministic</strong>
-          <select id="backend" aria-label="Decision engine" hidden></select>
-        </div>
-        <button class="btn small run-control" id="runall">Run all</button>
-      </div></div>
-      <div class="prioritylegend lightpanel" aria-label="SSVC outcome meanings">
-        <div class="immediate"><b><i></i>Immediate</b>Act now · example local SLA 3 days</div>
-        <div class="outofcycle"><b><i></i>Out-of-Cycle</b>Next opportunity · example SLA 14 days</div>
-        <div class="scheduled"><b><i></i>Scheduled</b>Normal maintenance · example SLA 30 days</div>
-        <div class="defer"><b><i></i>Defer</b>Monitor · example review at 90 days</div>
-      </div>
-      <div id="fleetbar" class="lightpanel" style="margin-bottom:12px;padding:12px 14px" hidden></div>
-      <div class="results" id="results">
-        <div class="empty lightpanel">
-          <div class="emptycopy">
-            <div class="eyebrow">Decision, not detection</div>
-            <h3>See why the same CVE needs a different action here.</h3>
-            <p>Load the bundled evidence. PatchTriage applies the official SSVC Deployer path, shows every inferred input and confidence level, then groups findings into package-level actions.</p>
-            <div><button class="btn primary run-control demo-trigger">Launch Demo</button></div>
-          </div>
-          <div class="emptyviz">
-            <div class="versus">
-              <div class="method miss"><small>GLOBAL SIGNALS</small><strong>KEV · EPSS · CVSS</strong><small>what attackers can do</small></div>
-              <div class="vs">VS</div>
-              <div class="method hit"><small>SSVC / YOUR SYSTEM</small><strong>Immediate</strong><small>what your team should do now</small></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
 <input type="file" id="filepick" class="filehidden" accept=".json">
 <dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Repository access follows the GitHub credentials configured for this deployment.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
@@ -320,22 +419,38 @@ _TEMPLATE = r"""<!doctype html>
 const SSVC_LABELS=__SSVC_LABELS__;
 const HUMAN_IMPACT=__HUMAN_IMPACT__;
 let CFG={backends:["rules"],has_ai:false,ai_provider:null};
-let TARGETS=[];let RESULTS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
+let selectedTarget=null;const VIEWS=new Map();let booting=true;let renderedView="";
+let TARGETS=[];let RESULTS=new Map();let STATUS=new Map();let pickTarget=null;let repoTarget=null;let editingTarget=null;let toastTimer=null;
 
 async function api(method,path,body){
-  const opt={method,headers:{}};
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),method==="GET"?15000:120000);
+  const opt={method,headers:{},signal:controller.signal};
   if(body!==undefined){opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(body);}
-  const response=await fetch(path,opt);
-  const payload=response.status===204?null:await response.json().catch(()=>({error:response.statusText}));
-  if(!response.ok)throw new Error((payload&&payload.error)||response.statusText);
-  return payload;
+  try{
+    const response=await fetch(path,opt);
+    let payload;
+    try{payload=response.status===204?null:await response.json();}
+    catch(error){const invalid=new Error("The server returned an unreadable response. Reconnect to check the result.");invalid.status=response.status;invalid.retryable=true;throw invalid;}
+    if(!response.ok){const error=new Error((payload&&payload.error)||response.statusText);error.status=response.status;error.retryable=response.status>=500||response.status===429;throw error;}
+    return payload;
+  }catch(error){if(!error.status)error.retryable=true;throw error;}
+  finally{clearTimeout(timer);}
 }
+
 function esc(value){return String(value==null?"":value).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));}
 function notify(message,error=false){
   const el=document.getElementById("toast");el.textContent=message;el.className="toast show"+(error?" error":"");
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className="toast",3600);
 }
-function setBusy(busy){document.querySelectorAll(".run-control").forEach(el=>el.disabled=busy);}
+function setBusy(){
+  document.getElementById("runall").disabled=booting||!TARGETS.some(t=>t.source_file&&!isPending(t.id));
+  document.querySelectorAll('[data-action="run"],.retry-run').forEach(el=>{const id=el.dataset.id||el.closest('[data-id]')?.dataset.id;el.disabled=booting||isPending(id);});
+}
+function isPending(id){return ["queued","running","reconnecting"].includes(STATUS.get(id)?.state);}
+function rememberSelection(){try{sessionStorage.setItem("patchtriage-selection",selectedTarget||"");}catch{}}
+function selectTarget(id){selectedTarget=id;rememberSelection();renderTargets();renderResults();}
+function openTargetForm(){resetForm();document.getElementById("contextdialog").showModal();document.getElementById("f-name").focus();}
 function pct(value,total){return value&&total?Math.max(5,Math.round(value/total*100)):0;}
 
 async function loadConfig(){
@@ -360,47 +475,53 @@ async function loadConfig(){
       :"This deployment fetches GitHub SPDX SBOMs through the Dependency Graph API without cloning or executing repository code.";
 }
 async function loadTargets(){
-  TARGETS=await api("GET","/api/targets");renderTargets();updateKpis();
+  TARGETS=await api("GET","/api/targets");
+  if(!TARGETS.some(t=>t.id===selectedTarget))selectedTarget=TARGETS[0]?.id||null;
+  renderTargets();updateKpis();
 }
 async function loadSummaries(){
   const summaries=await api("GET","/api/summaries");RESULTS=new Map(summaries.map(summary=>[summary.target_id,summary]));renderResults();
 }
 async function resumeActiveJobs(){
-  const jobs=await api("GET","/api/jobs");
-  if(!jobs.length)return;
-  notify(`Resuming ${jobs.length} active assessment job${jobs.length===1?"":"s"}...`);
-  jobs.forEach(job=>waitForJob(job.job_id).then(summary=>{RESULTS.set(summary.target_id,summary);renderResults();}).catch(error=>notify(error.message,true)));
+  // Read jobs before summaries: a run finishing between these requests is
+  // either watched below or already present in the committed summaries.
+  const jobs=await api("GET","/api/jobs?latest=1");
+  await loadSummaries();
+  for(const job of jobs){
+    if(!TARGETS.some(t=>t.id===job.target_id))continue;
+    if(job.state==="failed"){RESULTS.delete(job.target_id);STATUS.set(job.target_id,{state:"failed",error:job.error});}
+    else if(job.state==="succeeded"&&job.summary){STATUS.delete(job.target_id);RESULTS.set(job.target_id,job.summary);}
+    else if(["queued","running"].includes(job.state)){RESULTS.delete(job.target_id);watchJob(job.target_id,job.job_id);}
+  }
+  let pending=[];try{pending=JSON.parse(sessionStorage.getItem("patchtriage-queue")||"[]");}catch{}
+  if(Array.isArray(pending))for(const item of pending){
+    const target=TARGETS.find(t=>t.id===item.id);
+    if(target?.source_file&&target.input_revision===item.revision&&!jobs.some(j=>j.target_id===item.id&&j.created_at>=item.queuedAt))enqueue(item.id,item.backend,item.queuedAt);
+  }
+  renderResults();pumpQueue();
 }
+
 function contextTags(target){
   const exposure=target.system_exposure||"unknown",mission=target.mission_impact||"unknown",safety=target.safety_impact||"unknown";
   const tags=[`<span class="tag ${exposure==="open"?"hot":exposure==="unknown"?"warn":""}">EXP ${esc(exposure)}</span>`,`<span class="tag ${mission==="unknown"?"warn":""}">MI ${esc(mission)}</span>`,`<span class="tag ${safety==="unknown"?"warn":""}">SI ${esc(safety)}</span>`];
+  const bod=target.bod2604_applicability||"unknown";
+  if(bod==="required"||bod==="voluntary")tags.push(`<span class="tag">BOD 26-04 ${bod} · PE ${esc(target.publicly_exposed||"unknown")}</span>`);
   if(target.demo)tags.push('<span class="tag demo">offline demo</span>');
   return tags.join("");
 }
 function renderTargets(){
   const list=document.getElementById("targetlist");
-  if(!TARGETS.length){list.innerHTML='<div class="hint">No targets registered yet.</div>';return;}
+  if(!TARGETS.length){list.innerHTML='<div class="hint">Your systems will appear here.</div>';return;}
   list.innerHTML=TARGETS.map(target=>{
-    const name=target.url?`<a href="${esc(target.url)}" target="_blank" rel="noopener">${esc(target.name)} &#8599;</a>`:esc(target.name);
-    const sourceName=target.source_name||target.source_format||"evidence";
-    const sourceMeta=target.source_file
-      ?`${esc(sourceName)} &middot; ${esc(target.source_format)} &middot; ${Math.max(1,Math.round((target.source_size||0)/1024))} KiB &middot; SHA-256 ${esc((target.source_sha256||"").slice(0,12))}`
-      :"Attach scanner JSON, CycloneDX/SPDX JSON, or import a GitHub repository";
-    return `<article class="target" data-id="${esc(target.id)}">
-      <div class="targettop"><div><div class="targetname">${name}</div><div class="targetid">${esc(target.id)}</div></div></div>
-      <div class="badges">${contextTags(target)}</div>
-      <div class="source ${target.source_file?"ready":""}">${target.source_file?"&#9679; ":"&#9675; "}${sourceMeta}</div>
-      <div class="targetactions">
-        <button class="btn small" data-action="edit">Review context</button>
-        <button class="btn small attach" data-action="import" title="Upload Trivy/Grype/OSV JSON or a CycloneDX/SPDX JSON SBOM">Upload evidence</button>
-        <button class="btn small attach" data-action="repository" title="Fetch a GitHub Dependency Graph SBOM">Import repository</button>
-        <button class="btn small run-control" data-action="run" ${target.source_file?"":"disabled"}>Run</button>
-        <button class="btn small danger" data-action="delete">Delete</button>
-      </div></article>`;
+    const status=STATUS.get(target.id),result=RESULTS.get(target.id);
+    const label=status?({queued:"Waiting to run",running:"Assessing…",reconnecting:"Reconnecting…",disconnected:"Connection interrupted",failed:"Assessment failed"}[status.state]||status.state):result?`${result.total} findings · ${result.top_ssvc_decision||"No findings"}`:target.source_file?"Ready to run":"Add evidence to continue";
+    return `<article class="target ${target.id===selectedTarget?"selected":""}" data-id="${esc(target.id)}"><button class="targetselect" data-action="select" aria-pressed="${target.id===selectedTarget}"><span class="targetname">${esc(target.name)}</span><span class="targetmeta">${esc(target.demo?"Bundled offline evidence":target.source_name||"No evidence attached")}</span><span class="targetstate ${status?.state==="failed"?"failed":""}">${esc(label)}</span></button></article>`;
   }).join("");
+  setBusy();
 }
+
 function updateKpis(){
-  const values=[...RESULTS.values()];
+  const values=[...RESULTS.entries()].filter(([id])=>!STATUS.has(id)).map(([,r])=>r);
   const totalFindings=values.reduce((n,r)=>n+r.total,0);
   const verified=values.reduce((n,r)=>n+r.audit_verified,0);
   document.getElementById("k-targets").textContent=TARGETS.length;
@@ -448,6 +569,7 @@ function explainBlock(summary){
     <div class="decisionline"><span>SSVC Deployer · ${esc(s.model||"")}</span><b>${esc(s.decision_label||"Unknown")}</b></div>
     <div class="decisionnote"><b>Categorical outcome — no aggregate SSVC score.</b> Supporting signals remain visible. Inside the same outcome, SSVC decision points are compared first, followed by EPSS and CVSS tie-breakers; none are added together into a score.</div>
     <div class="signalgrid">${signals}</div>
+    ${bodBlock(x)}
     ${(x.needs_confirmation||[]).length?`<div class="confirmbar">Confirm inferred inputs: ${esc(x.needs_confirmation.map(v=>String(v).replaceAll("_"," ")).join(", "))}. Conservative defaults remain active until reviewed.</div>`:""}
     ${checks?`<ul class="evidence" aria-label="Decision evidence checklist">${checks}</ul>`:""}
     ${advisories?`<div class="advisoryline">${advisories}</div>`:""}`;
@@ -470,42 +592,161 @@ function ssvcInputBlock(summary){
     <td>${ssvcInputSelect("automatable",item)}</td>
     <td>${item.needs_review?'<span class="reviewflag">Review requested</span>':'Confirmed / evidence-backed'}</td>
   </tr>`).join("");
-  return `<details class="ssvcinputreview" ${review?"open":""}><summary>Review vulnerability-specific SSVC inputs · ${review} need confirmation</summary>
+  return `<details class="ssvcinputreview" open><summary>Review vulnerability-specific SSVC inputs · ${review} need confirmation</summary>
     <p>CERT/CC defines Exploitation and Automatable per vulnerability. PatchTriage uses authoritative evidence or the official conservative default; select a value only when an analyst can confirm it.</p>
     ${total>visible.length?`<p>Showing the highest-priority ${visible.length} of ${total} findings. Only changed rows are submitted; use the CLI for bulk review.</p>`:""}
     <table class="ssvcinputtable"><thead><tr><th>Finding</th><th>Exploitation (E)</th><th>Automatable (A)</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="ssvcinputactions"><button class="btn primary small save-ssvc-inputs">Save inputs and rerun</button></div>
   </details>`;
 }
+function reportFilename(summary){return "patchtriage-"+(String(summary.name||summary.target_id).toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"report")+".html";}
+const OUTCOME_ORDER=[["immediate","Immediate","Act now · example local SLA 3 days"],["out_of_cycle","Out-of-Cycle","Next opportunity · example SLA 14 days"],["scheduled","Scheduled","Normal maintenance · example SLA 30 days"],["defer","Defer","Monitor · example review at 90 days"]];
+const OUTCOME_COLOR={immediate:"var(--c-immediate)",out_of_cycle:"var(--c-outofcycle)",scheduled:"var(--c-scheduled)",defer:"var(--c-defer)"};
+const OUTCOME_KEY={"Immediate":"immediate","Out-of-Cycle":"out_of_cycle","Scheduled":"scheduled","Defer":"defer"};
+function donutSvg(outcomes,size,caption){
+  const total=OUTCOME_ORDER.reduce((n,[k])=>n+(outcomes[k]||0),0),stroke=Math.max(10,Math.round(size*0.16)),r=(size-stroke)/2-2,cx=size/2,cy=size/2;
+  const circ=2*Math.PI*r,gap=total>1?2:0;let offset=0;
+  const segs=total?OUTCOME_ORDER.filter(([k])=>outcomes[k]).map(([k,label])=>{const n=outcomes[k],len=Math.max(0,n/total*circ-gap);const seg=`<circle class="seg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${OUTCOME_COLOR[k]}" stroke-width="${stroke}" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${n} of ${total} (${Math.round(n/total*100)}%)</title></circle>`;offset+=n/total*circ;return seg;}).join(""):`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e3e7ef" stroke-width="${stroke}"></circle>`;
+  const text=OUTCOME_ORDER.map(([k,label])=>`${label} ${outcomes[k]||0}`).join(", ");
+  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(caption)}: ${esc(text)}">${segs}${size>=100?`<text class="donutlabel" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text><text class="donutsub" x="${cx}" y="${cy+22}" text-anchor="middle">FINDINGS</text>`:`<text class="donutsub" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text>`}</svg>`;
+}
+function renderOutcomeSummary(){
+  const el=document.getElementById("outcomesummary");if(!el)return;
+  const totals={immediate:0,out_of_cycle:0,scheduled:0,defer:0};
+  RESULTS.forEach(r=>OUTCOME_ORDER.forEach(([k])=>totals[k]+=((r.outcomes||{})[k]||0)));
+  const total=Object.values(totals).reduce((a,b)=>a+b,0);
+  const rows=OUTCOME_ORDER.map(([k,label,meaning])=>`<div class="outcomerow"><div class="name"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)}</div><div class="count">${totals[k]}<small>${total?Math.round(totals[k]/total*100)+"%":"—"}</small></div><div class="meaning">${esc(meaning)}</div></div>`).join("");
+  el.innerHTML=`${donutSvg(totals,72,"SSVC outcomes across all assessed targets")}<div><div class="microtitle">SSVC outcomes across ${RESULTS.size} assessed target${RESULTS.size===1?"":"s"} · ${total} findings</div><div class="outcomerows">${rows}</div></div>`;
+}
+function breakdownBlock(summary){
+  const o=summary.outcomes||{};const total=OUTCOME_ORDER.reduce((n,[k])=>n+(o[k]||0),0);if(!total)return "";
+  const chips=OUTCOME_ORDER.map(([k,label])=>`<span class="chip"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)} <b>${o[k]||0}</b></span>`).join("");
+  return `<div class="breakdown">${donutSvg(o,72,"SSVC outcomes for "+summary.name)}<div><div class="microtitle">Outcome breakdown · ${total} findings</div><div class="chips">${chips}</div></div></div>`;
+}
+const TREE_LEVELS=[
+  ["exploitation","Exploitation",[["none","None"],["public_poc","Public PoC"],["active","Active"]]],
+  ["system_exposure","System Exposure",[["small","Small"],["controlled","Controlled"],["open","Open"]]],
+  ["automatable","Automatable",[["no","No"],["yes","Yes"]]],
+  ["human_impact","Human Impact",[["low","Low"],["medium","Medium"],["high","High"],["very_high","Very High"]]]];
+function treeSvg(path){
+  const W=1000,H=170,nodeW=128,nodeH=25,top=30,colX=[20,190,360,530,700,860],P=path.points||{};
+  const ys=n=>Array.from({length:n},(_,i)=>top+(H-top-20)*(i+0.5)/n);
+  let edges="",nodes="",prev={x:colX[0]+nodeW,y:top+(H-top-20)/2};
+  const clip=(v,n)=>{v=String(v||"");return v.length>n?v.slice(0,n-1)+"…":v;};
+  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-27}" width="${nodeW}" height="54" rx="6"></rect><text x="${colX[0]+nodeW/2}" y="${prev.y-6}" text-anchor="middle">${esc(clip(path.asset,18))}</text><text x="${colX[0]+nodeW/2}" y="${prev.y+13}" text-anchor="middle">${esc(clip(path.vuln_id,18))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
+  const heads=["Finding","Exploitation","System Exposure","Automatable","Human Impact","SSVC outcome"].map((h,i)=>`<text class="colhead" x="${colX[i]+(i===5?66:nodeW/2)}" y="20" text-anchor="middle">${h}</text>`).join("");
+  let hiYs=[];
+  TREE_LEVELS.forEach(([key,,values],level)=>{
+    const x=colX[level+1],y=ys(values.length),chosen=(P[key]||{}).value,assumed=(P[key]||{}).needs_confirmation;let next=null;
+    values.forEach(([value,label],i)=>{
+      const on=value===chosen;
+      edges+=`<path class="edge${on?" on":""}" d="M${prev.x} ${prev.y} C ${prev.x+30} ${prev.y}, ${x-30} ${y[i]}, ${x} ${y[i]}"></path>`;
+      nodes+=`<g class="node${on?" on":""}${on&&assumed?" assumed":""}"><rect x="${x}" y="${y[i]-nodeH/2}" width="${nodeW}" height="${nodeH}" rx="6"></rect><text x="${x+nodeW/2}" y="${y[i]+4}" text-anchor="middle">${esc(label)}${on&&assumed?" ?":""}</text><title>${esc(label)}${on?` · ${(P[key]||{}).source||""}${assumed?" · conservative default, needs confirmation":""}`:""}</title></g>`;
+      if(on)next={x:x+nodeW,y:y[i]};
+    });
+    if(level===3)hiYs=y;
+    prev=next||prev;
+  });
+  (path.branches||[]).forEach((branch,i)=>{
+    const on=branch.human_impact===(P.human_impact||{}).value,k=branch.decision,x=colX[5],y=hiYs[i],sx=colX[4]+nodeW;
+    edges+=`<path class="edge${on?" on":""}" d="M${sx} ${y} L ${x} ${y}"></path>`;
+    nodes+=`<g class="leaf ${on?"on":"off"}"><rect x="${x}" y="${y-nodeH/2}" width="132" height="${nodeH}" rx="16" style="fill:${OUTCOME_COLOR[k]||"#7d8799"}"></rect><text x="${x+66}" y="${y+4}" text-anchor="middle"${k==="out_of_cycle"?' style="fill:#2d1d00"':""}>${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
+  });
+  return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pathSentencePlain(path))}">${heads}${edges}${nodes}</svg>`;
+}
+function pathSentencePlain(path){const P=path.points||{};return `${path.asset}: ${path.vuln_id} in ${path.package} ${path.version} — Exploitation ${(P.exploitation||{}).label}, System Exposure ${(P.system_exposure||{}).label}, Automatable ${(P.automatable||{}).label}, Human Impact ${(P.human_impact||{}).label} → ${path.decision_label}`;}
+function pathDetail(path){
+  const P=path.points||{};
+  const sources=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<div class="pathsource ${point.needs_confirmation?"assumed":""}"><strong>${esc(label)} · ${esc(point.label||"Unknown")}${point.needs_confirmation?" ?":""}</strong><span>${esc(point.source||"Source unavailable")}</span></div>`;}).join("");
+  const evidence=(path.evidence||[]).map(e=>{const more=e.more?` (+${esc(e.more)} more in the report)`:"";return e.url?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.source)} · ${esc(e.label)} ↗${more}</a>`:`<span>${esc(e.source)} · ${esc(e.label)}${more}</span>`;}).join("");
+  return `<div class="treecanvas">${treeSvg(path)}</div>
+    <div class="treelegend">Dark boxes = selected path · ? = assumed input, needs confirmation · Other outcomes vary Human Impact.</div>
+    <div class="pathsources">${sources}</div>
+    <div class="pathcontext"><span>Human Impact: <b>${esc((P.mission_impact||{}).label)}</b> mission + <b>${esc((P.safety_impact||{}).label)}</b> safety</span>${path.version_source?`<span class="reviewflag">Version inferred: ${esc(path.version_source)}</span>`:""}${path.bod2604?`<span class="policyhint">BOD 26-04: ${esc(path.bod2604.label)}${path.bod2604.applied?"":" · reference only"}</span>`:""}</div>
+    ${evidence?`<div class="evidencelinks" aria-label="Vulnerability evidence">${evidence}</div>`:""}`;
+}
+
+function treeBlock(summary){
+  const paths=summary.decision_paths||[];
+  if(!paths.length)return `<div class="emptyresult"><b>${summary.total?"No decision path available":"No findings reported"}</b><span>${esc(summary.result_message||"Review coverage and evidence in the full report.")}</span></div>`;
+  const selected=Math.min(VIEWS.get(summary.target_id)?.finding||0,paths.length-1);
+  const options=paths.map((path,i)=>`<option value="${i}" ${i===selected?"selected":""}>${esc(path.decision_label)} · ${esc(path.vuln_id)} · ${esc(path.package)} ${esc(path.version)}</option>`).join("");
+  return `<section class="treeview" aria-label="Decision path · why each finding reached its SSVC outcome">
+    <div class="treepick"><label class="fieldlabel">Finding<select class="treeselect" aria-label="Finding to explain for ${esc(summary.name)}">${options}</select></label>${summary.decision_paths_truncated?`<span class="hint">First ${paths.length} findings; all in report.</span>`:""}</div>
+    <div class="treebody">${pathDetail(paths[selected])}</div></section>`;
+}
+
+const OBLIGATIONS={remediate:"Remediate",remediate_at_next_major_upgrade:"Remediate at next major upgrade",forensic_triage:"Forensic triage"};
+const RULES={ssvc_only:"SSVC workflow (BOD not applied)",bod_maximum:"BOD 26-04 maximum",workflow_target_stricter:"Workflow target is stricter",bod_fix_on_upgrade:"BOD: fix on system upgrade",bod_unresolved_provisional:"Provisional: BOD inputs unresolved"};
+function bodCell(b){
+  if(!b)return "—";
+  const provisional=b.status!=="resolved";
+  return `<span class="bodcell ${b.applied?"":"reference"}"><b>${esc(b.label)}</b>${provisional?` <span class="reviewflag">provisional · ${esc(b.unresolved_findings)} unresolved</span>`:""}${b.forensic_triage&&!/forensic/i.test(b.label)?' <span class="kindtag mitigate">Forensic triage</span>':""}<span class="cves">${b.applied?esc(b.applicability==="required"?"Required":"Voluntary"):"Reference only"}</span></span>`;
+}
+function effectiveCell(item){
+  if(!item.effective_rule)return "—";
+  const days=item.effective_deadline_days==null?"No numeric deadline":`≤ ${esc(item.effective_deadline_days)} days`;
+  const extra=(item.obligations||[]).filter(o=>o!=="remediate").map(o=>OBLIGATIONS[o]||o);
+  return `<b class="num">${days}</b><span class="cves">${esc(RULES[item.effective_rule]||item.effective_rule)}${extra.length?" · also: "+esc(extra.join(", ")):""}</span>`;
+}
+function policyMetric(p){
+  if(!p||!p.evaluated)return "";
+  const scope=p.applied?"applied":"reference only";
+  return `<span class="metric ${p.unresolved?"alert":""}">BOD 26-04 ${scope}: ${p.resolved}/${p.evaluated} resolved${p.unresolved?`, ${p.unresolved} unresolved`:""}${p.forensic_triage?`, ${p.forensic_triage} forensic triage`:""}</span>`;
+}
+function bodBlock(x){
+  const b=x.bod2604,e=x.effective;if(!b)return "";
+  const names={in_kev:"In KEV",publicly_exposed:"Publicly Exposed",automatable:"Automatable",technical_impact:"Technical Impact"};
+  const inputs=Object.entries(b.inputs||{}).map(([key,p])=>`<div class="factor"><span>${esc(names[key]||key)}</span><b>${p.resolved?esc(String(p.value).replace(/^./,c=>c.toUpperCase())):"Unresolved"}</b><small>${esc(p.source)}${p.defaulted?" · CISA default":""}</small><small>${esc(p.basis)}</small></div>`).join("");
+  const outcome=b.status==="resolved"?esc(b.outcome_label):`Unresolved · provisional ${esc(b.provisional_label)}`;
+  const obligations=(b.obligations||[]).map(o=>OBLIGATIONS[o]||o).join(", ");
+  return `<div class="bodpanel"><div class="microtitle">CISA BOD 26-04 · separate policy result</div>
+    <div class="decisionline"><span>${esc(b.policy)} · ${esc(b.applied?b.applicability:"reference only")}</span><b>${outcome}</b></div>
+    <div class="ssvcflow">${inputs}</div>
+    <div class="decisionnote"><b>${esc(b.definition)}</b> Obligations: ${esc(obligations)}. ${esc(b.applicability_note)}</div>
+    ${b.status!=="resolved"?`<div class="confirmbar">Confirm ${esc((b.unresolved_inputs||[]).map(v=>names[v]||v).join(", "))} to resolve the BOD outcome. Candidates: ${esc((b.candidate_outcomes||[]).join(", "))}.</div>`:""}
+    ${e?`<div class="decisionnote"><b>Effective action · ${esc(RULES[e.rule]||e.rule)}.</b> ${esc(e.explanation)}</div>`:""}
+    <div class="decisionnote">Clock: ${esc(b.deadline_anchor)}${b.kev_date_added?` KEV added ${esc(b.kev_date_added)}.`:""}${b.kev_due_date?` KEV catalog due date ${esc(b.kev_due_date)}.`:""} PatchTriage does not compute an absolute due date because the agency identification date is not recorded.</div>
+  </div>`;
+}
+function queueBlock(summary){
+  const queue=summary.action_queue||[];if(!queue.length)return "";
+  const rows=queue.map((item,index)=>{
+    const label=item.outcome_label||"Unknown",cls=String(label).toLowerCase().replaceAll(" ","-");
+    const cves=item.cves||[],more=Math.max(0,(item.finding_count||cves.length)-cves.length);
+    const kind=item.kind==="mitigate"?'<span class="kindtag mitigate">No fix</span>':"";
+    return `<tr><td class="num">${index+1}</td><td><span class="outcomepill ${esc(cls)}"><i aria-hidden="true"></i>${esc(label)}</span></td>
+      <td>${kind}${esc(item.summary)}<span class="cves">${esc(cves.join(", "))}${more?` and ${more} more`:""}</span></td>
+      <td class="num">${item.kev_count?`${esc(item.kev_count)} KEV`:"—"}</td><td class="num">${esc(item.finding_count)}</td>
+      <td class="num">${item.deadline_days==null?"—":`≤ ${esc(item.deadline_days)} days`}</td>
+      <td>${bodCell(item.bod2604)}</td><td>${effectiveCell(item)}</td></tr>`;}).join("");
+  return `<details class="actionqueue" open><summary>Action queue · ${queue.length}${summary.action_queue_truncated?"+":""} package action${queue.length===1?"":"s"}, highest SSVC outcome first</summary>
+    <p>One row per package change. The outcome is the most urgent SSVC Deployer outcome among the findings it closes. “Workflow target” is PatchTriage's configurable example timeline, not an SSVC or regulatory deadline.${summary.action_queue_truncated?" Only the first actions are listed here; the full report has every action.":""}</p>
+    <div class="queuewrap"><table class="queuetable"><thead><tr><th>#</th><th>SSVC outcome</th><th>Action</th><th>KEV</th><th>Findings</th><th>Workflow target</th><th>BOD 26-04</th><th>Effective</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </details>`;
+}
 function renderResult(summary){
-  const name=summary.url?`<a href="${esc(summary.url)}" target="_blank" rel="noopener">${esc(summary.name)} ↗</a>`:esc(summary.name);
+  const hasFindings=summary.total>0,coverage=summary.source?.coverage_status||"unknown";
+  const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";
+  const cls=hasFindings?outcome.toLowerCase().replaceAll(" ","-"):"no-findings";
+  const view=VIEWS.get(summary.target_id)||{tab:"path",finding:0};
+  const review=summary.ssvc_inputs_review_total||0;
+  const tabs=[["path","Decision path",""],["actions","Action queue",summary.actions],["evidence","Evidence & policy",""],["review","Review inputs",review]];
+  const content=view.tab==="actions"?(queueBlock(summary)||'<div class="emptyresult"><b>No package actions</b><span>Review the evidence and coverage in the report.</span></div>'):view.tab==="evidence"?`<div class="microtitle">Highest-priority finding · ${esc(summary.explanation?.vuln_id||"No findings")}</div>${explainBlock(summary)}${qualityBlock(summary)}<details class="compare"><summary>Compare ranking methods</summary>${compareBlock(summary)}</details>`:view.tab==="review"?(ssvcInputBlock(summary)||'<div class="emptyresult"><b>No finding inputs to review</b></div>'):treeBlock(summary);
+  const warnings=[...(summary.enrichment_errors||[]),...(summary.vendor_errors||[])];
   const context=summary.evaluated_context||{};
-  const contextText=[["Exposure",context.system_exposure],["Mission",context.mission_impact],["Safety",context.safety_impact]].map(([label,value])=>`${label} ${String(value||"unknown").replaceAll("_"," ")}`).join(" · ");
-  const hasFindings=summary.total>0;const emptyOutcome=summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):emptyOutcome;const outcomeClass=hasFindings?String(outcome).toLowerCase().replaceAll(" ","-"):"no-findings";
-  return `<article class="result" data-result="${summary.target_id}">
+  return `<article class="result" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
     <div class="resulthead">
-      <div class="prioritybox"><div class="priority ${esc(outcomeClass)}">${esc(outcome)}</div><div class="prioritymeaning">${hasFindings?"SSVC outcome":"evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`target: ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
-      <div><div class="rname">${name} · ${summary.duration_ms} ms ${summary.demo?"· offline snapshot":""}</div><div class="action">${esc(summary.top_action||summary.result_message||"Assessment completed")}</div></div>
-      <a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a>
+      <div class="prioritybox"><div class="priority ${esc(cls)}">${esc(outcome)}</div><div class="prioritymeaning" title="Highest-priority SSVC outcome">${hasFindings?"Top outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
+      <div><div class="rname">${esc(summary.name)} · ${summary.total} findings · ${summary.actions} actions${summary.demo?" · offline demo":""}</div><div class="action">${esc(summary.top_action||"Assessment completed")}</div><div class="resulttools"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="manage">Manage evidence</button><button class="textbutton" data-action="run">Run again</button></div></div>
+      <div class="reportlinks"><a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a><a class="reportlink" href="${esc(summary.report_url)}" download="${esc(reportFilename(summary))}">Download HTML report</a></div>
     </div>
-    <div class="metricrow">
-      <span class="metric alert">Immediate ${summary.outcomes.immediate}</span><span class="metric">Out-of-Cycle ${summary.outcomes.out_of_cycle}</span>
-      <span class="metric">${summary.total} findings</span><span class="metric">${summary.actions} package actions</span>
-      <span class="metric alert">${summary.kev} KEV</span><span class="metric audit">audit ${summary.audit_verified}/${summary.total}</span>
-      <span class="metric">${summary.vendor_advisories||0} vendor advisories</span>
-      ${(summary.vendor_sources||[]).map(s=>`<span class="metric">${esc(s.toUpperCase())}</span>`).join("")}
-      ${(summary.vendor_errors||[]).length?`<span class="metric alert" title="${esc(summary.vendor_errors.join(" | "))}">${summary.vendor_errors.length} connector warnings</span>`:""}
-      ${(summary.enrichment_errors||[]).length?`<span class="metric alert" title="${esc(summary.enrichment_errors.join(" | "))}">${summary.enrichment_errors.length} evidence lookup warnings</span>`:""}
-      <span class="metric ${summary.source&&summary.source.coverage_status!=="complete"?"alert":""}">coverage ${esc((summary.source&&summary.source.coverage_status)||"unknown")}</span>
-      <span class="metric">SSVC ${esc(summary.top_ssvc_decision||"not evaluated")}</span>
-      ${(summary.ssvc_confirmation_fields||[]).length?`<span class="metric alert">confirm ${esc(summary.ssvc_confirmation_fields.map(v=>String(v).replaceAll("_"," ")).join(", "))}</span>`:""}
-    </div>
-    ${qualityBlock(summary)}
-    <div class="confirmbar">Target context used · ${esc(contextText)}</div>
-    <div class="resultbody"><div class="compare">${compareBlock(summary)}</div><div class="explain">${explainBlock(summary)}</div></div>
-    ${ssvcInputBlock(summary)}
+    ${(coverage!=="complete"||warnings.length)?`<details class="resultnotice"><summary>${coverage!=="complete"?`Coverage: ${esc(coverage.replaceAll("_"," "))}`:"Evidence lookup warnings"}${warnings.length?` · ${warnings.length} lookup warning(s)`:""} · View details</summary><p>${esc(summary.result_message||"Coverage is limited to the supplied evidence; zero findings does not prove safety.")}</p>${warnings.map(w=>`<p>${esc(w)}</p>`).join("")}</details>`:""}
+    <div class="resulttabs" role="tablist" aria-label="Result details">${tabs.map(([key,label,count])=>`<button class="resulttab" role="tab" id="tab-${key}" data-tab="${key}" aria-selected="${view.tab===key}" aria-controls="result-panel" tabindex="${view.tab===key?0:-1}">${label}${count!==""?`<span class="tabcount ${key==="review"&&count?"warn":""}">${count}</span>`:""}</button>`).join("")}</div>
+    <div class="resultpanel" id="result-panel" role="tabpanel" aria-labelledby="tab-${view.tab}" tabindex="0">${content}</div>
   </article>`;
 }
+
 function qualityBlock(summary){
   const q=summary.decision_quality;
   if(!q||!q.points_total)return "";
@@ -521,11 +762,30 @@ function qualityBlock(summary){
     ${deEscalated}${sources}
   </div>`;
 }
-function renderResults(){
-  const results=document.getElementById("results");
-  if(!RESULTS.size){results.innerHTML='<div class="running lightpanel"><strong>No completed decisions yet.</strong><div class="hint">Run a target or launch the offline Demo.</div></div>';updateKpis();refreshFleet();return;}
-  results.innerHTML=[...RESULTS.values()].map(renderResult).join("");updateKpis();refreshFleet();
+function targetName(id){const target=TARGETS.find(item=>item.id===id);return target?target.name:id;}
+function statusCard(id,status){
+  const active=["queued","running","reconnecting"].includes(status.state);
+  const disconnected=status.state==="disconnected";
+  const title=status.state==="queued"?`Waiting to assess ${targetName(id)}`:status.state==="reconnecting"?`Reconnecting to ${targetName(id)}…`:active?`Assessing ${targetName(id)}…`:disconnected?`Connection interrupted: ${targetName(id)}`:status.state==="interrupted"?`Run status unavailable: ${targetName(id)}`:`Assessment failed: ${targetName(id)}`;
+  const message=status.state==="queued"?"This target will start when an assessment slot is available.":status.state==="reconnecting"?"The server may still be working. Retrying the connection; no new assessment is started.":active?"Checking evidence, evaluating SSVC and saving your report. You can select another target or refresh this page.":status.error||"The assessment did not finish.";
+  return `<article class="result statecard ${active?"running":"failed"} lightpanel" data-status="${esc(id)}" ${active?'aria-busy="true"':'role="alert"'}><div><strong>${esc(title)}</strong><span>${esc(message)}</span>${active?'<div class="scanline"></div>':disconnected?'<span>Check the existing run before starting a new assessment.</span>':'<span>No decision is shown for this target until a run succeeds. Check the evidence and context, then retry.</span>'}</div>${active?"":`<button class="btn small ${disconnected?"reconnect-run":"retry-run"}" data-id="${esc(id)}">${disconnected?"Reconnect to assessment":"Retry assessment"}</button>`}</article>`;
 }
+function emptyWorkspace(){return `<div class="empty lightpanel"><div class="emptycontent"><div class="eyebrow">Evidence → decision → action</div><h3>What should you patch first?</h3><p>Add a system and its scan or SBOM. See the next action and the evidence behind every decision.</p><div class="startsteps"><div class="startstep"><b><span>01</span> Add a target</b>Name the system and its context.</div><div class="startstep"><b><span>02</span> Add evidence</b>Upload a scan or import a repository.</div><div class="startstep"><b><span>03</span> Run triage</b>Review the path. Save your report.</div></div><div class="startactions"><button class="btn primary new-target-trigger">+ Add your first target</button><button class="btn demo-trigger">Try the offline demo</button></div></div></div>`;}
+function targetSetup(target){
+  return `<article class="empty lightpanel" data-id="${esc(target.id)}"><div class="emptycontent"><div class="eyebrow">${target.source_file?"Ready to assess":"Step 2 · Add evidence"}</div><h3>${esc(target.name)}</h3><p>${target.source_file?"Your evidence is attached. Run triage to produce the decision path and a downloadable report.":"Upload CycloneDX/SPDX JSON (or Trivy/Grype/OSV scanner JSON), or import a repository."}</p><div class="targetsummary">${contextTags(target)}</div>${target.source_file?`<p class="source ready">${esc(target.source_name||target.source_format)} · ${Math.max(1,Math.round((target.source_size||0)/1024))} KiB · SHA-256 ${esc((target.source_sha256||"").slice(0,12))}</p>`:""}<div class="startactions">${target.source_file?'<button class="btn primary" data-action="run">Run triage →</button>':''}<button class="btn ${target.source_file?"":"primary"}" data-action="import">Upload SBOM</button><button class="btn attach" data-action="repository">Import repository</button></div><div class="targetactions"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="delete">Delete target</button>${RESULTS.has(target.id)?'<button class="textbutton" data-action="view">Back to results</button>':""}</div></div></article>`;
+}
+function renderResults(){
+  const results=document.getElementById("results"),target=TARGETS.find(t=>t.id===selectedTarget);
+  renderOutcomeSummary();
+  const status=STATUS.get(selectedTarget),summary=RESULTS.get(selectedTarget);
+  const key=JSON.stringify([selectedTarget,status,summary?.run_generation,summary?.assessed_at,target?.input_revision,VIEWS.get(selectedTarget)]);
+  // A different target finishing must not erase unsaved analyst inputs or
+  // keyboard focus in the currently visible result.
+  if(key!==renderedView){results.innerHTML=!target?emptyWorkspace():status?statusCard(selectedTarget,status):summary&&!VIEWS.get(selectedTarget)?.manage?renderResult(summary):targetSetup(target);renderedView=key;}
+  document.getElementById("workspace-step").textContent=target?`${target.name} · ${status?"Assessment status":summary?"Review the decision, then download the report":target.source_file?"3. Run triage":"2. Upload SBOM or import a repository"}`:"1. Add a target → 2. Add evidence → 3. Run triage";
+  updateKpis();renderTargets();if(!booting)refreshFleet();setBusy();
+}
+
 async function refreshFleet(){
   const bar=document.getElementById("fleetbar");
   try{
@@ -533,45 +793,115 @@ async function refreshFleet(){
     if((fleet.targets_assessed||0)<2){bar.hidden=true;return;}
     const o=fleet.outcomes||{};
     const queue=(fleet.queue||[]).slice(0,3).map(entry=>`<div class="hint">&#8227; <b>${esc(entry.outcome_label||"")}</b> — ${esc(entry.target_name||"")}: ${esc(entry.summary||"")}${entry.kev_count?` <span style="color:#DC2626;font-weight:700">KEV×${entry.kev_count}</span>`:""}</div>`).join("");
-    bar.innerHTML=`<strong>Fleet view</strong> — ${fleet.targets_assessed}/${fleet.targets_total} targets assessed · ${fleet.findings_total} findings · `+
+    bar.innerHTML=`<summary>Fleet view — ${fleet.targets_assessed}/${fleet.targets_total} targets assessed · ${fleet.findings_total} findings</summary>`+
       `<span style="color:#DC2626;font-weight:700">${o.immediate||0} Immediate</span> · <span style="color:#D97706;font-weight:650">${o.out_of_cycle||0} Out-of-Cycle</span> · ${o.scheduled||0} Scheduled · ${o.defer||0} Defer · ${fleet.kev_total||0} on KEV`+
       `${fleet.coverage_incomplete_targets?` · <span style="color:#D97706">${fleet.coverage_incomplete_targets} with bounded coverage</span>`:""}${queue?`<div style="margin-top:6px">${queue}</div>`:""}`;
     bar.hidden=false;
   }catch(error){bar.hidden=true;}
 }
 async function launchDemo(){
-  try{setBusy(true);notify("Loading bundled threat evidence…");const target=await api("POST","/api/demo",{});await loadTargets();await runTargets([target.id]);notify("Offline Demo is ready.");}
-  catch(error){notify(error.message,true);setBusy(false);}
+  const button=document.getElementById("demo");if(button.disabled)return;
+  button.disabled=true;window.location.hash="workspace";showPage();
+  try{notify("Loading bundled threat evidence…");const target=await api("POST","/api/demo",{});await loadTargets();selectTarget(target.id);const outcomes=await runTargets([target.id]);if(outcomes.every(Boolean))notify("Offline demo is ready. Select a finding to inspect its decision path.");}
+  catch(error){notify(error.message,true);}
+  finally{button.disabled=false;}
 }
-
-async function waitForJob(jobId){
+const WATCHERS=new Map(),RUN_QUEUE=[],SUBMITTING=new Map();let queueRetryAt=0;
+function saveQueue(){try{sessionStorage.setItem("patchtriage-queue",JSON.stringify([...RUN_QUEUE,...SUBMITTING.values()].map(({id,backend,queuedAt,revision})=>({id,backend,queuedAt,revision}))));}catch{}}
+async function waitForJob(jobId,id){
+  let failures=0;
   for(let attempt=0;attempt<1800;attempt++){
-    const job=await api("GET",`/api/jobs/${jobId}`);
-    if(job.state==="succeeded")return job.summary;
-    if(job.state==="failed")throw new Error(job.error||"Assessment failed");
-    await new Promise(resolve=>setTimeout(resolve,Math.min(2000,500+attempt*25)));
+    try{
+      const job=await api("GET",`/api/jobs/${jobId}`);
+      failures=0;
+      if(job.state==="succeeded"){
+        if(!job.summary||job.summary.target_id!==id||!job.summary.report_url)throw new Error("The completed run has no valid report. Reconnect to check it.");
+        return job.summary;
+      }
+      if(job.state==="failed"){const error=new Error(job.error||"Assessment failed");error.assessmentFailed=true;throw error;}
+      if(!["queued","running"].includes(job.state)){const error=new Error("Unknown assessment state. Reconnect to check it.");error.retryable=true;throw error;}
+      if(STATUS.get(id)?.state!==job.state){STATUS.set(id,{state:job.state,jobId});renderResults();}
+    }catch(error){
+      if(error.assessmentFailed)throw error;
+      if(error.status===404){error.interrupted=true;error.message="The server no longer has this job, possibly after a restart. Retry assessment to generate a new report.";throw error;}
+      if(!error.retryable||++failures>=5){error.disconnected=true;throw error;}
+      STATUS.set(id,{state:"reconnecting",jobId});renderResults();
+    }
+    await new Promise(resolve=>setTimeout(resolve,failures?Math.min(8000,1000*2**failures):Math.min(2000,500+attempt*25)));
   }
-  throw new Error("Assessment is still running; refresh to restore completed results.");
+  const error=new Error("This run is taking longer than expected. Reconnect to check its status.");error.disconnected=true;throw error;
+}
+function watchJob(id,jobId){
+  if(WATCHERS.has(id))return WATCHERS.get(id);
+  STATUS.set(id,{state:"running",jobId});
+  const promise=waitForJob(jobId,id).then(summary=>{STATUS.delete(id);RESULTS.set(id,summary);return true;},error=>{STATUS.set(id,{state:error.interrupted?"interrupted":error.disconnected?"disconnected":"failed",jobId,error:error.message});return false;}).finally(()=>{WATCHERS.delete(id);renderResults();pumpQueue();});
+  WATCHERS.set(id,promise);return promise;
+}
+async function reconnectTarget(id){
+  const jobId=STATUS.get(id)?.jobId;
+  if(jobId){const pending=watchJob(id,jobId);renderResults();return pending;}
+  try{
+    const jobs=await api("GET","/api/jobs?latest=1"),job=jobs.find(j=>j.target_id===id);
+    if(job){const pending=watchJob(id,job.job_id);renderResults();return pending;}
+    STATUS.set(id,{state:"interrupted",error:"No assessment job could be recovered. Retry assessment to generate a report."});
+  }catch(error){STATUS.set(id,{state:"disconnected",error:error.message});}
+  renderResults();return false;
+}
+function enqueue(id,backend,queuedAt=Date.now()/1000){
+  if(WATCHERS.has(id))return WATCHERS.get(id);
+  if(SUBMITTING.has(id))return SUBMITTING.get(id).promise;
+  const existing=RUN_QUEUE.find(item=>item.id===id);if(existing)return existing.promise;
+  let finish;const promise=new Promise(resolve=>finish=resolve);
+  const revision=TARGETS.find(t=>t.id===id)?.input_revision;
+  RUN_QUEUE.push({id,backend,queuedAt,revision,promise,finish});RESULTS.delete(id);STATUS.set(id,{state:"queued"});saveQueue();return promise;
+}
+function pumpQueue(){
+  if(booting||Date.now()<queueRetryAt)return;
+  const capacity=Math.max(1,Math.min(2,CFG.limits?.active_jobs_per_session||2));
+  while(RUN_QUEUE.length&&WATCHERS.size+SUBMITTING.size<capacity){
+    const item=RUN_QUEUE.shift();SUBMITTING.set(item.id,item);saveQueue();
+    (async()=>{
+      try{
+        const id=item.id,job=await api("POST",`/api/targets/${id}/runs`,{backend:item.backend});
+        const pending=watchJob(id,job.job_id);SUBMITTING.delete(id);saveQueue();pumpQueue();item.finish(await pending);
+      }catch(error){
+        // A lost POST response may still have started a run. Check the
+        // session's jobs before presenting a retry or starting another one.
+        try{
+          const jobs=await api("GET","/api/jobs?latest=1");const job=jobs.find(j=>j.target_id===item.id&&j.created_at>=item.queuedAt);
+          if(job){const pending=watchJob(item.id,job.job_id);SUBMITTING.delete(item.id);saveQueue();item.finish(await pending);return;}
+          if(error.status===429){SUBMITTING.delete(item.id);RUN_QUEUE.unshift(item);saveQueue();queueRetryAt=Date.now()+2000;setTimeout(pumpQueue,2000);return;}
+        }catch{}
+        SUBMITTING.delete(item.id);saveQueue();
+        STATUS.set(item.id,{state:error.retryable?"disconnected":"failed",error:error.message});item.finish(false);
+      }finally{renderResults();pumpQueue();}
+    })();
+  }
 }
 async function runTargets(ids){
-  if(!ids.length){notify("Attach evidence or import a repository first.",true);return;}
-  setBusy(true);ids.forEach(id=>RESULTS.delete(id));
-  document.getElementById("results").innerHTML='<div class="running lightpanel"><strong>Assessment jobs queued...</strong><div class="hint">evidence &rarr; context &rarr; SSVC &rarr; audit &rarr; remediation plan</div><div class="scanline"></div></div>';
+  ids=ids.filter(id=>TARGETS.find(t=>t.id===id)?.source_file);
+  if(!ids.length){notify("Upload an SBOM or import a repository first.",true);return [];}
   const backend=document.getElementById("backend").value||CFG.backends[0]||"rules";
-  const pending=[];
-  for(const id of ids){
-    try{
-      const job=await api("POST",`/api/targets/${id}/runs`,{backend});
-      pending.push(waitForJob(job.job_id).then(summary=>{RESULTS.set(id,summary);renderResults();return summary;}));
-    }catch(error){notify(`Target ${id}: ${error.message}`,true);}
-  }
-  const settled=await Promise.allSettled(pending);
-  settled.filter(item=>item.status==="rejected").forEach(item=>notify(item.reason.message||String(item.reason),true));
-  renderResults();setBusy(false);updateKpis();
+  const pending=ids.map(id=>{const view=VIEWS.get(id)||{tab:"path",finding:0};view.manage=false;VIEWS.set(id,view);return enqueue(id,backend);});
+  renderResults();pumpQueue();const settled=await Promise.all(pending);
+  const failed=settled.filter(ok=>!ok).length;if(failed)notify(`${failed} assessment(s) need attention. Select the target for details.`,true);
+  return settled;
 }
-
-document.getElementById("jump").onclick=()=>document.getElementById("workspace").scrollIntoView();
 document.getElementById("demo").onclick=launchDemo;
+document.getElementById("new-target").onclick=openTargetForm;
+document.getElementById("context-close").onclick=()=>document.getElementById("contextdialog").close();
+document.getElementById("landing-demo").onclick=launchDemo;
+function showPage(focus=false){
+  const workspace=window.location.hash==="#workspace";
+  document.getElementById("home").hidden=workspace;
+  document.getElementById("workspace").hidden=!workspace;
+  document.getElementById("home-link").hidden=!workspace;
+  document.getElementById("workspace-link").hidden=workspace;
+  if(focus)document.getElementById(workspace?"workspace-title":"home-title").focus({preventScroll:true});
+}
+window.addEventListener("hashchange",()=>showPage(true));
+showPage();
+
 async function saveSsvcInputs(card){
   const id=card.dataset.result;
   const inputs=[...card.querySelectorAll(".ssvcinputtable tbody tr")].map(row=>{const exploitation=row.querySelector('[data-field="exploitation"]').value,automatable=row.querySelector('[data-field="automatable"]').value;return {finding_key:row.dataset.key,exploitation,automatable,changed:exploitation!==row.dataset.exploitation||automatable!==row.dataset.automatable};}).filter(item=>item.changed).map(({changed,...item})=>item);
@@ -579,10 +909,26 @@ async function saveSsvcInputs(card){
   try{setBusy(true);await api("POST",`/api/targets/${id}/ssvc-inputs`,{inputs});notify("SSVC inputs saved. Re-running the decision…");await runTargets([id]);}
   catch(error){notify(error.message,true);setBusy(false);}
 }
+document.getElementById("results").addEventListener("change",event=>{
+  const select=event.target.closest(".treeselect");if(!select)return;
+  const card=select.closest(".result"),summary=RESULTS.get(card.dataset.result),path=((summary||{}).decision_paths||[])[Number(select.value)];
+  if(path){const view=VIEWS.get(card.dataset.result)||{tab:"path"};view.finding=Number(select.value);VIEWS.set(card.dataset.result,view);renderResults();}
+});
 document.getElementById("results").onclick=event=>{
   if(event.target.closest(".demo-trigger"))launchDemo();
+  if(event.target.closest(".new-target-trigger"))openTargetForm();
+  const tab=event.target.closest("[data-tab]");if(tab){const view=VIEWS.get(selectedTarget)||{finding:0};view.tab=tab.dataset.tab;VIEWS.set(selectedTarget,view);renderResults();document.getElementById("tab-"+view.tab).focus();}
+  const action=event.target.closest("[data-action]");if(action)handleTargetAction(action);
+  const reconnect=event.target.closest(".reconnect-run");if(reconnect)reconnectTarget(reconnect.dataset.id);
+  const retry=event.target.closest(".retry-run");if(retry)runTargets([retry.dataset.id]);
   const save=event.target.closest(".save-ssvc-inputs");if(save)saveSsvcInputs(save.closest(".result"));
 };
+document.getElementById("results").addEventListener("keydown",event=>{
+  if(!event.target.matches('[role="tab"]'))return;
+  const tabs=[...event.target.parentElement.querySelectorAll('[role="tab"]')],index=tabs.indexOf(event.target);
+  const next=event.key==="ArrowRight"?(index+1)%tabs.length:event.key==="ArrowLeft"?(index+tabs.length-1)%tabs.length:event.key==="Home"?0:event.key==="End"?tabs.length-1:null;
+  if(next!==null){event.preventDefault();tabs[next].click();}
+});
 const SSVC_FIELDS=[
   {key:"exposure",select:"f-exposure",fallback:"open",
    values:{
@@ -617,7 +963,7 @@ function syncSsvcContext(){
     note.innerHTML=assessed
       ?"<b>"+esc(ssvcLabel(field.select))+".</b> "+esc(field.values[value]||"")
       :"<b>Falls back to "+esc(SSVC_LABELS[field.fallback]||field.fallback)+".</b> "
-        +esc(SSVC_FALLBACK_NOTE[field.key])+" The decision is still produced, and flagged for confirmation.";
+        +" Confirm when known.";
   }
   const progress=document.getElementById("ssvc-progress");
   progress.textContent=answered+" of 3 answered";
@@ -634,30 +980,37 @@ function syncSsvcContext(){
 }
 SSVC_FIELDS.forEach(field=>document.getElementById(field.select).addEventListener("change",syncSsvcContext));
 function optionalBool(id){const value=document.getElementById(id).value;return value==="unknown"?null:value==="true";}
-function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean)};}
-function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
+function contextPayload(){return {system_exposure:document.getElementById("f-exposure").value,mission_impact:document.getElementById("f-mission").value,safety_impact:document.getElementById("f-safety").value,criticality:document.getElementById("f-criticality").value,internet_exposed:optionalBool("f-internet"),reachable:optionalBool("f-reachable"),runtime_observed:optionalBool("f-runtime"),context_sources:document.getElementById("f-sources").value.split(",").map(value=>value.trim()).filter(Boolean),bod2604_applicability:document.getElementById("f-bod").value,publicly_exposed:document.getElementById("f-public").value};}
+function resetForm(){editingTarget=null;document.getElementById("form-title").textContent="Add a target";document.getElementById("add").textContent="Add target";document.getElementById("cancel-edit").hidden=true;["f-name","f-url","f-sources"].forEach(id=>{document.getElementById(id).disabled=false;document.getElementById(id).value="";});["f-exposure","f-mission","f-safety","f-criticality","f-internet","f-reachable","f-runtime","f-bod","f-public"].forEach(id=>document.getElementById(id).value="unknown");syncSsvcContext();}
 function boolChoice(value){return value===true?"true":value===false?"false":"unknown";}
-function editContext(target){editingTarget=target.id;document.getElementById("targetform").open=true;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");syncSsvcContext();document.getElementById("targetform").scrollIntoView({behavior:"smooth",block:"start"});}
+function editContext(target){editingTarget=target.id;document.getElementById("form-title").textContent="Review SSVC context";document.getElementById("add").textContent="Save context";document.getElementById("cancel-edit").hidden=false;document.getElementById("f-name").value=target.name;document.getElementById("f-url").value=target.url||"";["f-name","f-url"].forEach(id=>document.getElementById(id).disabled=true);document.getElementById("f-exposure").value=target.system_exposure||"unknown";document.getElementById("f-mission").value=target.mission_impact||"unknown";document.getElementById("f-safety").value=target.safety_impact||"unknown";document.getElementById("f-criticality").value=target.criticality||"unknown";document.getElementById("f-internet").value=boolChoice(target.internet_exposed);document.getElementById("f-reachable").value=boolChoice(target.reachable);document.getElementById("f-runtime").value=boolChoice(target.runtime_observed);document.getElementById("f-sources").value=(target.context_sources||[]).join(", ");document.getElementById("f-bod").value=target.bod2604_applicability||"unknown";document.getElementById("f-public").value=target.publicly_exposed||"unknown";document.getElementById("bodform").open=["f-bod","f-public","f-criticality","f-internet","f-reachable","f-runtime"].some(id=>document.getElementById(id).value!=="unknown")||!!document.getElementById("f-sources").value;syncSsvcContext();document.getElementById("contextdialog").showModal();document.getElementById("f-exposure").focus();}
 document.getElementById("add").onclick=async()=>{
   const name=document.getElementById("f-name").value.trim();if(!editingTarget&&!name){notify("Give the target a system name.",true);return;}
+  const save=document.getElementById("add");if(save.disabled)return;save.disabled=true;
   try{
-    const wasEditing=editingTarget;if(editingTarget){await api("POST",`/api/targets/${editingTarget}/context`,contextPayload());RESULTS.delete(editingTarget);}else{await api("POST","/api/targets",{name,url:document.getElementById("f-url").value.trim(),...contextPayload()});}
-    resetForm();await loadTargets();renderResults();notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added.");
+    const wasEditing=editingTarget;let created=null;if(editingTarget){await api("POST",`/api/targets/${editingTarget}/context`,contextPayload());RESULTS.delete(editingTarget);STATUS.delete(editingTarget);}else{created=await api("POST","/api/targets",{name,url:document.getElementById("f-url").value.trim(),...contextPayload()});}
+    resetForm();document.getElementById("contextdialog").close();await loadTargets();if(created)selectedTarget=created.id;rememberSelection();renderResults();
+    if(created){const card=document.querySelector(`.target[data-id="${created.id}"]`);if(card){card.scrollIntoView({behavior:"smooth",block:"center"});const next=card.querySelector('[data-action="import"]');if(next)next.focus({preventScroll:true});}}
+    notify(wasEditing?"SSVC context saved. Run the target again to apply it.":"Target added. Next: upload its SBOM, or import a repository.");
   }catch(error){notify(error.message,true);}
+  finally{save.disabled=false;}
 };
-document.getElementById("cancel-edit").onclick=resetForm;
-document.getElementById("targetlist").onclick=async event=>{
-  const button=event.target.closest("button");if(!button)return;
-  const card=button.closest(".target"),id=card.dataset.id,action=button.dataset.action;
+document.getElementById("cancel-edit").onclick=()=>{resetForm();document.getElementById("contextdialog").close();};
+async function handleTargetAction(button){
+  const card=button.closest("[data-id]"),id=card.dataset.id,action=button.dataset.action;
+  if(action==="select"){selectTarget(id);return;}
+  if(action==="manage"||action==="view"){const view=VIEWS.get(id)||{tab:"path",finding:0};view.manage=action==="manage";VIEWS.set(id,view);renderResults();return;}
+  if(isPending(id)&&["edit","import","repository","delete"].includes(action)){notify("Wait for this assessment to finish before changing its inputs.",true);return;}
   if(action==="edit")editContext(TARGETS.find(target=>target.id===id));
   if(action==="import"){pickTarget=id;document.getElementById("filepick").click();}
   if(action==="repository"){repoTarget=id;document.getElementById("repo-url").value="";document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
   if(action==="run")runTargets([id]);
   if(action==="delete"&&confirm("Delete this target and its local evidence?")){
-    try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
+    try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);STATUS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
     catch(error){notify(error.message,true);}
   }
-};
+}
+document.getElementById("targetlist").onclick=event=>{const button=event.target.closest("[data-action]");if(button)handleTargetAction(button);};
 document.getElementById("fleet-open").onclick=()=>{document.getElementById("fleet-url").value="";document.getElementById("fleetdialog").showModal();document.getElementById("fleet-url").focus();};
 document.getElementById("fleet-cancel").onclick=()=>document.getElementById("fleetdialog").close();
 document.getElementById("fleet-import").onclick=async()=>{
@@ -683,7 +1036,7 @@ document.getElementById("repo-import").onclick=async()=>{
   try{
     document.getElementById("repo-import").disabled=true;notify("Fetching GitHub Dependency Graph SBOM...");
     const imported=await api("POST",`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
-    RESULTS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
+    RESULTS.delete(targetId);STATUS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
     notify(`${imported.filename} imported (${imported.provenance.component_count} components).`);
   }catch(error){notify("Repository import failed: "+error.message,true);}
   finally{document.getElementById("repo-import").disabled=false;}
@@ -692,14 +1045,21 @@ document.getElementById("filepick").onchange=async event=>{
   const file=event.target.files[0];if(!file||!pickTarget)return;
   const maxBytes=(CFG.limits&&CFG.limits.source_bytes)||16*1024*1024;
   if(file.size>maxBytes){notify(`Evidence file must be ${Math.floor(maxBytes/1024/1024)} MiB or smaller.`,true);event.target.value="";return;}
-  try{const targetId=pickTarget;const imported=await api("POST",`/api/targets/${targetId}/source`,{content:await file.text(),filename:file.name});RESULTS.delete(targetId);await loadTargets();renderResults();notify(`${file.name} attached (SHA-256 ${imported.sha256.slice(0,12)}).`);}
+  try{const targetId=pickTarget;const imported=await api("POST",`/api/targets/${targetId}/source`,{content:await file.text(),filename:file.name});RESULTS.delete(targetId);STATUS.delete(targetId);await loadTargets();renderResults();notify(`${file.name} attached (SHA-256 ${imported.sha256.slice(0,12)}).`);}
   catch(error){notify("Import failed: "+error.message,true);}
   event.target.value="";pickTarget=null;
 };
 document.getElementById("runall").onclick=()=>runTargets(TARGETS.filter(t=>t.source_file).map(t=>t.id));
 
-async function boot(){syncSsvcContext();await Promise.all([loadConfig(),loadTargets()]);await loadSummaries();await resumeActiveJobs();}
-boot().catch(error=>notify(error.message,true));
+function showBootError(error){booting=false;renderedView="";document.getElementById("results").innerHTML=`<div class="result statecard failed" role="alert"><strong>Workspace could not be loaded</strong><span>${esc(error.message)}</span><button class="btn" id="retry-boot">Reconnect to workspace</button></div>`;document.getElementById("retry-boot").onclick=()=>boot().catch(showBootError);}
+async function boot(){
+  booting=true;syncSsvcContext();
+  // Establish the anonymous cookie before making parallel session requests.
+  await loadConfig();await loadTargets();await resumeActiveJobs();
+  booting=false;renderResults();pumpQueue();
+}
+try{selectedTarget=sessionStorage.getItem("patchtriage-selection");}catch{}
+boot().catch(showBootError);
 </script></body></html>"""
 
 

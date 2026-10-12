@@ -496,11 +496,11 @@ def _infer_technical_impact(finding: Finding) -> DecisionPoint:
             evidence.append(
                 f"CISA assessment timestamp {enrichment.ssvc_timestamp}")
         return _point(
-            "TI", "2.0.0", published, Confidence.HIGH,
+            "TI", "1.0.0", published, Confidence.HIGH,
             "CISA Vulnrichment", evidence, inferred=True,
         )
     return _point(
-        "TI", "2.0.0", TechnicalImpact.UNKNOWN, Confidence.LOW,
+        "TI", "1.0.0", TechnicalImpact.UNKNOWN, Confidence.LOW,
         "not assessed",
         ["No published Technical Impact assessment was found for this CVE"],
         inferred=True,
@@ -575,6 +575,22 @@ def deployer_decision(exploitation: Exploitation,
                       human_impact: HumanImpact) -> DeployerDecision:
     row = _DEPLOYER_TABLE[(exploitation, exposure, automatable)]
     return row[_HUMAN_ORDER.index(human_impact)]
+
+
+def human_impact_branches(exploitation: str, exposure: str,
+                          automatable: str) -> list[dict]:
+    """Outcomes of the Human Impact branches below one Deployer path.
+
+    Read straight from the official table so a visualization can show what
+    each Human Impact value would yield without re-implementing the tree.
+    """
+    row = _DEPLOYER_TABLE[(Exploitation(exploitation),
+                           SystemExposure(exposure), Automatable(automatable))]
+    return [
+        {"human_impact": human.value, "human_impact_label": _LABELS[human.value],
+         "decision": decision.value, "decision_label": _LABELS[decision.value]}
+        for human, decision in zip(_HUMAN_ORDER, row)
+    ]
 
 
 def assess(finding: Finding) -> SSVCAssessment:

@@ -204,7 +204,8 @@ def test_security_headers_are_present(server):
     assert "<strong>A</strong>" not in page
     assert "<strong>HI</strong>" not in page
     assert "Immediate decisions" in page
-    assert "Upload evidence" in page
+    assert "Upload SBOM" in page
+    assert "Upload evidence" not in page
     assert "Import repository" in page
     assert "CycloneDX/SPDX JSON" in page
     assert "Categorical outcome — no aggregate SSVC score" in page
@@ -225,8 +226,11 @@ def test_security_headers_are_present(server):
     assert "MI 2.0.0" in page
     assert "SI 2.0.1" in page
     assert "HI 2.0.2" in page
-    assert "Advanced context evidence" in page
-    assert "Context evidence sources" in page
+    # BOD 26-04 inputs and supporting evidence share one optional section.
+    assert page.count('<details class="advanced"') == 1
+    assert "Optional context · CISA BOD 26-04 policy and supporting evidence" in page
+    assert "Supporting context evidence" in page
+    assert "Evidence sources" in page
     assert "Review vulnerability-specific SSVC inputs" in page
     assert 'id="backend-static"' in page
     assert 'aria-label="Decision engine" hidden' in page
@@ -370,7 +374,15 @@ def test_offline_demo_runs_end_to_end(server):
         "system_exposure": "open",
         "mission_impact": "mef_failure", "safety_impact": "critical",
         "context_sources": ["OpenTelemetry", "Falco"],
+        # The demo does not opt into CISA BOD 26-04, so it stays a reference
+        # result and the SSVC deadline remains effective.
+        "publicly_exposed": "unknown",
+        "bod2604_applicability": "unknown",
     }
+    assert summary["response_policy"]["applied"] is False
+    assert summary["action_queue"][0]["effective_rule"] == "ssvc_only"
+    assert (summary["action_queue"][0]["effective_deadline_days"]
+            == summary["top_deadline_days"])
     assert summary["explanation"]["ssvc"]["decision"] == "immediate"
     assert (summary["explanation"]["ssvc"]["automatable"]["source"]
             == "CISA Vulnrichment")

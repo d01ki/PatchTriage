@@ -559,6 +559,7 @@ def enrich(findings: list[Finding], nvd_api_key: str | None = None,
                         k.get("knownRansomwareCampaignUse", "").lower()
                         == "known")
                     e.kev_due_date = k.get("dueDate")
+                    e.kev_date_added = k.get("dateAdded")
                 if kev_result.stale:
                     e.retrieval_status["kev"] = (
                         "listed_stale" if k else "unknown_stale")
@@ -660,6 +661,7 @@ def enrich_from_snapshot(findings: list[Finding], epss: dict, kev: dict,
             e.kev_ransomware = (
                 kev_row.get("knownRansomwareCampaignUse", "").lower() == "known")
             e.kev_due_date = kev_row.get("dueDate")
+            e.kev_date_added = kev_row.get("dateAdded")
         e.retrieval_status["kev"] = "listed" if kev_row else "not_listed"
         e.sources.append("kev:snapshot")
         nvd_row = nvd.get(f.vuln_id) or {}

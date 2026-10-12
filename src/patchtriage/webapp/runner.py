@@ -12,6 +12,8 @@ from ..enrich.clients import enrich, enrich_from_snapshot
 from ..evalcmp import evaluate
 from ..ingest.parsers import load_file_with_metadata
 from ..models import Asset
+from ..bod2604 import apply_policy as apply_response_policy
+from ..bod2604 import summarize as summarize_response_policy
 from ..plan import build_plan
 from ..presentation import (
     decision_quality,
@@ -21,7 +23,7 @@ from ..presentation import (
     priority_evidence,
 )
 from ..report.html import render_html
-from ..ssvc import ssvc_order_key
+from ..ssvc import human_impact_branches, ssvc_order_key
 from ..triage.audit import audit_all
 from ..triage.engine import get_backend, run_triage
 from .. import targets as tstore
@@ -35,6 +37,88 @@ MAX_WEB_SSVC_INPUTS = max(
 # bounds fleet memory without hiding a target's most urgent work.
 MAX_SUMMARY_ACTIONS = max(
     1, int(os.environ.get("PATCHTRIAGE_MAX_SUMMARY_ACTIONS", 25)))
+
+# Findings whose Deployer path is serialized for the GUI decision-tree view.
+MAX_DECISION_PATHS = max(
+    1, int(os.environ.get("PATCHTRIAGE_MAX_DECISION_PATHS", 100)))
+
+_SOURCE_NAMES = {
+    "msrc": "Microsoft", "rhsa": "Red Hat", "usn": "Ubuntu",
+    "debian": "Debian", "ghsa": "GitHub", "exploitdb": "Exploit-DB",
+}
+
+
+def _evidence_links(finding) -> list[dict]:
+    """NVD, CISA KEV and vendor/exploit records for one finding."""
+    links: list[dict] = []
+    if finding.vuln_id.startswith("CVE-"):
+        links.append({
+            "source": "NVD", "label": finding.vuln_id,
+            "url": f"https://nvd.nist.gov/vuln/detail/{finding.vuln_id}"})
+        if finding.enrichment.in_cisa_kev:
+            links.append({
+                "source": "CISA KEV", "label": "Known exploited",
+                "url": "https://www.cisa.gov/known-exploited-vulnerabilities-"
+                       f"catalog?search_api_fulltext={finding.vuln_id}"})
+    # Group by source so one prolific feed cannot hide another; public
+    # exploit evidence comes first because it moves SSVC Exploitation.
+    by_source: dict[str, list] = {}
+    for advisory in finding.enrichment.vendor_advisories:
+        by_source.setdefault(advisory.source, []).append(advisory)
+    for source in ("exploitdb", "msrc", "rhsa", "debian", "usn", "ghsa"):
+        records = by_source.get(source) or []
+        for index, advisory in enumerate(records[:2]):
+            url = advisory.url if advisory.url.startswith("https://") else ""
+            links.append({
+                "source": _SOURCE_NAMES.get(source, source),
+                "label": advisory.advisory_id, "url": url,
+                "more": len(records) - 2 if index == 1 and len(records) > 2
+                else 0})
+    return links
+
+
+def decision_path(finding) -> dict | None:
+    """The finding's Deployer path plus the Human Impact branches below it."""
+    ssvc = (finding.triage or {}).get("ssvc") or {}
+    if not ssvc:
+        return None
+    points = {
+        key: {
+            "value": (ssvc.get(key) or {}).get("value", ""),
+            "label": (ssvc.get(key) or {}).get("label", ""),
+            "source": (ssvc.get(key) or {}).get("source", ""),
+            "confidence": (ssvc.get(key) or {}).get("confidence", ""),
+            "needs_confirmation": bool(
+                (ssvc.get(key) or {}).get("needs_confirmation")),
+        }
+        for key in ("exploitation", "system_exposure", "automatable",
+                    "mission_impact", "safety_impact", "human_impact")
+    }
+    policy = (finding.triage or {}).get("bod2604") or {}
+    return {
+        "finding_key": finding.key,
+        "vuln_id": finding.vuln_id,
+        "package": finding.package.name,
+        "version": finding.package.version,
+        "version_source": finding.package.version_source,
+        "fixed_version": finding.package.fixed_version,
+        "asset": finding.asset.identifier,
+        "model": ssvc.get("model", ""),
+        "decision": ssvc.get("decision", ""),
+        "decision_label": ssvc.get("decision_label", ""),
+        "points": points,
+        "branches": human_impact_branches(
+            points["exploitation"]["value"],
+            points["system_exposure"]["value"],
+            points["automatable"]["value"]),
+        "bod2604": ({
+            "label": policy.get("outcome_label")
+            or f"provisional {policy.get('provisional_label')}",
+            "status": policy.get("status"),
+            "applied": policy.get("applied"),
+        } if policy else None),
+        "evidence": _evidence_links(finding),
+    }
 
 
 def _combine_coverage(declared: dict, observed: dict,
@@ -73,11 +157,18 @@ def _result_message(findings: list, actions: list, incomplete: bool,
     names = [str(name) for name in (coverage.get("unqueryable_names") or [])]
     checked_ecosystems = [
         str(eco) for eco in (coverage.get("queried_ecosystems") or [])]
+    inferred = int(coverage.get("inferred_components") or 0)
+    inferred_note = (
+        f" {inferred} component(s) had only a declared constraint or none, "
+        "so each was checked at a registry release chosen from it (the "
+        "oldest a lower-bounded range permits, otherwise the newest), not "
+        "necessarily the deployed version." if inferred else "")
 
     if findings:
         if incomplete and actions:
             return ("Assessment completed, but evidence coverage is bounded: "
                     f"{checked} of {total} component(s) could be checked."
+                    + inferred_note
                     if total else
                     "Assessment completed with bounded or incomplete "
                     "evidence coverage.")
@@ -86,6 +177,11 @@ def _result_message(findings: list, actions: list, incomplete: bool,
                     "be built.")
         return ""
 
+    if inferred and total and not skipped:
+        return (f"{checked} of {total} component(s) were checked against OSV "
+                "and none had a known vulnerability." + inferred_note
+                + " Commit a lockfile or upload scanner output to assess the "
+                "exact deployed versions.")
     if skipped and total:
         examples = ", ".join(names[:5])
         more = f" and {len(names) - 5} more" if len(names) > 5 else ""
@@ -97,6 +193,8 @@ def _result_message(findings: list, actions: list, incomplete: bool,
         )
         if examples:
             detail += f": {examples}{more}"
+        if inferred:
+            detail += "." + inferred_note.rstrip(".")
         if checked and not any(
                 eco.lower() not in {"githubactions", "github"}
                 for eco in checked_ecosystems):
@@ -140,6 +238,8 @@ def asset_from_target(target: dict) -> Asset:
         automatable="unknown",
         mission_impact=target.get("mission_impact", "unknown"),
         safety_impact=target.get("safety_impact", "unknown"),
+        publicly_exposed=target.get("publicly_exposed", "unknown"),
+        bod2604_applicability=target.get("bod2604_applicability", "unknown"),
         context_sources=target.get("context_sources") or [],
     )
 
@@ -206,6 +306,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
     be = get_backend(backend)
     run_triage(findings, be, jobs=1 if backend == "rules" else 4)
     audit = audit_all(findings)
+    apply_response_policy(findings)
 
     actions = build_plan(findings)
     eval_rows = evaluate(findings)
@@ -249,6 +350,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "checks": priority_evidence(top_finding),
             "rationale": (top_finding.triage or {}).get("rationale", ""),
             "ssvc": ssvc,
+            "bod2604": (top_finding.triage or {}).get("bod2604"),
+            "effective": (top_finding.triage or {}).get("effective"),
             "confidence": ssvc.get("confidence", "low"),
             "needs_confirmation": ssvc.get("needs_confirmation", []),
             "cvss": e.nvd_cvss_score or top_finding.cvss_score,
@@ -386,14 +489,21 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                 "kev_count": action.kev_count,
                 "cves": action.cves[:8],
                 "finding_count": len(action.finding_keys),
+                "bod2604": action.bod2604,
+                "effective_deadline_days": action.effective_deadline_days,
+                "effective_rule": action.effective_rule,
+                "obligations": action.obligations,
             }
             for action in actions[:MAX_SUMMARY_ACTIONS]
         ],
         "action_queue_truncated": len(actions) > MAX_SUMMARY_ACTIONS,
+        "response_policy": summarize_response_policy(findings),
         "evaluated_context": {
             "system_exposure": override.system_exposure,
             "mission_impact": override.mission_impact,
             "safety_impact": override.safety_impact,
+            "publicly_exposed": override.publicly_exposed,
+            "bod2604_applicability": override.bod2604_applicability,
             "context_sources": override.context_sources,
         },
         "result_state": (
@@ -415,6 +525,14 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         },
         "ssvc_confirmation_fields": confirmation_fields,
         "ssvc_inputs": ssvc_inputs,
+        "decision_paths": [
+            path for path in (
+                decision_path(f)
+                for f in ordered_input_findings[:MAX_DECISION_PATHS])
+            if path
+        ],
+        "decision_paths_truncated": (
+            len(ordered_input_findings) > MAX_DECISION_PATHS),
         "ssvc_inputs_total": len(ordered_input_findings),
         "ssvc_inputs_review_total": review_total,
         "ssvc_inputs_truncated": len(ordered_input_findings) > len(ssvc_inputs),

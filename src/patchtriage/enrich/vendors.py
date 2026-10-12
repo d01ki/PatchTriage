@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import httpx
@@ -21,8 +22,21 @@ RHSA_URL = "https://access.redhat.com/hydra/rest/securitydata/csaf.json"
 UBUNTU_OSV_URL = "https://api.osv.dev/v1/vulns/UBUNTU-"
 DEBIAN_URL = "https://security-tracker.debian.org/tracker/data/json"
 GHSA_URL = "https://api.github.com/advisories"
+# Exploit-DB's own per-CVE search (the JSON its search page uses). Queried
+# live for every run and never written to disk.
+EXPLOITDB_URL = "https://www.exploit-db.com/search"
+EXPLOITDB_MAX_RESULTS = 10
+# Concurrent per-CVE requests shared across Exploit-DB, MSRC, Ubuntu and GHSA.
+PER_CVE_CONCURRENCY = 4
+MSRC_GUIDE_URL = "https://msrc.microsoft.com/update-guide/vulnerability/"
 
-ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa")
+ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa", "exploitdb")
+# Queried for every CVE under "auto": Red Hat and Microsoft publish vendor
+# analysis for many upstream CVEs (Microsoft also for Azure Linux packages),
+# and Exploit-DB is the public proof-of-concept archive.
+_ALWAYS_SOURCES = ("rhsa", "msrc", "exploitdb")
+# Sources that are queried on every run and never persisted to the cache.
+_LIVE_ONLY_SOURCES = frozenset({"exploitdb"})
 _APP_ECOSYSTEMS = {
     "npm", "pypi", "maven", "nuget", "golang", "go", "rubygems", "gem",
     "cargo", "rust", "composer", "packagist", "pub", "hex", "erlang",
@@ -45,7 +59,9 @@ def parse_msrc(payload: dict, cve: str) -> list[dict]:
             source="msrc",
             advisory_id=str(row.get("ID") or row.get("Alias") or cve),
             title=row.get("DocumentTitle", ""),
-            url=row.get("CvrfUrl", ""),
+            # The human-readable Security Update Guide entry for this CVE;
+            # the CVRF document URL is a machine feed for a whole month.
+            url=f"{MSRC_GUIDE_URL}{cve}",
             published_at=row.get("InitialReleaseDate", ""),
         )
         for row in rows if isinstance(row, dict)
@@ -177,6 +193,44 @@ def parse_ghsa(payload: list | dict, cve: str) -> list[dict]:
     return out
 
 
+def parse_exploitdb(payload: dict, cve: str) -> list[dict]:
+    """Normalize an Exploit-DB search response, keeping only exact CVE hits."""
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise ValueError("Exploit-DB returned an unexpected search response")
+    number = cve.upper().removeprefix("CVE-")
+    out = []
+    for row in rows[:EXPLOITDB_MAX_RESULTS]:
+        if not isinstance(row, dict):
+            continue
+        exploit_id = str(row.get("id") or "").strip()
+        codes = {
+            str(code.get("code") or "").upper().removeprefix("CVE-")
+            for code in (row.get("code") or [])
+            if isinstance(code, dict) and code.get("code_type") == "cve"
+        }
+        if not exploit_id.isdigit() or number not in codes:
+            continue
+        description = row.get("description")
+        if isinstance(description, list):
+            description = description[-1] if description else ""
+        kind = (row.get("type") or {}).get("display", "") \
+            if isinstance(row.get("type"), dict) else ""
+        platform = (row.get("platform") or {}).get("platform", "") \
+            if isinstance(row.get("platform"), dict) else ""
+        out.append(_record(
+            source="exploitdb",
+            advisory_id=f"EDB-{exploit_id}",
+            title=str(description or "")[:300],
+            url=f"https://www.exploit-db.com/exploits/{exploit_id}",
+            severity="verified" if str(row.get("verified")) == "1"
+            else "unverified",
+            published_at=str(row.get("date_published") or ""),
+            products=[p for p in (platform, kind) if p],
+        ))
+    return out
+
+
 def parse_sources(value: str | Iterable[str]) -> tuple[str, ...]:
     if isinstance(value, str):
         requested = [v.strip().lower() for v in value.split(",") if v.strip()]
@@ -212,13 +266,25 @@ def auto_sources(finding: Finding) -> tuple[str, ...]:
             purl.startswith("pkg:") and not any(
                 v in purl for v in ("pkg:deb/", "pkg:rpm/", "pkg:apk/"))):
         sources.append("ghsa")
-    return tuple(_unique(sources or ["ghsa"]))
+    if not any(s in sources for s in ("usn", "debian", "ghsa")):
+        sources.append("ghsa")
+    return tuple(_unique([*_ALWAYS_SOURCES, *sources]))
 
 
 def _fetch_one(source: str, cve: str, client: httpx.Client,
                github_token: str | None) -> list[dict]:
+    if source == "exploitdb":
+        response = client.get(EXPLOITDB_URL, params={
+            "cve": cve.upper().removeprefix("CVE-"), "draw": "1",
+            "start": "0", "length": str(EXPLOITDB_MAX_RESULTS),
+        }, headers={"X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json"}, timeout=30)
+        response.raise_for_status()
+        return parse_exploitdb(response.json(), cve)
     if source == "msrc":
         response = client.get(f"{MSRC_URL}{cve}", timeout=30)
+        if response.status_code == 404:  # Microsoft has no record for it
+            return []
         response.raise_for_status()
         return parse_msrc(response.json(), cve)
     if source == "usn":
@@ -269,6 +335,8 @@ def enrich_vendor_advisories(
     cache = _load_cache("vendor_advisories.json", max_age_hours=24) or {}
     for source in ALL_SOURCES:
         cache.setdefault(source, {})
+    for source in _LIVE_ONLY_SOURCES:
+        cache[source] = {}  # never reuse a stored result for live sources
     errors: dict[tuple[str, str], str] = {}
     owns_client = client is None
     client = client or httpx.Client(
@@ -309,18 +377,28 @@ def enrich_vendor_advisories(
                 for cve in source_cves["debian"]:
                     cache["debian"][cve] = parse_debian(debian, cve)
 
-        for source in ("msrc", "usn", "ghsa"):
-            for cve in sorted(source_cves[source]):
-                if cve in cache[source]:
-                    continue
+        # Per-CVE lookups (Exploit-DB is always live; results stay in memory
+        # only) run a few at a time so a large SBOM stays within request time.
+        token = (github_token or os.environ.get("GITHUB_TOKEN")
+                 or os.environ.get("GH_TOKEN"))
+        jobs = [(source, cve) for source in ("exploitdb", "msrc", "usn", "ghsa")
+                for cve in sorted(source_cves[source])
+                if cve not in cache[source]]
+
+        def lookup(job: tuple[str, str]) -> list[dict]:
+            return _fetch_one(job[0], job[1], client, token)
+
+        with ThreadPoolExecutor(max_workers=PER_CVE_CONCURRENCY) as pool:
+            futures = {pool.submit(lookup, job): job for job in jobs}
+            for future, (source, cve) in futures.items():
                 try:
-                    cache[source][cve] = _fetch_one(
-                        source, cve, client, github_token or
-                        os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+                    cache[source][cve] = future.result()
                 except (httpx.HTTPError, ValueError, TypeError,
                         KeyError, AttributeError) as exc:
                     errors[(source, cve)] = str(exc)
-        _save_cache("vendor_advisories.json", cache)
+        _save_cache("vendor_advisories.json", {
+            source: rows for source, rows in cache.items()
+            if source not in _LIVE_ONLY_SOURCES})
     finally:
         if owns_client:
             client.close()
@@ -358,6 +436,15 @@ def enrich_vendor_advisories(
                     finding.enrichment.vendor_advisories.append(advisory)
                     seen.add((advisory.source, advisory.advisory_id))
                     advisory_count += 1
+                if source == "exploitdb" and advisory.url and (
+                        advisory.url not in finding.enrichment.exploit_references):
+                    # A published Exploit-DB entry is public PoC evidence for
+                    # SSVC Exploitation, alongside NVD's Exploit tags.
+                    finding.enrichment.exploit_references.append(advisory.url)
+            if (source == "exploitdb" and "exploitdb"
+                    not in finding.enrichment.exploit_sources_checked):
+                # The completed search counts as coverage even with no hit.
+                finding.enrichment.exploit_sources_checked.append("exploitdb")
     return {
         "sources": [s for s in ALL_SOURCES if source_cves[s]],
         "checked_cves": len(selected), "advisories": advisory_count,

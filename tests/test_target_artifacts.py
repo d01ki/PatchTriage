@@ -1,12 +1,46 @@
 """Run artifacts and workspace limits remain atomic under concurrency."""
 
 from concurrent.futures import ThreadPoolExecutor
+import os
 import threading
 from pathlib import Path
 
 import pytest
 
 from patchtriage import targets
+
+
+def test_deep_config_directory_can_publish_and_read_report(tmp_path, monkeypatch):
+    directory = tmp_path / ("nested-store-" * 5) / ("nested-store-" * 5)
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(directory))
+    workspace = "a" * 32
+    target = targets.add_target("deep-store", workspace_id=workspace)
+    source = targets.save_source(
+        target["id"], '{"Results":[]}', "trivy", workspace)
+    assert len(str(source)) > 260
+    assert source.read_text(encoding="utf-8") == '{"Results":[]}'
+    current = targets.get_target(target["id"], workspace)
+    targets.save_run_artifacts(
+        target["id"], {"target_id": target["id"]}, "<html>complete</html>",
+        current["input_revision"], current["source_sha256"], workspace)
+    assert targets.load_current_report(target["id"], workspace) == b"<html>complete</html>"
+    assert targets.delete_target(target["id"], workspace)
+    assert not source.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path compatibility")
+def test_legacy_windows_source_paths_still_count_toward_replacement_quota(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path))
+    target = targets.add_target("legacy")
+    source = targets.save_source(target["id"], "123456", "osv")
+    registry = targets.load_targets()
+    registry[0]["source_file"] = str(source).removeprefix("\\\\?\\")
+    targets.save_targets(registry)
+    replacement = targets.save_source(
+        target["id"], "abcdef", "osv", max_workspace_source_bytes=6)
+    assert replacement.read_text(encoding="utf-8") == "abcdef"
+    assert not source.exists()
 
 
 def test_stale_run_cannot_republish_report_after_input_change(
@@ -20,7 +54,7 @@ def test_stale_run_cannot_republish_report_after_input_change(
     )
     evaluated = targets.get_target(target["id"])
     assert evaluated is not None
-    targets.bump_input_revision(target["id"])
+    targets.update_target_inputs(target["id"])
 
     with pytest.raises(targets.StaleInputError, match="stale result"):
         targets.save_run_artifacts(
@@ -102,6 +136,37 @@ def test_concurrent_target_creates_cannot_exceed_workspace_limit(
         created = list(executor.map(create, range(4)))
     assert len([target_id for target_id in created if target_id]) == 1
     assert len(targets.load_targets()) == 1
+
+
+@pytest.mark.parametrize("locked_kind", ["previous", "legacy"])
+def test_locked_old_report_does_not_fail_a_committed_run(
+        tmp_path, monkeypatch, locked_kind):
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "config"))
+    target = targets.add_target("service")
+    targets.save_source(target["id"], '{"Results":[]}', "trivy")
+    current = targets.get_target(target["id"])
+
+    def publish(body):
+        targets.save_run_artifacts(
+            target["id"], {"target_id": target["id"]}, body,
+            current["input_revision"], current["source_sha256"])
+
+    publish("<html>previous</html>")
+    locked = (targets.current_report_path(target["id"])
+              if locked_kind == "previous" else targets.report_path(target["id"]))
+    locked.write_text("old", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def unlink(path, *args, **kwargs):
+        if path == locked:
+            raise PermissionError("report still open in another application")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    publish("<html>new committed report</html>")
+    assert targets.load_current_report(target["id"]) == b"<html>new committed report</html>"
+    assert targets.load_summary(target["id"]) is not None
+    assert locked.exists()
 
 
 def test_concurrent_source_writes_cannot_exceed_workspace_quota(

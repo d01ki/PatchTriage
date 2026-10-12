@@ -74,6 +74,41 @@ Every result carries source provenance and a coverage status:
   produced no package inventory; zero findings are therefore not a clean bill
   of health.
 
+### Components without an exact version
+
+Provider SBOMs often record what a manifest declares rather than what is
+installed. GitHub's Dependency Graph lists `fastapi>=0.104.0` as a bare
+`fastapi` with no version, and `uses: actions/checkout@v6` as `6.*.*`. OSV
+can only match concrete versions, so PatchTriage:
+
+1. restores dropped PyPI/npm ranges from the repository's
+   `requirements*.txt`/`.in`, `requirements/*.txt`, `pyproject.toml` (PEP 621,
+   PEP 735, Poetry, `build-system`) and `package.json`, read as text via
+   GitHub's tree API and raw file host (the package's SPDX `sourceInfo` names
+   the manifest);
+2. chooses one registry release per constraint, from PyPI, npm, crates.io,
+   RubyGems, NuGet, the Go module proxy, Packagist, or the action
+   repository's public tags:
+   - a range with a lower bound (`>=0.104.0`, `^1.2.3`, `~=2.0`) is checked at
+     the **oldest release it permits**. The range still allows installing it,
+     and raising that floor is the remediation;
+   - a floating ref (`6.*.*`, `1.x`, `==1.2.*`) or a bare upper bound is
+     checked at the **newest matching release**, which is what runs;
+   - a dependency with no declared range is checked at the **newest release**.
+
+Checking only the newest release would report almost nothing, because the
+newest release is usually the patched one. The chosen version and its basis
+are labelled *inferred* in the summary, decision path, and report, and
+coverage stays `incomplete`: none of these is necessarily what is deployed.
+Commit a lockfile or upload scanner output to assess exact versions.
+
+Refs such as `release/v1` or `main`, unsupported range syntax (`||`), Maven,
+and failed registry lookups stay unchecked and are named in the result. The
+SPDX document's own subject (GitHub's `pkg:github/owner/repo@main`) is not
+counted as a dependency. OSV's API does not compare GitHub Actions versions,
+so actions are queried by name and OSV's affected ranges are evaluated
+locally; a range that cannot be evaluated keeps the finding.
+
 `No findings reported` describes the record count only. It is never converted
 into “no vulnerabilities,” and any non-`complete` coverage status remains a
 prominent warning in both the GUI and HTML report. The summary retains

@@ -85,11 +85,11 @@ The repository workflow stays in the browser; no host path or Python virtual
 environment is required:
 
 1. Run `./run.sh` and open the printed localhost URL.
-2. Expand **Add a target**, enter a system name, review the SSVC context, and
-   select **Add target**.
-3. On the new target, select **Import repository**.
+2. Select **+ Add target**, enter a system name, answer the SSVC context
+   questions you know, and select **Add target**.
+3. In the selected target's workspace, select **Import repository**.
 4. Paste the HTTPS repository URL and select **Import evidence**.
-5. After the imported component count appears, select **Run**.
+5. After the imported component count appears, select **Run triage**.
 6. Select **Open full report** when the assessment finishes.
 
 For a public GitHub repository, no token is required until GitHub's anonymous
@@ -125,7 +125,7 @@ The launcher also wraps the Docker CLI workflows:
 ```
 
 The GUI is the recommended Docker workflow for files outside the repository:
-**Upload evidence** opens the browser/Explorer file picker and uploads the
+**Upload SBOM** opens the browser/Explorer file picker and uploads the
 selected JSON or SBOM into the container. **Import repository** accepts a
 repository URL directly. A Windows host path such as
 `C:\Users\name\Downloads\sbom.json` is not itself visible inside a Linux
@@ -175,7 +175,7 @@ patchtriage verify      # offline conformance and repeatability proof
 
 
 
-The **Upload evidence** button accepts:
+The **Upload SBOM** button accepts:
 
 - Trivy JSON;
 - Grype JSON;
@@ -242,6 +242,53 @@ as a conflict rather than silently dropped.
 Cached for a week on disk; `--no-vulnrichment` disables the lookup, and the
 offline demo ships a bundled snapshot so it still needs no network.
 
+## CISA BOD 26-04: a separate response policy
+
+[BOD 26-04](https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk)
+(issued 2026-06-10) assigns remediation timelines with its own decision table,
+published by CERT/CC as
+[`cisa:DT_BOD2604:1.0.0`](https://certcc.github.io/SSVC/howto/cisa_response/).
+PatchTriage evaluates it **next to** the SSVC Deployer result and never
+changes that result.
+
+| | SSVC Deployer | BOD 26-04 |
+|---|---|---|
+| Inputs | Exploitation, System Exposure, Automatable, Human Impact | In KEV, Publicly Exposed, Automatable, Technical Impact |
+| Outcomes | Defer, Scheduled, Out-of-Cycle, Immediate | Fix on system upgrade, 60 days, 14 days, 3 days, 3 days & forensic triage |
+
+**Applicability** is a per-target input: `required` (US federal civilian
+executive branch system), `voluntary` (adopted by policy), `not_applicable`,
+or `unknown` (the default). Only `required` and `voluntary` reach the
+effective deadline; otherwise the BOD result is shown as a reference and the
+existing SSVC behavior is unchanged.
+
+**Inputs follow CISA's implementation guidance.** A failed KEV lookup leaves
+In KEV unresolved. CISA's Automatable = No / Technical Impact = Total default
+is applied only when both are unpublished after a completed Vulnrichment
+lookup and the CVE is not in KEV. **Publicly Exposed** is its own answer —
+not SSVC System Exposure; internet-exposure evidence can set it to Yes, but
+nothing sets it to No except an explicit answer. Unresolved inputs show every
+candidate outcome plus a clearly labelled *provisional* (most urgent) one.
+
+**Effective action** names the rule that set it: `ssvc_only`, `bod_maximum`,
+`workflow_target_stricter`, `bod_fix_on_upgrade`, or
+`bod_unresolved_provisional`. Every obligation is kept — forensic triage
+stays attached even when another deadline is shorter, and "fix on system
+upgrade" is never turned into Defer or a number. BOD timelines are
+calendar-day maximums counted from the earlier of the KEV addition or the
+agency identifying the CVE on the asset; because that identification date is
+not known to PatchTriage, no absolute due date is computed.
+
+```bash
+patchtriage run trivy.json --bod2604 voluntary --publicly-exposed yes \
+  --html report.html -o report.json
+```
+
+The GUI has the same two inputs under **CISA BOD 26-04 policy**; an asset
+inventory accepts `bod2604_applicability` and `publicly_exposed`. This is
+decision support, not a compliance attestation: asset tagging, CDM reporting,
+and the forensic triage itself remain the operator's responsibility.
+
 ## Fleet: assess an organization, not one repository
 
 One deployed system is a *target*; an organization's repositories are a
@@ -300,7 +347,8 @@ The SSVC engine evaluates the remaining decision points as follows:
 
 - **Exploitation** is derived from authoritative threat evidence. A CISA KEV
   listing is Active; CISA's published Vulnrichment assessment is used next;
-  public exploit evidence can establish Public PoC. The GUI lets an analyst
+  public exploit evidence (NVD Exploit references or an Exploit-DB entry)
+  can establish Public PoC. The GUI lets an analyst
   confirm the value for each finding. An analyst input cannot downgrade
   authoritative CISA KEV Active evidence; a conflicting input is kept visible
   and flagged for confirmation.
@@ -337,6 +385,44 @@ SSVC produces a categorical deployment decision, not a numerical risk score.
 
 The day targets are PatchTriage workflow defaults; they are not additional
 CERT/CC decision values. Organizations should map them to their own policy.
+
+The GUI opens with **Patch what matters first.** and an introduction to the
+decision model. Choose **Open workspace** or try the offline demo to begin.
+**Overview** returns to the introduction; refreshing `#workspace` keeps the
+workspace open with its saved results.
+
+The desktop workspace keeps the target list and totals on the left and the selected result on
+the right. At typical laptop viewport sizes (1280×720 and 1366×768), the demo's
+Decision path, sources, and report links fit without scrolling the page.
+Long queues and detailed evidence scroll within their tab; narrow screens
+use a stacked layout. Controls and primary labels use readable 14–16 px text.
+
+**Patch decisions** shows a compact outcome breakdown across assessed targets.
+Select a target to see its highest-priority action and four result tabs:
+
+- **Decision path**: pick a finding to see its route through the CERT/CC
+  Deployer tree (Exploitation → System Exposure → Automatable → Human
+  Impact → outcome), the alternatives at each level, and what each Human
+  Impact value would yield. Values marked `?` are conservative defaults that
+  need confirmation. NVD, CISA KEV, vendor and Exploit-DB links for the
+  finding are listed below the tree;
+- **Action queue**: one row per package change with its SSVC outcome,
+  workflow target, CISA BOD 26-04 result and effective deadline;
+- **Evidence & policy**: the highest-priority finding's supporting signals,
+  policy details, audit evidence, and optional ranking comparison;
+- **Review inputs**: confirm vulnerability-specific SSVC inputs and rerun.
+
+**Open full report** and **Download HTML report** remain above the tabs.
+**Review context** opens the target form; **Manage evidence** lets you replace
+the scan/SBOM or import a repository. The full report retains all findings and
+actions, including any beyond the GUI's display limits.
+
+**Run all** queues work within the advertised concurrency limit. Brief polling
+failures reconnect to the same server job; longer interruptions offer a
+reconnect action rather than claiming that triage failed. Refreshing restores
+current results, recent job failures, active jobs, and this tab's queued work.
+Queued work is tied to the target's input revision, so changing the evidence
+does not silently run a previously queued assessment against new inputs.
 
 ### Where GUI data is stored
 
@@ -558,22 +644,27 @@ docker run --rm \
 
 ## Evidence connectors
 
-Core enrichment uses EPSS, CISA KEV, and optionally NVD. Vendor connectors are
-selected from package and distribution metadata by default.
+Core enrichment uses EPSS, CISA KEV, CISA Vulnrichment, and NVD. By default
+(`auto`) every CVE is also checked against Red Hat, Microsoft, and Exploit-DB;
+Ubuntu, Debian, and GitHub are added from package and distribution metadata.
+`--vendor-sources all` queries every connector.
 
 | Source | Evidence returned |
 |---|---|
-| Microsoft MSRC | Update document and CVRF/CSAF reference |
+| Microsoft MSRC | Security Update Guide entry and monthly update document (a missing record is not an error) |
 | Red Hat RHSA | Advisory, severity, and released packages |
 | Ubuntu USN | Advisory, affected packages, and fixed versions |
 | Debian Security Tracker | Distribution release status and fixed versions |
 | GitHub GHSA | Advisory, ecosystem packages, patched version, and vulnerable functions |
+| Exploit-DB | Published exploit entries; a hit is public PoC evidence for SSVC Exploitation |
 
 The public evidence connectors work without credentials. In a local
 deployment, `GITHUB_TOKEN`/`GH_TOKEN` supplies the repository access granted
 to that token and raises GitHub API rate limits; `NVD_API_KEY` raises the NVD
 rate limit. Connector failures are recorded per finding and do not abort the
-assessment.
+assessment. Exploit-DB is searched live for each CVE on every run and its
+results are never written to disk; a failed search is not recorded as a
+completed exploit search.
 
 ## Optional AI explanations
 
@@ -723,6 +814,7 @@ reported and disabled rather than implemented as a separate interface.
 ```bash
 python -m pip install -e ".[dev]"
 pytest -q
+node --test tests/webapp_state.test.cjs  # GUI recovery/queue tests; Node 20+
 patchtriage verify --repeats 25 --output verification_report.json
 ```
 

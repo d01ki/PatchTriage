@@ -13,7 +13,8 @@ from functools import cmp_to_key
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from ..models import Asset, Package, RawFinding, Severity
+from ..models import (Asset, Package, RawFinding, Severity,
+                      normalize_ecosystem, parse_purl)
 from ..plan import compare_versions
 
 
@@ -28,39 +29,14 @@ def _prefer_cve(primary: str, aliases: list[str]) -> tuple[str, list[str]]:
     return primary, sorted(set(aliases))
 
 
-def _ecosystem_identity(value: str) -> str:
-    """Normalize common OSV/PURL ecosystem aliases for identity matching."""
-    normalized = str(value or "").strip().lower().replace("_", "-")
-    return {
-        "golang": "go",
-        "go": "go",
-        "pypi": "pypi",
-        "python": "pypi",
-        "npm": "npm",
-        "node": "npm",
-        "node.js": "npm",
-        "nuget": "nuget",
-        "maven": "maven",
-        "rubygems": "rubygems",
-        "gem": "rubygems",
-        "cargo": "crates.io",
-        "crates.io": "crates.io",
-    }.get(normalized, normalized)
-
-
 def _purl_identity(value: str) -> str:
-    """Return a version-independent purl identity for OSV package matching."""
-    purl = str(value or "").strip()
-    if not purl.startswith("pkg:"):
-        return ""
-    main = purl.split("?", 1)[0].split("#", 1)[0]
-    slash = main.find("/")
-    at = main.rfind("@")
-    if at > slash:
-        main = main[:at]
-    # PURL types are case-insensitive. Package names are ecosystem-specific,
-    # but OSV feeds occasionally vary only by case, so casefold is pragmatic.
-    return main.casefold()
+    """Version-independent, casefolded purl for OSV package matching.
+
+    PURL types are case-insensitive. Package names are ecosystem-specific,
+    but OSV feeds occasionally vary only by case, so casefold is pragmatic.
+    """
+    purl_type, namespace, name, _ = parse_purl(value)
+    return "/".join(p for p in (purl_type, namespace, name) if p).casefold()
 
 
 def _package_value(pkg: Package | dict, name: str) -> str:
@@ -76,10 +52,10 @@ def _affected_matches_package(affected: dict, pkg: Package | dict,
         return allow_unqualified
 
     target_name = _package_value(pkg, "name")
-    target_ecosystem = _ecosystem_identity(_package_value(pkg, "ecosystem"))
+    target_ecosystem = normalize_ecosystem(_package_value(pkg, "ecosystem"))
     target_purl = _purl_identity(_package_value(pkg, "purl"))
     affected_name = str(affected_pkg.get("name") or "")
-    affected_ecosystem = _ecosystem_identity(
+    affected_ecosystem = normalize_ecosystem(
         str(affected_pkg.get("ecosystem") or ""))
     affected_purl = _purl_identity(str(affected_pkg.get("purl") or ""))
 
@@ -155,7 +131,7 @@ def select_osv_fixed_version(vuln: dict, pkg: Package | dict) -> str:
     has_qualified = any(isinstance(a.get("package"), dict) and a.get("package")
                         for a in affected_entries)
     installed = _package_value(pkg, "version")
-    ecosystem = _ecosystem_identity(_package_value(pkg, "ecosystem"))
+    ecosystem = normalize_ecosystem(_package_value(pkg, "ecosystem"))
     candidates: list[str] = []
     for affected in affected_entries:
         if not _affected_matches_package(affected, pkg, not has_qualified):
@@ -190,6 +166,64 @@ def select_osv_fixed_version(vuln: dict, pkg: Package | dict) -> str:
         key=cmp_to_key(
             lambda left, right: compare_versions(left, right, ecosystem)),
     )
+
+
+def _range_affects(osv_range: dict, installed: str, ecosystem: str) -> bool:
+    """Whether one OSV ECOSYSTEM/SEMVER range covers ``installed``."""
+    introduced: str | None = None
+    for event in osv_range.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        if "introduced" in event:
+            introduced = str(event.get("introduced") or "0")
+            continue
+        if introduced is None:
+            continue
+        lower_ok = (introduced in ("", "0") or
+                    compare_versions(installed, introduced, ecosystem) >= 0)
+        if event.get("fixed"):
+            if lower_ok and compare_versions(
+                    installed, str(event["fixed"]), ecosystem) < 0:
+                return True
+        elif event.get("last_affected"):
+            if lower_ok and compare_versions(
+                    installed, str(event["last_affected"]), ecosystem) <= 0:
+                return True
+        elif event.get("limit"):
+            if lower_ok and compare_versions(
+                    installed, str(event["limit"]), ecosystem) < 0:
+                return True
+        introduced = None
+    # An interval that is never closed affects every later version.
+    return introduced is not None and (
+        introduced in ("", "0")
+        or compare_versions(installed, introduced, ecosystem) >= 0)
+
+
+def osv_affects(vuln: dict, pkg: Package) -> bool:
+    """Evaluate an OSV record's affected ranges for ``pkg`` locally.
+
+    Needed where OSV's query API cannot compare versions itself (GitHub
+    Actions). Without an installed version nothing can be ruled out.
+    """
+    installed = pkg.version or parse_purl(pkg.purl)[3]
+    if not installed:
+        return True
+    ecosystem = normalize_ecosystem(pkg.ecosystem)
+    entries = [a for a in (vuln.get("affected") or []) if isinstance(a, dict)]
+    has_qualified = any(isinstance(a.get("package"), dict) and a.get("package")
+                        for a in entries)
+    bare = installed.lstrip("vV")
+    for affected in entries:
+        if not _affected_matches_package(affected, pkg, not has_qualified):
+            continue
+        if bare in {str(v).lstrip("vV") for v in affected.get("versions") or []}:
+            return True
+        if any(isinstance(r, dict) and str(r.get("type") or "").upper() != "GIT"
+               and _range_affects(r, installed, ecosystem)
+               for r in affected.get("ranges") or []):
+            return True
+    return False
 
 
 @dataclass
@@ -341,13 +375,6 @@ def sniff_format(data: dict) -> str | None:
                    for row in osv_results)):
         return "osv"
     return None
-
-
-def detect_sbom(data: dict) -> str | None:
-    """Detect SBOM documents (CycloneDX / SPDX)."""
-    from .sbom import is_sbom
-    kind = is_sbom(data)
-    return {"cyclonedx": "CycloneDX", "spdx": "SPDX"}.get(kind)
 
 
 def load_file_with_metadata(path: str | Path, fmt: str | None = None,

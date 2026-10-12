@@ -34,3 +34,29 @@ def test_outcome_table_prints_the_fraction_legend():
     output = capture.get()
     assert "How to read x/y" in output
     assert "one of the two target findings" in output
+
+
+def test_run_passes_bod2604_inputs_separately_from_ssvc(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    captured = {}
+
+    def fake_pipeline(files, fmt, override, *args, **kwargs):
+        captured["override"] = override
+        return [], [], [], []
+
+    monkeypatch.setattr(cli, "_pipeline", fake_pipeline)
+    monkeypatch.setattr(cli, "_emit", lambda *args, **kwargs: None)
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path))
+    scan = tmp_path / "scan.json"
+    scan.write_text("{}", encoding="utf-8")
+    result = CliRunner().invoke(cli.app, [
+        "run", str(scan), "--bod2604", "voluntary",
+        "--publicly-exposed", "yes",
+    ])
+    assert result.exit_code == 0, result.output
+    asset = captured["override"]
+    assert asset.bod2604_applicability == "voluntary"
+    assert asset.publicly_exposed == "yes"
+    # Publicly Exposed never fills the SSVC System Exposure decision point.
+    assert asset.system_exposure == "unknown"

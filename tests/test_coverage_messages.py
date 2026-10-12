@@ -95,3 +95,23 @@ def test_report_names_skipped_components_and_the_ci_only_boundary():
     )
     assert "Not checked: fastapi, pydantic" in html
     assert "no application dependency was assessed" in html
+
+
+def test_inferred_versions_are_named_as_fresh_install_not_deployment():
+    coverage = _coverage(total=14, checked=11, skipped=3,
+                         names=["actions/checkout"],
+                         queried_ecosystems=["githubactions", "pypi"])
+    coverage["inferred_components"] = 9
+    message = _result_message([], [], True, "provider_reported", coverage)
+    assert "11 of 14" in message
+    assert "9 component(s) had only a declared constraint" in message
+    assert "oldest a lower-bounded range permits" in message
+    assert "no application dependency was actually assessed" not in message
+
+
+def test_all_versions_inferred_still_is_not_a_clean_bill():
+    coverage = _coverage(total=9, checked=9, skipped=0)
+    coverage["inferred_components"] = 9
+    message = _result_message([], [], True, "provider_reported", coverage)
+    assert "registry release chosen" in message
+    assert "lockfile" in message
