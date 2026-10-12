@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from patchtriage.webapp.runner import _combine_coverage
+from patchtriage.assess import combine_coverage as _combine_coverage
 from patchtriage.webapp.server import Handler
 
 FIX = Path(__file__).parent / "fixtures"

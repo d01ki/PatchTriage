@@ -7,14 +7,10 @@ import os
 import time
 from importlib import resources
 
-from ..dedup import dedup
-from ..enrich.clients import enrich, enrich_from_snapshot
-from ..evalcmp import evaluate
-from ..ingest.parsers import load_file_with_metadata
+from ..assess import assess
+from ..assess import result_message as _result_message
 from ..models import Asset
-from ..bod2604 import apply_policy as apply_response_policy
 from ..bod2604 import summarize as summarize_response_policy
-from ..plan import build_plan
 from ..presentation import (
     decision_quality,
     evaluation_outcome,
@@ -24,8 +20,6 @@ from ..presentation import (
 )
 from ..report.html import render_html
 from ..ssvc import human_impact_branches, ssvc_order_key
-from ..triage.audit import audit_all
-from ..triage.engine import get_backend, run_triage
 from .. import targets as tstore
 
 
@@ -121,102 +115,6 @@ def decision_path(finding) -> dict | None:
     }
 
 
-def _combine_coverage(declared: dict, observed: dict,
-                      provider_status: str) -> dict:
-    """Merge coverage without letting one successful parser erase a boundary."""
-    coverage = {**declared, **observed}
-    complete = (
-        observed.get("complete") is True
-        and declared.get("complete") is not False
-        and provider_status in {"", "complete"}
-    )
-    if provider_status and provider_status != "complete":
-        status = provider_status
-    elif complete:
-        status = "complete"
-    else:
-        status = "incomplete"
-    coverage["status"] = status
-    coverage["complete"] = status == "complete"
-    return coverage
-
-
-def _result_message(findings: list, actions: list, incomplete: bool,
-                    coverage_status: str, coverage: dict) -> str:
-    """Say what was actually checked, not just that coverage was bounded.
-
-    "No findings" is the most dangerous result a scanner can show, because it
-    reads as safety. When components were skipped it has to say which ones
-    and why, otherwise a run that checked only CI actions -- while every
-    application dependency went unqueryable for want of a resolved version --
-    looks identical to a genuinely clean repository.
-    """
-    total = int(coverage.get("total_components") or 0)
-    checked = int(coverage.get("queried_components") or 0)
-    skipped = int(coverage.get("unqueryable_components") or 0)
-    names = [str(name) for name in (coverage.get("unqueryable_names") or [])]
-    checked_ecosystems = [
-        str(eco) for eco in (coverage.get("queried_ecosystems") or [])]
-    inferred = int(coverage.get("inferred_components") or 0)
-    inferred_note = (
-        f" {inferred} component(s) had only a declared constraint or none, "
-        "so each was checked at a registry release chosen from it (the "
-        "oldest a lower-bounded range permits, otherwise the newest), not "
-        "necessarily the deployed version." if inferred else "")
-
-    if findings:
-        if incomplete and actions:
-            return ("Assessment completed, but evidence coverage is bounded: "
-                    f"{checked} of {total} component(s) could be checked."
-                    + inferred_note
-                    if total else
-                    "Assessment completed with bounded or incomplete "
-                    "evidence coverage.")
-        if not actions:
-            return ("Assessment completed, but no remediation action could "
-                    "be built.")
-        return ""
-
-    if inferred and total and not skipped:
-        return (f"{checked} of {total} component(s) were checked against OSV "
-                "and none had a known vulnerability." + inferred_note
-                + " Commit a lockfile or upload scanner output to assess the "
-                "exact deployed versions.")
-    if skipped and total:
-        examples = ", ".join(names[:5])
-        more = f" and {len(names) - 5} more" if len(names) > 5 else ""
-        detail = (
-            f"{checked} of {total} component(s) were checked against OSV and "
-            f"none had a known vulnerability. {skipped} component(s) could "
-            "not be checked because the source lists them without a resolved "
-            "version"
-        )
-        if examples:
-            detail += f": {examples}{more}"
-        if inferred:
-            detail += "." + inferred_note.rstrip(".")
-        if checked and not any(
-                eco.lower() not in {"githubactions", "github"}
-                for eco in checked_ecosystems):
-            detail += (
-                ". Everything that could be checked was CI/workflow tooling, "
-                "so no application dependency was actually assessed"
-            )
-        return detail + (
-            ". Commit a lockfile (uv.lock, poetry.lock, package-lock.json, "
-            "pinned requirements.txt) or upload scanner output for full "
-            "coverage."
-        )
-    if coverage_status == "provider_reported":
-        return ("No findings were reported. The evidence scope is what the "
-                "provider chose to report and was not independently "
-                "verified.")
-    if incomplete:
-        return ("No findings were reported, but dependency or selector "
-                "coverage is incomplete.")
-    return "The attached evidence reported no vulnerability findings."
-
-
 def asset_from_target(target: dict) -> Asset:
     """Build the exact asset context consumed by the SSVC engine.
 
@@ -261,55 +159,39 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         raise ValueError("no scan or SBOM attached to this target")
 
     override = asset_from_target(target)
-    loaded = load_file_with_metadata(source, asset=override)
-    raw = loaded.findings
     source_provenance = dict(target.get("source_provenance") or {})
-    declared_coverage = dict(source_provenance.get("coverage") or {})
     provider_status = str(source_provenance.get("coverage_status") or "")
     if not provider_status and target.get("source_kind") in {"", "upload", None}:
         provider_status = "provider_reported"
-    run_coverage = _combine_coverage(
-        declared_coverage, dict(loaded.coverage or {}), provider_status)
-    status = run_coverage["status"]
-    source_provenance["coverage"] = run_coverage
-    source_provenance["coverage_status"] = status
-    tstore.update_source_provenance_if_current(
-        target["id"], source_provenance, expected_revision,
-        expected_source_sha256, workspace_id)
-    findings = dedup(raw)
-    overrides = target.get("ssvc_overrides") or {}
-    for finding in findings:
-        values = overrides.get(finding.key)
-        if isinstance(values, dict):
-            finding.ssvc_inputs = {
-                key: str(value)
-                for key, value in values.items()
-                if key in ("exploitation", "automatable")
-            }
-    if not findings:
-        pass
-    elif target.get("demo"):
+    snapshot = None
+    if target.get("demo"):
         data = resources.files("patchtriage") / "data"
-        snapshots = {
+        snapshot = {
             name: json.loads((data / f"demo_{name}.json").read_text(encoding="utf-8"))
             for name in ("epss", "kev", "nvd", "vulnrichment")
         }
-        enrich_from_snapshot(findings, **snapshots)
-    else:
-        enrich(
-            findings, nvd_api_key=nvd_api_key, use_nvd=use_nvd,
-            vendor_sources=vendor_sources,
-            github_token=(os.environ.get("GITHUB_TOKEN") or
-                          os.environ.get("GH_TOKEN")),
-        )
 
-    be = get_backend(backend)
-    run_triage(findings, be, jobs=1 if backend == "rules" else 4)
-    audit = audit_all(findings)
-    apply_response_policy(findings)
+    def record_coverage(coverage: dict) -> None:
+        source_provenance["coverage"] = coverage
+        source_provenance["coverage_status"] = coverage["status"]
+        tstore.update_source_provenance_if_current(
+            target["id"], source_provenance, expected_revision,
+            expected_source_sha256, workspace_id)
 
-    actions = build_plan(findings)
-    eval_rows = evaluate(findings)
+    result = assess(
+        [source], asset=override,
+        ssvc_overrides=target.get("ssvc_overrides") or {},
+        declared_coverage=dict(source_provenance.get("coverage") or {}),
+        provider_status=provider_status, snapshot=snapshot,
+        use_nvd=use_nvd, nvd_api_key=nvd_api_key,
+        vendor_sources=vendor_sources,
+        github_token=(os.environ.get("GITHUB_TOKEN") or
+                      os.environ.get("GH_TOKEN")),
+        backend=backend, on_coverage=record_coverage,
+    )
+    findings, actions, eval_rows = (
+        result.findings, result.actions, result.eval_rows)
+    run_coverage, audit = result.coverage, result.audit
 
     title = f"PatchTriage - {target['name']}"
     html = render_html(
