@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,8 @@ from .versions import is_concrete
 OSV_QUERYBATCH_URL = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_URL = "https://api.osv.dev/v1/vulns/"
 OSV_CACHE_MAX_AGE_HOURS = 24 * 7
+# Concurrent OSV vulnerability-detail requests per SBOM load.
+OSV_DETAIL_CONCURRENCY = 8
 
 
 
@@ -460,22 +463,39 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
         coverage.inferred_components = len(inferred)
         coverage.inferred_versions = inferred[:50]
         coverage.errors.extend(resolution_errors)
+        # Fetch each uncached record once, a few at a time; the workers get a
+        # throwaway cache so only this thread mutates ``cache``.
+        pending = list(dict.fromkeys(
+            vid for vids in query_result.ids for vid in vids
+            if not _valid_osv_vuln(cache.get(vid), expected_id=vid)))
+        fetched: dict[str, dict | Exception] = {}
+        with ThreadPoolExecutor(max_workers=OSV_DETAIL_CONCURRENCY) as pool:
+            futures = {
+                vid: pool.submit(_fetch_vuln, vid, client, {})
+                for vid in pending}
+            for vid, future in futures.items():
+                try:
+                    fetched[vid] = future.result()
+                except (httpx.HTTPError, json.JSONDecodeError, TypeError,
+                        ValueError) as exc:
+                    fetched[vid] = exc
+        for vid, entry in fetched.items():
+            if isinstance(entry, dict):
+                cache[vid] = cache_updates[vid] = entry
         failed_details: dict[str, str] = {}
         for pkg, vids in zip(components, query_result.ids):
             for vid in vids:
                 if vid in failed_details:
                     coverage.vulnerability_details_failed += 1
                     continue
-                try:
-                    vuln = _fetch_vuln(
-                        vid, client, cache, updates=cache_updates)
-                except (httpx.HTTPError, json.JSONDecodeError, TypeError,
-                        ValueError) as exc:
+                if isinstance(fetched.get(vid), Exception):
+                    exc = fetched[vid]
                     message = str(exc) or exc.__class__.__name__
                     failed_details[vid] = message
                     coverage.vulnerability_details_failed += 1
                     coverage.errors.append(f"{vid}: {message}")
                     continue
+                vuln = cache[vid]
                 coverage.vulnerability_details_resolved += 1
                 if (_osv_ecosystem(pkg.ecosystem) in _LOCAL_RANGE_ECOSYSTEMS
                         and not osv_affects(vuln, pkg)):

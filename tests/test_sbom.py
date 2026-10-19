@@ -574,3 +574,57 @@ def test_sbom_load_drops_action_advisories_outside_the_installed_range(
     monkeypatch.setattr(sbom.httpx, "Client", lambda **kwargs: Client())
     result = load_file_with_metadata(sbom_path)
     assert [f.vuln_id for f in result.findings] == ["GHSA-IN"]
+
+
+def test_osv_details_are_fetched_concurrently_once_per_id(
+        monkeypatch, tmp_path):
+    # Fetching 72 records one by one took ~22 s of a live GUI run. Each ID
+    # is fetched once, a bounded number at a time, and a failure shared by
+    # two packages is still counted for both but reported once.
+    import threading
+    import time
+
+    import patchtriage.ingest.sbom as sbom
+
+    lock = threading.Lock()
+    active = peak = 0
+    gets: list[str] = []
+    ok = {"id": "OSV-OK", "summary": "ok", "affected": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        if request.url.path == "/v1/querybatch":
+            queries = json.loads(request.content)["queries"]
+            return httpx.Response(200, json={"results": [
+                {"vulns": [{"id": "OSV-OK"}, {"id": "OSV-DOWN"},
+                           *({"id": f"OSV-{n}"} for n in range(6))]}
+                for _ in queries]})
+        vid = request.url.path.rsplit("/", 1)[1]
+        with lock:
+            gets.append(vid)
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+        if vid == "OSV-DOWN":
+            return httpx.Response(503)
+        return httpx.Response(200, json={**ok, "id": vid})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        sbom.httpx, "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler),
+                                     **kwargs))
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
+    result = load_file_with_metadata(FIX / "sbom_spdx.json")
+
+    assert sorted(gets) == sorted(set(gets))  # one request per ID
+    assert len(gets) == 8
+    assert 1 < peak <= sbom.OSV_DETAIL_CONCURRENCY
+    coverage = result.coverage
+    # Two packages share all eight IDs: 7 resolved and 1 failed for each.
+    assert coverage["vulnerability_details_resolved"] == 14
+    assert coverage["vulnerability_details_failed"] == 2
+    assert sum("OSV-DOWN" in e for e in coverage["errors"]) == 1
+    assert len(result.findings) == 14

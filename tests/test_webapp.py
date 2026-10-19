@@ -8,6 +8,7 @@ network-marked variant contacts the live providers.
 import json
 import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
@@ -502,7 +503,12 @@ def test_sbom_run_end_to_end_with_stubbed_providers(server, monkeypatch,
 
 @pytest.mark.network
 def test_full_run_over_sbom(server):
-    """add -> attach SPDX -> run (OSV) -> report. Needs network."""
+    """add -> attach SPDX -> run (OSV) -> report. Needs network.
+
+    Uses the GUI's asynchronous /runs + polling flow: a cold live run takes
+    over a minute (Exploit-DB alone answers each search in ~6 s), longer
+    than one synchronous HTTP read should wait.
+    """
     _, t = _req("POST", server + "/api/targets",
                 {"name": "demo", "url": "https://example.com",
                  "criticality": "high", "internet_exposed": True})
@@ -510,13 +516,18 @@ def test_full_run_over_sbom(server):
     st, _ = _req("POST", server + f"/api/targets/{t['id']}/source",
                  {"content": content, "filename": "sbom_spdx.json"})
     assert st == 200
-    try:
-        st, summary = _req("POST", server + f"/api/targets/{t['id']}/run",
-                           {"backend": "rules"})
-    except urllib.error.URLError:
-        pytest.skip("no network for OSV.dev")
-    if st != 200:
-        pytest.skip(f"OSV unreachable: {summary}")
+    st, job = _req("POST", server + f"/api/targets/{t['id']}/runs",
+                   {"backend": "rules"})
+    assert st == 202, job
+    deadline = time.monotonic() + 240
+    while job["state"] in {"queued", "running"}:
+        assert time.monotonic() < deadline, f"live run exceeded 240 s: {job}"
+        time.sleep(2)
+        st, job = _req("GET", server + f"/api/jobs/{job['job_id']}")
+        assert st == 200, job
+    if job["state"] != "succeeded":
+        pytest.skip(f"OSV unreachable: {job.get('error')}")
+    summary = job["summary"]
     if summary["result_state"] == "coverage_incomplete":
         pytest.skip(
             "OSV lookup incomplete: "

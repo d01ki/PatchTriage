@@ -110,10 +110,11 @@ stored; an entry there is public PoC evidence for SSVC Exploitation, so live
 runs can differ from the frozen demo. The GUI SBOM flow (add target, attach
 SBOM, run, report) is covered offline against a mocked OSV.dev. The only
 network-marked test (`python -m pytest tests -q -m network`) repeats that flow
-against the live providers and can exceed its 60-second client timeout when
-they are slow. CI runs it in a separate non-blocking job and excludes it from
-the required unit tests with `-m "not network"`; report the exclusion when you
-do the same locally.
+against the live providers through the GUI's asynchronous `/runs` endpoint and
+allows the run 240 seconds; a cold run of the fixture SBOM takes about a
+minute, mostly Exploit-DB's ~6-second searches. CI runs it in a separate
+non-blocking job and excludes it from the required unit tests with
+`-m "not network"`; report the exclusion when you do the same locally.
 
 The GUI decision-tree view draws branch outcomes supplied by the engine
 (`ssvc.human_impact_branches`); `tests/test_web_enhancements.py` checks every

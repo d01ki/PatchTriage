@@ -26,8 +26,12 @@ GHSA_URL = "https://api.github.com/advisories"
 # live for every run and never written to disk.
 EXPLOITDB_URL = "https://www.exploit-db.com/search"
 EXPLOITDB_MAX_RESULTS = 10
-# Concurrent per-CVE requests shared across Exploit-DB, MSRC, Ubuntu and GHSA.
+# Concurrent per-CVE requests shared across MSRC, Ubuntu and GHSA.
 PER_CVE_CONCURRENCY = 4
+# Exploit-DB answers each search in about six seconds regardless of load
+# (measured 2026-10-19), so it gets its own slots instead of queueing ahead
+# of the other per-CVE sources.
+EXPLOITDB_CONCURRENCY = 6
 MSRC_GUIDE_URL = "https://msrc.microsoft.com/update-guide/vulnerability/"
 
 ALL_SOURCES = ("msrc", "rhsa", "usn", "debian", "ghsa", "exploitdb")
@@ -388,8 +392,11 @@ def enrich_vendor_advisories(
         def lookup(job: tuple[str, str]) -> list[dict]:
             return _fetch_one(job[0], job[1], client, token)
 
-        with ThreadPoolExecutor(max_workers=PER_CVE_CONCURRENCY) as pool:
-            futures = {pool.submit(lookup, job): job for job in jobs}
+        with ThreadPoolExecutor(max_workers=EXPLOITDB_CONCURRENCY) as slow, \
+                ThreadPoolExecutor(max_workers=PER_CVE_CONCURRENCY) as pool:
+            futures = {
+                (slow if job[0] == "exploitdb" else pool).submit(lookup, job):
+                job for job in jobs}
             for future, (source, cve) in futures.items():
                 try:
                     cache[source][cve] = future.result()
