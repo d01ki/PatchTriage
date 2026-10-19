@@ -10,7 +10,7 @@ to a genuinely clean repository unless the message says otherwise.
 from __future__ import annotations
 
 from patchtriage.report.html import render_html
-from patchtriage.webapp.runner import _result_message
+from patchtriage.assess import result_message as _result_message
 
 
 def _coverage(total=21, checked=10, skipped=11, names=(),

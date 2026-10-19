@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from patchtriage import cli
+from patchtriage.assess import Assessment
 
 
 def test_pasted_path_quotes_are_removed(monkeypatch):
@@ -43,7 +44,7 @@ def test_run_passes_bod2604_inputs_separately_from_ssvc(monkeypatch, tmp_path):
 
     def fake_pipeline(files, fmt, override, *args, **kwargs):
         captured["override"] = override
-        return [], [], [], []
+        return Assessment([], [], [], [], {})
 
     monkeypatch.setattr(cli, "_pipeline", fake_pipeline)
     monkeypatch.setattr(cli, "_emit", lambda *args, **kwargs: None)
