@@ -29,7 +29,23 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
       - name: Unit tests
-        run: python -m pytest tests -q
+        run: python -m pytest tests -q -m "not network"
+
+  network:
+    name: live provider checks (non-blocking)
+    runs-on: ubuntu-latest
+    # Live OSV/KEV/EPSS/vendor lookups depend on third-party latency, so a
+    # timeout here is reported without failing the required checks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Network tests
+        run: python -m pytest tests -q -m network
 
   demo:
     name: offline demo (no network, no keys)

@@ -1,12 +1,14 @@
 """End-to-end GUI API test against a live localhost server (no browser).
 
 Exercises the full flow: add target -> attach SBOM -> run -> fetch report.
-The SBOM run hits OSV.dev, so this test needs network; skip it offline.
+The SBOM flow runs offline against a mocked OSV.dev; only the
+network-marked variant contacts the live providers.
 """
 
 import json
 import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
@@ -433,9 +435,52 @@ def test_analyst_can_confirm_per_vulnerability_ssvc_inputs(server):
     assert updated["automatable"]["source"] == "analyst-confirmed SSVC input"
 
 
-@pytest.mark.network
-def test_full_run_over_sbom(server):
-    """add -> attach SPDX -> run (OSV) -> report. Needs network."""
+def test_sbom_run_end_to_end_with_stubbed_providers(server, monkeypatch,
+                                                    tmp_path):
+    """The SBOM flow over HTTP, with OSV mocked and enrichment skipped.
+
+    Keeps add -> attach SBOM -> run -> report covered in CI; the live
+    variant below is network-marked and runs outside the required checks.
+    """
+    import httpx
+
+    import patchtriage.assess as assessmod
+
+    vuln_id = "GHSA-35jh-r3h4-6jhm"
+    record = {
+        "id": vuln_id,
+        "aliases": ["CVE-2021-23337"],
+        "summary": "Command injection in lodash",
+        "affected": [{
+            "package": {"ecosystem": "npm", "name": "lodash"},
+            "ranges": [{"type": "SEMVER",
+                        "events": [{"introduced": "0"},
+                                   {"fixed": "4.17.21"}]}],
+        }],
+    }
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path == "/v1/querybatch":
+            queries = json.loads(request.content)["queries"]
+            return httpx.Response(200, json={"results": [
+                {"vulns": [{"id": vuln_id}]}
+                if "lodash" in json.dumps(q) else {}
+                for q in queries
+            ]})
+        if request.url.path == f"/v1/vulns/{vuln_id}":
+            return httpx.Response(200, json=record)
+        return httpx.Response(404, json={})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler),
+                                     **kwargs))
+    monkeypatch.setattr(assessmod, "enrich", lambda findings, **kwargs: None)
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
+
     _, t = _req("POST", server + "/api/targets",
                 {"name": "demo", "url": "https://example.com",
                  "criticality": "high", "internet_exposed": True})
@@ -443,13 +488,46 @@ def test_full_run_over_sbom(server):
     st, _ = _req("POST", server + f"/api/targets/{t['id']}/source",
                  {"content": content, "filename": "sbom_spdx.json"})
     assert st == 200
-    try:
-        st, summary = _req("POST", server + f"/api/targets/{t['id']}/run",
-                           {"backend": "rules"})
-    except urllib.error.URLError:
-        pytest.skip("no network for OSV.dev")
-    if st != 200:
-        pytest.skip(f"OSV unreachable: {summary}")
+    st, summary = _req("POST", server + f"/api/targets/{t['id']}/run",
+                       {"backend": "rules"})
+    assert st == 200, summary
+    assert "/v1/querybatch" in seen
+    assert summary["total"] == 1
+    assert summary["result_state"] != "coverage_incomplete"
+    assert summary["report_url"] == f"/report/{t['id']}"
+    with _OPENERS[server].open(server + f"/report/{t['id']}") as r:
+        html = r.read().decode()
+    assert "<!doctype html>" in html
+    assert "CVE-2021-23337" in html
+
+
+@pytest.mark.network
+def test_full_run_over_sbom(server):
+    """add -> attach SPDX -> run (OSV) -> report. Needs network.
+
+    Uses the GUI's asynchronous /runs + polling flow: a cold live run takes
+    over a minute (Exploit-DB alone answers each search in ~6 s), longer
+    than one synchronous HTTP read should wait.
+    """
+    _, t = _req("POST", server + "/api/targets",
+                {"name": "demo", "url": "https://example.com",
+                 "criticality": "high", "internet_exposed": True})
+    content = (FIX / "sbom_spdx.json").read_text(encoding="utf-8")
+    st, _ = _req("POST", server + f"/api/targets/{t['id']}/source",
+                 {"content": content, "filename": "sbom_spdx.json"})
+    assert st == 200
+    st, job = _req("POST", server + f"/api/targets/{t['id']}/runs",
+                   {"backend": "rules"})
+    assert st == 202, job
+    deadline = time.monotonic() + 240
+    while job["state"] in {"queued", "running"}:
+        assert time.monotonic() < deadline, f"live run exceeded 240 s: {job}"
+        time.sleep(2)
+        st, job = _req("GET", server + f"/api/jobs/{job['job_id']}")
+        assert st == 200, job
+    if job["state"] != "succeeded":
+        pytest.skip(f"OSV unreachable: {job.get('error')}")
+    summary = job["summary"]
     if summary["result_state"] == "coverage_incomplete":
         pytest.skip(
             "OSV lookup incomplete: "

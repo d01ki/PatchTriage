@@ -234,17 +234,28 @@ def test_per_cve_lookups_overlap_within_the_concurrency_bound(
 
     monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
     lock = threading.Lock()
-    active = peak = 0
+    active: dict[str, int] = {}
+    peak: dict[str, int] = {}
+    msrc_started_before_exploitdb_done = threading.Event()
+    exploitdb_done = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal active, peak
+        nonlocal exploitdb_done
+        host = request.url.host
         with lock:
-            active += 1
-            peak = max(peak, active)
-        time.sleep(0.05)
+            active[host] = active.get(host, 0) + 1
+            peak[host] = max(peak.get(host, 0), active[host])
+            if host == "api.msrc.microsoft.com" and exploitdb_done < 12:
+                msrc_started_before_exploitdb_done.set()
+        # Exploit-DB is the slow source in production.
+        time.sleep(0.1 if host == "www.exploit-db.com" else 0.02)
         with lock:
-            active -= 1
-        return httpx.Response(200, json={"draw": 1, "data": []})
+            active[host] -= 1
+            if host == "www.exploit-db.com":
+                exploitdb_done += 1
+        if host == "www.exploit-db.com":
+            return httpx.Response(200, json={"draw": 1, "data": []})
+        return httpx.Response(404)
 
     findings = []
     for n in range(12):
@@ -252,10 +263,13 @@ def test_per_cve_lookups_overlap_within_the_concurrency_bound(
         finding.vuln_id = f"CVE-2020-{n:04d}"
         findings.append(finding)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        summary = enrich_vendor_advisories(findings, sources="exploitdb",
-                                           client=client)
+        summary = enrich_vendor_advisories(
+            findings, sources="exploitdb,msrc", client=client)
     assert summary["errors"] == 0
-    assert 1 < peak <= vendors.PER_CVE_CONCURRENCY
+    assert 1 < peak["www.exploit-db.com"] <= vendors.EXPLOITDB_CONCURRENCY
+    assert 1 < peak["api.msrc.microsoft.com"] <= vendors.PER_CVE_CONCURRENCY
+    # Slow Exploit-DB searches must not hold the other sources back.
+    assert msrc_started_before_exploitdb_done.is_set()
     assert all("exploitdb" in f.enrichment.exploit_sources_checked
                for f in findings)
 
