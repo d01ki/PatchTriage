@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import webbrowser
 from importlib import resources
 from pathlib import Path
@@ -69,12 +70,13 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
               triage_backend, model, limit, escalation_model=None, jobs=4,
               batch=False, vendor_sources="auto", github_token=None,
               ai_provider=None, ai_base_url=None, use_vulnrichment=True,
-              provider_status="provider_reported"):
+              provider_status="provider_reported", declared_coverage=None):
     # Local files are treated exactly like a GUI upload: the scanner chose
     # its scope, so coverage is reported rather than independently verified.
     result = assess(
         files, fmt=fmt, asset=asset_override, inventory=inventory_path,
         provider_status=provider_status,
+        declared_coverage=declared_coverage,
         use_nvd=use_nvd, nvd_api_key=nvd_api_key,
         vendor_sources=vendor_sources, github_token=github_token,
         use_vulnrichment=use_vulnrichment, backend=triage_backend,
@@ -107,7 +109,7 @@ def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
     return result
 
 
-def _emit(result, output, html):
+def _emit(result, output, html, coverage_warnings=()):
     _print_actions(result.actions)
     _print_eval(result.eval_rows)
     _print_decision_quality(result.subset)
@@ -122,7 +124,8 @@ def _emit(result, output, html):
         html_path.parent.mkdir(parents=True, exist_ok=True)
         html_path.write_text(
             render_html(result.subset, result.actions, result.eval_rows,
-                        coverage=coverage),
+                        coverage=coverage,
+                        coverage_warnings=list(coverage_warnings)),
             encoding="utf-8")
         console.print(f"HTML report: [bold]{_output_location(html_path)}[/bold]")
     if output:
@@ -763,20 +766,36 @@ def start():
     cfg = cfgmod.load()
 
     # 1. what to triage
-    console.print("\n[bold]1. Input[/bold] - PatchTriage reads "
-                  "Trivy / Grype / osv-scanner JSON, or a CycloneDX / SPDX "
-                  "SBOM.\n[dim]No scans? Point it at an SBOM (e.g. GitHub's "
-                  "SPDX export) - packages are resolved online via OSV.dev, "
-                  "no local scanner needed.\nHave a scanner? "
-                  "trivy image --format json -o trivy.json nginx:1.24[/dim]")
+    console.print("\n[bold]1. Input[/bold] - a repository URL, or Trivy / "
+                  "Grype / osv-scanner JSON, or a CycloneDX / SPDX SBOM.\n"
+                  "[dim]Repository URLs are imported exactly like the web "
+                  "GUI: github.com through its Dependency Graph SBOM (no "
+                  "clone), other HTTPS Git hosts by a static OSV-Scanner run "
+                  "when enabled. SBOM packages are resolved online via "
+                  "OSV.dev.[/dim]")
     if _in_container():
         console.print(
             "[dim]Docker CLI: files in this repository are available under "
-            "/work. For an Explorer file picker or repository URL, use the "
-            "web GUI (`./run.sh`).[/dim]"
+            "/work. For an Explorer file picker, use the web GUI.[/dim]"
         )
+    evidence = None
     while True:
-        entered = typer.prompt("Path or glob (e.g. scans/*.json)")
+        entered = typer.prompt(
+            "Repository URL or file path/glob "
+            "(e.g. https://github.com/owner/repo or scans/*.json)")
+        if _is_repository_url(entered):
+            from .repository import RepositoryError
+
+            try:
+                evidence = _acquire_repository(_strip_input_quotes(entered))
+            except RepositoryError as exc:
+                console.print(f"[red]{exc}[/red]")
+                continue
+            files = []
+            console.print(
+                f"[dim]imported {evidence.provenance.get('repository')} "
+                f"({evidence.format})[/dim]")
+            break
         pattern = _normalize_input_pattern(entered)
         files = sorted(Path(p) for p in globmod.glob(pattern))
         if files:
@@ -876,17 +895,37 @@ def start():
     html = typer.prompt("HTML report path", default=html_default).strip()
     output = typer.prompt("JSON report path", default=output_default).strip()
 
+    declared_coverage, provider_status, warnings = None, "provider_reported", []
+    evidence_dir = None
+    if evidence is not None:
+        # The repository is the assessed asset, as for a GUI target.
+        name = str(evidence.provenance.get("repository") or "repository")
+        override = (override or Asset(identifier=name)).model_copy(
+            update={"identifier": name, "kind": "repository"})
+        declared_coverage = dict(evidence.provenance.get("coverage") or {})
+        provider_status = str(evidence.provenance.get("coverage_status") or "")
+        warnings = list(evidence.provenance.get("warnings") or [])
+        evidence_dir = Path(tempfile.mkdtemp(prefix="patchtriage-evidence-"))
+        files = [evidence_dir / f"repository.{evidence.format}.json"]
+        files[0].write_text(evidence.content, encoding="utf-8")
     try:
         result = _pipeline(
             files, None, override, inventory, use_nvd,
             os.environ.get("NVD_API_KEY"), backend, None, None,
             vendor_sources="auto",
             github_token=(os.environ.get("GITHUB_TOKEN") or
-                          os.environ.get("GH_TOKEN")))
+                          os.environ.get("GH_TOKEN")),
+            declared_coverage=declared_coverage,
+            provider_status=provider_status)
     except ValueError as exc:  # unrecognized format
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
-    _emit(result, Path(output), Path(html))
+    finally:
+        if evidence_dir is not None:
+            shutil.rmtree(evidence_dir, ignore_errors=True)
+    for warning in warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
+    _emit(result, Path(output), Path(html), coverage_warnings=warnings)
     _offer_browser(Path(html))
     if any(
         action.kind == "upgrade" and action.target_version
@@ -920,6 +959,29 @@ def start():
 
 
 _WINDOWS_PATH = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+
+
+def _is_repository_url(value: str) -> bool:
+    return _strip_input_quotes(value).lower().startswith(
+        ("https://", "http://"))
+
+
+def _acquire_repository(url: str):
+    """Import a repository through the GUI's acquisition path."""
+    from .repository import (
+        acquire_repository_evidence,
+        generic_repository_enabled,
+    )
+    from .webapp.server import MAX_SOURCE_BYTES
+
+    with console.status(f"importing {url} ..."):
+        return acquire_repository_evidence(
+            url,
+            github_token=(os.environ.get("GITHUB_TOKEN") or
+                          os.environ.get("GH_TOKEN")),
+            max_bytes=MAX_SOURCE_BYTES,
+            allow_generic=generic_repository_enabled(),
+        )
 
 
 def _strip_input_quotes(value: str) -> str:
