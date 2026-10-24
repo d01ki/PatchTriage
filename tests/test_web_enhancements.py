@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import re
 import socket
 import threading
 import time
@@ -632,3 +633,22 @@ def test_ui_has_outcome_donut_and_decision_tree(enhanced_server):
     # The browser draws the branches it is given instead of a local table.
     assert "path.branches" in page
     assert "_DEPLOYER_TABLE" not in page
+
+
+def test_bundled_fonts_are_served_offline_without_session_cookie(enhanced_server):
+    with urllib.request.urlopen(enhanced_server + "/", timeout=15) as response:
+        page = response.read().decode("utf-8")
+    fonts = sorted(set(re.findall(r'url\("/fonts/([^"]+\.woff2)"\)', page)))
+    assert fonts, "theme must reference bundled fonts"
+    # Every referenced font is local; the page never reaches a font CDN.
+    assert "fonts.googleapis" not in page and "fonts.gstatic" not in page
+    for name in fonts:
+        with urllib.request.urlopen(f"{enhanced_server}/fonts/{name}", timeout=15) as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"] == "font/woff2"
+            assert response.headers.get("Set-Cookie") is None
+            assert response.read(4) == b"wOF2"
+    for bad in ("missing.woff2", "..%2Fserver.py", "OFL.txt", "%2E%2E/page.py"):
+        with pytest.raises(urllib.error.HTTPError) as excinfo:
+            urllib.request.urlopen(f"{enhanced_server}/fonts/{bad}", timeout=15)
+        assert excinfo.value.code == 404

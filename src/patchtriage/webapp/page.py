@@ -39,7 +39,7 @@ def _decision_point_labels() -> dict[str, str]:
 _TEMPLATE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0a0d14">
+<meta name="theme-color" content="#060a13">
 <title>PatchTriage</title>
 <style>
   :root{
@@ -260,6 +260,287 @@ _TEMPLATE = r"""<!doctype html>
   @media(max-width:1100px){.brand small{display:none}.workspaceinner{grid-template-columns:220px minmax(0,1fr)}.landing{justify-content:flex-start}.landing .hero,.landing .benchmark{grid-template-columns:1fr}.landing .proof{margin-top:8px}.landing .benchmarkcopy{border-bottom:0}}
   @media(max-width:1000px){.sidebar .kpis{flex:none}.treecanvas svg{min-width:920px}.landing{overflow:visible}.landing .hero{gap:24px}.landing .outcomes{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:700px){.brand{font-size:14px}.topbar{height:auto;min-height:64px;gap:8px}.topactions .btn{font-size:13px;padding:7px 9px}.topactions{flex-wrap:wrap;justify-content:flex-end;padding:8px 0}.workspaceinner{display:flex}.sidebar{max-height:none}.sidebar .kpis{grid-template-columns:repeat(3,1fr);gap:10px;padding-top:12px}.sidebar .kpi:last-child{grid-column:auto}.sidebar .kpi .value{font-size:18px}.sidebarfoot .hint{display:none}.targetlist{max-height:180px}.sectiontitle span{font-size:14px}.outcomerow .name{font-size:14px}.resulthead{grid-template-columns:100px minmax(0,1fr)}.resulttabs{gap:18px}.landing{padding:28px 20px;gap:24px}.landing h1{font-size:52px}.landing .hero p{font-size:17px}.landing .proofhead{flex-wrap:wrap;gap:5px}.landing .node{min-height:0}.landing .decision{flex-wrap:wrap}.landing .outcome{border-left:1px solid var(--line)}.landing .heroactions{flex-direction:column;align-items:stretch}.landing .heroactions .btn{text-align:center}}
+</style>
+<style id="console-theme">
+  @font-face{font-family:"IBM Plex Sans";src:url("/fonts/IBMPlexSans-Regular.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+
+  @font-face{font-family:"IBM Plex Sans";src:url("/fonts/IBMPlexSans-Medium.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
+
+  @font-face{font-family:"IBM Plex Sans";src:url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap}
+
+  @font-face{font-family:"IBM Plex Mono";src:url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+
+  @font-face{font-family:"IBM Plex Mono";src:url("/fonts/IBMPlexMono-Medium.woff2") format("woff2");font-weight:500;font-style:normal;font-display:swap}
+
+  :root{
+  color-scheme:dark;
+  --bg:#060a13;--s1:#0b1222;--s2:#101a2f;--line:#1b2740;--line2:#26344f;
+  --ink:#e4eaf6;--mut:#8391ab;--dim:#56637c;--acc:#22d3ee;--acc2:#3b82f6;
+  --glow:0 0 0 1px #22d3ee66,0 0 20px #22d3ee33;
+  --c-immediate:#ff5a5f;--c-outofcycle:#ffb340;--c-scheduled:#5b8cff;--c-defer:#64748b;
+  --void:var(--bg);--void2:var(--s1);--panel:var(--s1);--panel2:var(--s2);
+  --muted:var(--mut);--paper:var(--bg);--dark:var(--ink);--glass:var(--s1);--surface:var(--s2);
+  --hot:var(--ink);--amber:var(--mut);--blue:var(--acc2);--cyan:var(--acc);--accent:var(--acc);
+  --immediate:var(--c-immediate);--outofcycle:var(--c-outofcycle);--scheduled:var(--c-scheduled);--defer:var(--c-defer);
+  --ui-font:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono-font:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+
+  /* Existing layout, typography sizing, and responsive behavior. */
+  body{padding:0;gap:0;font-weight:400;letter-spacing:.005em}
+  *{scrollbar-width:thin}
+  .topbar{min-height:60px;padding:0 24px;border:0;border-bottom:1px solid var(--line)}
+  .brand{font-weight:650;letter-spacing:.025em;gap:7px}
+  .brand small{font-size:13px}
+  .btn{font-weight:600;transition:background .18s,border-color .18s,transform .18s}
+  .btn.primary{font-weight:600}
+  .btn:disabled{opacity:.45;transform:none}
+  .btn:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline-offset:3px}
+  .landing,.workspace{border:0}
+  .landing{padding:28px 32px;gap:26px}
+  .landing h1{font-weight:650;letter-spacing:-.045em}
+  .eyebrow,.landing .eyebrow{font-weight:650;letter-spacing:.12em}
+  .proof:after{display:none}
+  .landing .benchmark{gap:14px}
+  .landing .outcomes{gap:10px}
+  .landing .outcome{border:1px solid var(--line)}
+  .workspace{padding:18px}
+  .workspaceinner{gap:20px}
+  .sidebar{padding-right:18px}
+  .sectiontitle h2{font-weight:600;letter-spacing:-.025em}
+  .target{overflow:hidden}
+  .targetname{font-weight:600}
+  .sidebar .kpi .value{font-weight:600}
+  .outcomesummary .microtitle,.microtitle{letter-spacing:.055em}
+  .outcomerow .count{font-weight:600}
+  .action{font-weight:600}
+  .resulttabs{gap:22px}
+  .resulttab{font-weight:500}
+  .tree .node text{font-weight:400}
+  .tree .node.on text{font-weight:600}
+  .tree .colhead{font-weight:500}
+  .emptycontent h3{font-weight:600}
+  dialog,#contextdialog{border:1px solid var(--line)}
+  dialog::backdrop{backdrop-filter:blur(7px)}
+
+  @media(max-width:1100px){.workspace{padding:14px}
+  .landing{padding:24px}
+  }
+
+  @media(max-width:700px){.topbar{padding:8px 12px}
+  .brand{font-size:13px}
+  .topactions .btn{font-size:12px}
+  .workspace{padding:14px 12px}
+  .sidebar{padding-right:0}
+  .landing{padding:24px 18px}
+  .landing h1{font-size:46px}
+  .landing .benchmark{gap:12px}
+  .landing .outcomes{gap:8px}
+  .outcomesummary{padding:10px}
+
+  }
+  .kpi .value,.outcomerow .count,.donutlabel,.donutcount,.metric,.queuetable td.num{font-variant-numeric:tabular-nums}
+  .brand{font-weight:600;letter-spacing:.01em}
+  .sectiontitle h2,.emptycontent h3,.dialogbody h3,.addhead h3{font-weight:500;letter-spacing:-.015em}
+  .targetname,.action,.btn,.resulttab,.fieldlabel,.outcomerow .name{font-weight:600}
+  .proofhead,.microtitle,.enginelabel,.kpi .label{letter-spacing:.03em}
+  .brand small{font-size:12px}
+  .landing h1{font-size:clamp(38px,4vw,64px);letter-spacing:-.05em}
+  .targetname,.sectiontitle h2{font-size:18px}
+  .targetmeta,.targetstate{font-size:12px}
+  .action{font-size:16px}
+  .resulttools{flex-wrap:wrap}
+  .resulttab{font-size:13px}
+  .tree .colhead{font-size:11px}
+  .donutlabel{font:500 28px var(--ui-font)}
+  .donutsub{font:400 10px var(--ui-font);letter-spacing:.04em}
+  .outcomesummary{grid-template-columns:100px minmax(0,1fr);min-height:120px;padding:12px 20px;gap:26px}
+  .outcomesummary .donut{width:100px;height:100px;overflow:visible}
+  .outcomesummary .microtitle{display:block;margin-bottom:14px;font-size:11px}
+  .outcomerows{gap:16px}
+  .outcomerow{display:block;border:0;padding-left:0}
+  .outcomerow .name{font-size:12px;white-space:nowrap}
+  .outcomerow .count{display:flex;align-items:baseline;gap:8px;font-size:25px;margin-top:6px}
+  .outcomerow .count small{display:inline;font-size:12px;margin:0}
+  .outcomerow .count{font-weight:500}
+  .outcomerow .name{font-weight:400}
+  .pathsources{gap:0;margin-top:16px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .pathsource{border:0;padding:0 16px;line-height:1.5}
+  .pathsource:first-child{padding-left:0}
+  .pathsource+.pathsource{border-left:1px solid var(--line)}
+  .pathsource .sourcekey{font-size:12px;font-weight:400;letter-spacing:0}
+  .pathsource strong{font-size:16px;font-weight:500;margin:3px 0}
+  .pathsource .sourcevia{font-size:12px;font-weight:400}
+
+  @media(min-width:1001px){.decisionpane{overflow-y:auto;scrollbar-gutter:stable}
+  .results,.result{flex:none}
+  /* A hidden overflow ancestor prevents the tabs from sticking to the pane. */
+  .result{overflow:visible}
+  .resultpanel{flex:none;overflow:visible}
+  .resulttabs{position:sticky;top:0;z-index:3}
+
+  }
+  .assumedmark{font-weight:700}
+
+  @media(max-width:1100px){.outcomerows{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .outcomerow .count{font-size:20px;margin-top:2px}
+  }
+
+  @media(max-width:700px){.outcomesummary{grid-template-columns:100px minmax(0,1fr);padding:12px;gap:12px}
+  .outcomesummary .donut{width:100px;height:100px}
+  .outcomesummary .microtitle{font-size:10px;margin-bottom:10px}
+  .outcomerow{padding-left:7px}
+  .outcomerow .name{font-size:10px;white-space:normal}
+  .outcomerow .count{font-size:18px;gap:5px}
+  .outcomerow .count small{font-size:10px}
+  .brand{font-size:12px}
+  .topactions .btn{font-size:11px}
+  .pathsources{row-gap:16px}
+  .pathsource{padding:0 10px}
+  .pathsource:nth-child(odd){border-left:0;padding-left:0}
+
+  }
+
+  /* Token-based surfaces; outcome colors are reserved for assessment results. */
+  body{background:var(--bg);color:var(--ink);font-family:var(--ui-font);font-variant-numeric:tabular-nums}
+
+  body *{font-family:var(--ui-font)}
+  .mono,.eyebrow,.proofhead,.nodecode,.decision .outcome-now,.factorcode,.kpi .value,.kpi .label,
+  .sectiontitle span,.enginelabel,.standardtag,.ssvcprogress,.fieldnum,.derivedlabel,.targetid,.tag,
+  .priority,.prioritydue,.metric,.microtitle,.barvalue,.outcomemicro b,.factor span,.decisionline b,
+  .signal b,.evidenceicon,.advisoryline a,.advisoryline span,.outcomerow .count,.outcomerow .count small,
+  .breakdown .chip b,.queuetable td.num,.startstep span,.vs,.tree .node text,.tree .root text,
+  .tree .leaf text,.tree .colhead{font-family:var(--ui-font)}
+
+  *{scrollbar-color:var(--line2) transparent}
+
+  ::selection{background:var(--acc);color:var(--bg)}
+
+  .topbar{background:linear-gradient(180deg,#0a1120,#060a13);border-color:var(--line);box-shadow:none}
+
+  .brand,.brand span,.landing h1 em,.eyebrow,.landing .eyebrow,.emptycontent .eyebrow{color:var(--ink)}
+
+  .brandmark{border-color:var(--acc);background:linear-gradient(90deg,var(--acc2),var(--acc));border-radius:5px}
+
+  .brandmark:before,.brandmark:after{background:var(--bg)}
+
+  .statusdot{background:var(--mut);box-shadow:none}
+
+  .landing,.workspace{background:var(--bg);color:var(--ink);box-shadow:none}
+
+  .proof,.benchmarkcopy,.outcome,.lightpanel,.result,.outcomesummary,dialog,#contextdialog{background:var(--s1);border-color:var(--line);border-radius:8px;box-shadow:none}
+
+  .node,.landing .node,.target,.startstep,.emptyresult,.factor,.signal,.outcomemicro,.decisionnote,.ssvcfield,.derived,.contextintro,.ssvcblock,.treecanvas{background:var(--s2);border-color:var(--line);border-radius:6px;box-shadow:none;color:var(--ink)}
+
+  .sidebar{background:var(--s1)}
+
+  .target{background:var(--s1)}
+  .target:hover{border-color:var(--line2)}
+
+  .target.selected{border-color:var(--acc);box-shadow:var(--glow)}
+
+  .targetselect{color:var(--ink);border-radius:6px}
+  .targetselect[aria-pressed=true]{background:var(--s2)}
+
+  .btn,.btn.ghost,.btn.attach,.btn.danger,.sidebarfoot .btn{background:transparent;border-color:var(--line2);color:var(--ink);border-radius:6px;box-shadow:none}
+
+  .btn:hover,.btn.ghost:hover,.btn.attach:hover,.btn.danger:hover,.sidebarfoot .btn:hover{background:var(--s2);border-color:var(--line2)}
+
+  /* Dark text meets 4.5:1 across this gradient; white does not. */
+  .btn.primary,.btn.primary:hover{background:linear-gradient(90deg,var(--acc2),var(--acc));border-color:transparent;color:var(--bg)}
+
+  .btn:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+
+  .sidebar,.sidebar .kpis,.form,.advanced,.advcol+.advcol,.queuetable th,.queuetable td,.ssvcinputtable th,.ssvcinputtable td,.metricrow,.breakdown,.bodpanel,.resulthead,.resulttabs,.evidence li,.pathsources,.pathsource+.pathsource,.treeview,.actionqueue,.compare{border-color:var(--line)}
+
+  .kpis,.metricrow,.ssvcinputreview,.resulthead{background:transparent}
+
+  .sidebar .kpi .value,.kpi .value,.factorquestion,.outcome small b,.fieldname,.fieldnow b,.derivedvalue b,.signal b,.decisionnote b,.startstep b,.outcomerow .name,.outcomerow .count,.pathsource strong,.pathcontext b,.fieldlabel,.fieldhelp b,.advgroup,.advanced summary,.enginevalue{color:var(--ink)}
+
+  .brand small,.landing .hero p,.landing .benchmarkcopy p,.proofhead,.node small,.decision span,.outcome small,.sidebarhint,.sidebarfoot .hint,.hint,.sectiontitle span,.enginelabel,.targetmeta,.targetid,.targetstate,.targetstate.failed,.sidebar .kpi .label,.microtitle,.outcomerow .count small,.outcomerow .meaning,.prioritymeaning,.prioritydue,.rname,.treelegend,.pathsource,.pathcontext,.pathsentence,.pathsentence .src,.pathsource .sourcekey,.pathsource .sourcevia,.queuetable th,.ssvcinputtable th,.queuetable .cves,.inputsource,.bodcell.reference b,.emptycontent p,.statecard span,.previousresult,.startstep,.emptyresult span,.factor span,.factor small,.signal span,.comparefoot,.outcomemicro span,.ssvcinputreview p,.actionqueue p,.evidence small,.dialogbody p,.addhead .hint,.fieldhelp,.fieldq,.fieldnow,.derivednote,.derivedvalue span,.ssvcabout,.contextintro span,.source,.emptycopy p{color:var(--mut)}
+
+  .nodecode,.factorcode,.derivedlabel,.startstep span,.outcomemicro b,.decisionline b,.reviewflag,.assumedmark,.pathcontext .policyhint,.pathsource.assumed strong{color:var(--ink)}
+
+  .reportlink,.textbutton,.contextintro a,.ssvcabout a,.ssvcabout>summary,.evidencelinks a,.advisoryline a{color:var(--acc)}
+  .source.ready{color:var(--ink)}
+
+  .evidencelinks a:hover,.reportlink:hover,.textbutton:hover{color:var(--ink)}
+
+  .tag,.tag.hot,.tag.demo,.tag.warn,.metric,.metric.alert,.metric.audit,.tabcount,.tabcount.warn,.kindtag,.kindtag.mitigate,.standardtag,.ssvcprogress,.ssvcprogress.done,.factorcode,.evidencelinks a,.evidencelinks span,.advisoryline a,.advisoryline span,.breakdown .chip{background:var(--s2);border-color:var(--line2);color:var(--mut);border-radius:4px}
+
+  .evidencelinks a,.advisoryline a{color:var(--acc)}
+
+  .privacy,.confirmbar,.resultnotice,.fieldnow.fallback,.patchtriagenote,.basis,.decisionnote{background:var(--s2);border-color:var(--line2);color:var(--mut);border-radius:6px}
+
+  .patchtriagenote{color:var(--mut)!important}
+  .patchtriagenote b,.fieldnow.fallback b{color:var(--ink)}
+
+  .ssvcfield.set,.ssvcfield.pending{border-left-color:var(--line2)}
+
+  .fieldnum,.ssvcfield.set .fieldnum,.evidenceicon,.evidenceicon.confirmed,.evidenceicon.attention{background:var(--s2);color:var(--ink)}
+
+  .decision,.decisionline,.emptyviz{background:var(--s2);border-color:var(--line2);border-radius:6px;color:var(--ink)}
+
+  .decision .outcome-now{color:var(--c-immediate)}
+  .arrow{color:var(--mut)}
+  .outcomesummary .microtitle,.treepick .fieldlabel{color:var(--mut)}
+
+  .track,.scanline{background:var(--line)}
+  .fill,.fill.epss,.fill.pt,.scanline:after{background:var(--mut)}
+
+  .resulttabs{background:var(--s1)}
+  .resulttab{color:var(--mut)}
+  .resulttab:hover{color:var(--ink)}
+
+  .outcomepill.immediate i{background:var(--c-immediate)}
+  .outcomepill.out-of-cycle i{background:var(--c-outofcycle)}
+  .outcomepill.scheduled i{background:var(--c-scheduled)}
+
+  .donutlabel{fill:var(--ink)}
+  .donutsub{fill:var(--mut)}
+  .donut circle:not(.seg){stroke:var(--line2)}
+
+  .pathsource.assumed{background:transparent}
+  .queuetable tbody tr:hover,.ssvcinputtable tbody tr:hover{background:var(--s2)}
+
+  input[type=text],select,select option{background:var(--s2);color:var(--ink);border-color:var(--line2);border-radius:6px;accent-color:var(--acc)}
+
+  input::placeholder{color:var(--mut);opacity:1}
+
+  dialog::backdrop{background:#060a13cc;backdrop-filter:blur(7px)}
+
+  .toast,.toast.error{background:var(--s2);color:var(--ink);border-color:var(--line2);border-radius:6px;box-shadow:none}
+
+  .statecard.failed,.statecard.running{border-left-color:var(--line2)}
+
+  .cve,.hash{font-family:var(--mono-font)}
+  .cve{font-weight:500}.hash{font-weight:400}
+
+  /* Results retain their own palette; cyan denotes interaction and selection. */
+  [data-outcome]{--outcome:var(--line2);--outcome-ink:var(--ink)}
+  [data-outcome="immediate"]{--outcome:var(--c-immediate);--outcome-ink:var(--c-immediate)}
+  [data-outcome="out_of_cycle"]{--outcome:var(--c-outofcycle);--outcome-ink:var(--c-outofcycle)}
+  [data-outcome="scheduled"]{--outcome:var(--c-scheduled);--outcome-ink:var(--c-scheduled)}
+  /* Keep Defer geometry at the exact token; lighten only text to meet AA. */
+  [data-outcome="defer"]{--outcome:var(--c-defer);--outcome-ink:color-mix(in srgb,var(--c-defer) 70%,var(--ink))}
+  .resulthead{border-top:2px solid var(--top,var(--line2));border-radius:8px 8px 0 0}
+  .priority[data-outcome]{font:600 13px var(--ui-font);border:1px solid var(--outcome);color:var(--outcome-ink);background:color-mix(in srgb,var(--outcome) 8%,transparent);border-radius:5px}
+  .priority.no-findings{color:var(--ink);background:var(--s2)}
+  .resulttab[aria-selected=true]{color:var(--ink);border-color:var(--acc)}
+  .tag.hot{border-color:color-mix(in srgb,var(--c-immediate) 40%,transparent);color:#ff8a8d;background:color-mix(in srgb,var(--c-immediate) 8%,transparent)}
+  .treecanvas{background:var(--bg)}
+  .tree .edge{stroke:var(--line2)}
+  .tree .edge.on{stroke:var(--acc);stroke-width:2.6}
+  .tree .node rect,.tree .root rect{fill:var(--s1);stroke:var(--line2)}
+  .tree .node text,.tree .root text,.tree .node.on text{fill:var(--ink);font-family:var(--ui-font)}
+  .tree .node.on rect{fill:color-mix(in srgb,var(--acc) 14%,var(--s1));stroke:var(--acc)}
+  .tree .colhead{fill:var(--mut);font-family:var(--ui-font)}
+  .tree .node.on.assumed rect{stroke:var(--c-outofcycle)}
+  .tree .leaf.off{opacity:1}
+  .tree .leaf rect{fill:color-mix(in srgb,var(--outcome) 12%,transparent);stroke:var(--outcome)}
+  .tree .leaf.on rect{stroke:var(--outcome);stroke-width:2.5}
+  .tree .leaf text{fill:var(--outcome-ink);font-family:var(--ui-font);font-weight:500}
+  .tree .root text.cve{font-family:var(--mono-font);font-weight:400}
 </style></head>
 <body>
 <header class="topbar">
@@ -587,7 +868,7 @@ function ssvcInputBlock(summary){
   const review=summary.ssvc_inputs_review_total==null?inputs.filter(item=>item.needs_review).length:summary.ssvc_inputs_review_total;
   const visible=inputs.slice(0,(CFG.limits&&CFG.limits.ssvc_review_rows)||250);
   const rows=visible.map(item=>`<tr data-key="${esc(item.finding_key)}" data-exploitation="${esc((item.override||{}).exploitation||"auto")}" data-automatable="${esc((item.override||{}).automatable||"auto")}">
-    <td><b>${esc(item.vuln_id)}</b><span class="inputsource">${esc(item.package)}</span></td>
+    <td><b class="cve">${esc(item.vuln_id)}</b><span class="inputsource">${esc(item.package)}</span></td>
     <td>${ssvcInputSelect("exploitation",item)}</td>
     <td>${ssvcInputSelect("automatable",item)}</td>
     <td>${item.needs_review?'<span class="reviewflag">Review requested</span>':'Confirmed / evidence-backed'}</td>
@@ -604,11 +885,15 @@ const OUTCOME_ORDER=[["immediate","Immediate","Act now · example local SLA 3 da
 const OUTCOME_COLOR={immediate:"var(--c-immediate)",out_of_cycle:"var(--c-outofcycle)",scheduled:"var(--c-scheduled)",defer:"var(--c-defer)"};
 const OUTCOME_KEY={"Immediate":"immediate","Out-of-Cycle":"out_of_cycle","Scheduled":"scheduled","Defer":"defer"};
 function donutSvg(outcomes,size,caption){
-  const total=OUTCOME_ORDER.reduce((n,[k])=>n+(outcomes[k]||0),0),stroke=Math.max(10,Math.round(size*0.16)),r=(size-stroke)/2-2,cx=size/2,cy=size/2;
-  const circ=2*Math.PI*r,gap=total>1?2:0;let offset=0;
-  const segs=total?OUTCOME_ORDER.filter(([k])=>outcomes[k]).map(([k,label])=>{const n=outcomes[k],len=Math.max(0,n/total*circ-gap);const seg=`<circle class="seg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${OUTCOME_COLOR[k]}" stroke-width="${stroke}" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${n} of ${total} (${Math.round(n/total*100)}%)</title></circle>`;offset+=n/total*circ;return seg;}).join(""):`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e3e7ef" stroke-width="${stroke}"></circle>`;
+  const total=OUTCOME_ORDER.reduce((n,[k])=>n+(outcomes[k]||0),0),stroke=Math.max(6,Math.round(size*.085)),r=(size-stroke)/2-2,cx=size/2,cy=size/2;
+  const circ=2*Math.PI*r,gap=OUTCOME_ORDER.filter(([k])=>outcomes[k]>0).length>1?4:0;let offset=0;
+  const segs=total?OUTCOME_ORDER.filter(([k])=>outcomes[k]).map(([k,label])=>{
+    const n=outcomes[k],len=Math.max(0,n/total*circ-gap);
+    const seg=`<circle class="seg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${OUTCOME_COLOR[k]}" stroke-width="${stroke}" stroke-dasharray="${len} ${circ-len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(label)}: ${n} of ${total} (${Math.round(n/total*100)}%)</title></circle>`;
+    offset+=n/total*circ;return seg;
+  }).join(""):`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${stroke}"></circle>`;
   const text=OUTCOME_ORDER.map(([k,label])=>`${label} ${outcomes[k]||0}`).join(", ");
-  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(caption)}: ${esc(text)}">${segs}${size>=100?`<text class="donutlabel" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text><text class="donutsub" x="${cx}" y="${cy+22}" text-anchor="middle">FINDINGS</text>`:`<text class="donutsub" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text>`}</svg>`;
+  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(caption)}: ${esc(text)}">${segs}${size>=100?`<text class="donutlabel" x="${cx}" y="${cy+3}" text-anchor="middle">${total}</text><text class="donutsub" x="${cx}" y="${cy+20}" text-anchor="middle">findings</text>`:`<text class="donutsub" x="${cx}" y="${cy+4}" text-anchor="middle">${total}</text>`}</svg>`;
 }
 function renderOutcomeSummary(){
   const el=document.getElementById("outcomesummary");if(!el)return;
@@ -616,7 +901,7 @@ function renderOutcomeSummary(){
   RESULTS.forEach(r=>OUTCOME_ORDER.forEach(([k])=>totals[k]+=((r.outcomes||{})[k]||0)));
   const total=Object.values(totals).reduce((a,b)=>a+b,0);
   const rows=OUTCOME_ORDER.map(([k,label,meaning])=>`<div class="outcomerow"><div class="name"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)}</div><div class="count">${totals[k]}<small>${total?Math.round(totals[k]/total*100)+"%":"—"}</small></div><div class="meaning">${esc(meaning)}</div></div>`).join("");
-  el.innerHTML=`${donutSvg(totals,72,"SSVC outcomes across all assessed targets")}<div><div class="microtitle">SSVC outcomes across ${RESULTS.size} assessed target${RESULTS.size===1?"":"s"} · ${total} findings</div><div class="outcomerows">${rows}</div></div>`;
+  el.innerHTML=`${donutSvg(totals,112,"SSVC outcomes across all assessed targets")}<div><div class="microtitle">SSVC outcomes across ${RESULTS.size} assessed target${RESULTS.size===1?"":"s"} · ${total} findings</div><div class="outcomerows">${rows}</div></div>`;
 }
 function breakdownBlock(summary){
   const o=summary.outcomes||{};const total=OUTCOME_ORDER.reduce((n,[k])=>n+(o[k]||0),0);if(!total)return "";
@@ -633,7 +918,7 @@ function treeSvg(path){
   const ys=n=>Array.from({length:n},(_,i)=>top+(H-top-20)*(i+0.5)/n);
   let edges="",nodes="",prev={x:colX[0]+nodeW,y:top+(H-top-20)/2};
   const clip=(v,n)=>{v=String(v||"");return v.length>n?v.slice(0,n-1)+"…":v;};
-  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-27}" width="${nodeW}" height="54" rx="6"></rect><text x="${colX[0]+nodeW/2}" y="${prev.y-6}" text-anchor="middle">${esc(clip(path.asset,18))}</text><text x="${colX[0]+nodeW/2}" y="${prev.y+13}" text-anchor="middle">${esc(clip(path.vuln_id,18))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
+  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-27}" width="${nodeW}" height="54" rx="6"></rect><text x="${colX[0]+nodeW/2}" y="${prev.y-6}" text-anchor="middle">${esc(clip(path.asset,18))}</text><text class="cve" x="${colX[0]+nodeW/2}" y="${prev.y+13}" text-anchor="middle">${esc(clip(path.vuln_id,18))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
   const heads=["Finding","Exploitation","System Exposure","Automatable","Human Impact","SSVC outcome"].map((h,i)=>`<text class="colhead" x="${colX[i]+(i===5?66:nodeW/2)}" y="20" text-anchor="middle">${h}</text>`).join("");
   let hiYs=[];
   TREE_LEVELS.forEach(([key,,values],level)=>{
@@ -650,17 +935,17 @@ function treeSvg(path){
   (path.branches||[]).forEach((branch,i)=>{
     const on=branch.human_impact===(P.human_impact||{}).value,k=branch.decision,x=colX[5],y=hiYs[i],sx=colX[4]+nodeW;
     edges+=`<path class="edge${on?" on":""}" d="M${sx} ${y} L ${x} ${y}"></path>`;
-    nodes+=`<g class="leaf ${on?"on":"off"}"><rect x="${x}" y="${y-nodeH/2}" width="132" height="${nodeH}" rx="16" style="fill:${OUTCOME_COLOR[k]||"#7d8799"}"></rect><text x="${x+66}" y="${y+4}" text-anchor="middle"${k==="out_of_cycle"?' style="fill:#2d1d00"':""}>${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
+    nodes+=`<g class="leaf ${on?"on":"off"}" data-outcome="${esc(k)}"><rect x="${x}" y="${y-nodeH/2}" width="132" height="${nodeH}" rx="5"></rect><text x="${x+66}" y="${y+4}" text-anchor="middle">${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
   });
   return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pathSentencePlain(path))}">${heads}${edges}${nodes}</svg>`;
 }
 function pathSentencePlain(path){const P=path.points||{};return `${path.asset}: ${path.vuln_id} in ${path.package} ${path.version} — Exploitation ${(P.exploitation||{}).label}, System Exposure ${(P.system_exposure||{}).label}, Automatable ${(P.automatable||{}).label}, Human Impact ${(P.human_impact||{}).label} → ${path.decision_label}`;}
 function pathDetail(path){
   const P=path.points||{};
-  const sources=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<div class="pathsource ${point.needs_confirmation?"assumed":""}"><strong>${esc(label)} · ${esc(point.label||"Unknown")}${point.needs_confirmation?" ?":""}</strong><span>${esc(point.source||"Source unavailable")}</span></div>`;}).join("");
+  const sources=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<div class="pathsource ${point.needs_confirmation?"assumed":""}"><span class="sourcekey">${esc(label)}</span><strong>${esc(point.label||"Unknown")}${point.needs_confirmation?" ?":""}</strong><span class="sourcevia">${esc(point.source||"Source unavailable")}</span></div>`;}).join("");
   const evidence=(path.evidence||[]).map(e=>{const more=e.more?` (+${esc(e.more)} more in the report)`:"";return e.url?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.source)} · ${esc(e.label)} ↗${more}</a>`:`<span>${esc(e.source)} · ${esc(e.label)}${more}</span>`;}).join("");
   return `<div class="treecanvas">${treeSvg(path)}</div>
-    <div class="treelegend">Dark boxes = selected path · ? = assumed input, needs confirmation · Other outcomes vary Human Impact.</div>
+    <div class="treelegend">Highlighted boxes = selected path · ? = assumed input, needs confirmation · Other outcomes vary Human Impact.</div>
     <div class="pathsources">${sources}</div>
     <div class="pathcontext"><span>Human Impact: <b>${esc((P.mission_impact||{}).label)}</b> mission + <b>${esc((P.safety_impact||{}).label)}</b> safety</span>${path.version_source?`<span class="reviewflag">Version inferred: ${esc(path.version_source)}</span>`:""}${path.bod2604?`<span class="policyhint">BOD 26-04: ${esc(path.bod2604.label)}${path.bod2604.applied?"":" · reference only"}</span>`:""}</div>
     ${evidence?`<div class="evidencelinks" aria-label="Vulnerability evidence">${evidence}</div>`:""}`;
@@ -716,7 +1001,7 @@ function queueBlock(summary){
     const cves=item.cves||[],more=Math.max(0,(item.finding_count||cves.length)-cves.length);
     const kind=item.kind==="mitigate"?'<span class="kindtag mitigate">No fix</span>':"";
     return `<tr><td class="num">${index+1}</td><td><span class="outcomepill ${esc(cls)}"><i aria-hidden="true"></i>${esc(label)}</span></td>
-      <td>${kind}${esc(item.summary)}<span class="cves">${esc(cves.join(", "))}${more?` and ${more} more`:""}</span></td>
+      <td>${kind}${esc(item.summary)}<span class="cves"><span class="cve">${esc(cves.join(", "))}</span>${more?` and ${more} more`:""}</span></td>
       <td class="num">${item.kev_count?`${esc(item.kev_count)} KEV`:"—"}</td><td class="num">${esc(item.finding_count)}</td>
       <td class="num">${item.deadline_days==null?"—":`≤ ${esc(item.deadline_days)} days`}</td>
       <td>${bodCell(item.bod2604)}</td><td>${effectiveCell(item)}</td></tr>`;}).join("");
@@ -729,15 +1014,16 @@ function renderResult(summary){
   const hasFindings=summary.total>0,coverage=summary.source?.coverage_status||"unknown";
   const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";
   const cls=hasFindings?outcome.toLowerCase().replaceAll(" ","-"):"no-findings";
+  const outcomeKey=OUTCOME_ORDER.find(([,label])=>label===outcome)?.[0]||"";
   const view=VIEWS.get(summary.target_id)||{tab:"path",finding:0};
   const review=summary.ssvc_inputs_review_total||0;
   const tabs=[["path","Decision path",""],["actions","Action queue",summary.actions],["evidence","Evidence & policy",""],["review","Review inputs",review]];
   const content=view.tab==="actions"?(queueBlock(summary)||'<div class="emptyresult"><b>No package actions</b><span>Review the evidence and coverage in the report.</span></div>'):view.tab==="evidence"?`<div class="microtitle">Highest-priority finding · ${esc(summary.explanation?.vuln_id||"No findings")}</div>${explainBlock(summary)}${qualityBlock(summary)}<details class="compare"><summary>Compare ranking methods</summary>${compareBlock(summary)}</details>`:view.tab==="review"?(ssvcInputBlock(summary)||'<div class="emptyresult"><b>No finding inputs to review</b></div>'):treeBlock(summary);
   const warnings=[...(summary.enrichment_errors||[]),...(summary.vendor_errors||[])];
   const context=summary.evaluated_context||{};
-  return `<article class="result" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
+  return `<article class="result" style="--top:${OUTCOME_COLOR[outcomeKey]||"var(--line2)"}" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
     <div class="resulthead">
-      <div class="prioritybox"><div class="priority ${esc(cls)}">${esc(outcome)}</div><div class="prioritymeaning" title="Highest-priority SSVC outcome">${hasFindings?"Top outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
+      <div class="prioritybox"><div class="priority ${esc(cls)}" data-outcome="${outcomeKey}">${esc(outcome)}</div><div class="prioritymeaning" title="Highest-priority SSVC outcome">${hasFindings?"Top outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
       <div><div class="rname">${esc(summary.name)} · ${summary.total} findings · ${summary.actions} actions${summary.demo?" · offline demo":""}</div><div class="action">${esc(summary.top_action||"Assessment completed")}</div><div class="resulttools"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="manage">Manage evidence</button><button class="textbutton" data-action="run">Run again</button></div></div>
       <div class="reportlinks"><a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a><a class="reportlink" href="${esc(summary.report_url)}" download="${esc(reportFilename(summary))}">Download HTML report</a></div>
     </div>
@@ -792,10 +1078,10 @@ async function refreshFleet(){
     const fleet=await api("GET","/api/fleet/summary");
     if((fleet.targets_assessed||0)<2){bar.hidden=true;return;}
     const o=fleet.outcomes||{};
-    const queue=(fleet.queue||[]).slice(0,3).map(entry=>`<div class="hint">&#8227; <b>${esc(entry.outcome_label||"")}</b> — ${esc(entry.target_name||"")}: ${esc(entry.summary||"")}${entry.kev_count?` <span style="color:#DC2626;font-weight:700">KEV×${entry.kev_count}</span>`:""}</div>`).join("");
+    const queue=(fleet.queue||[]).slice(0,3).map(entry=>`<div class="hint">&#8227; <b>${esc(entry.outcome_label||"")}</b> — ${esc(entry.target_name||"")}: ${esc(entry.summary||"")}${entry.kev_count?` <span style="color:var(--c-immediate);font-weight:700">KEV×${entry.kev_count}</span>`:""}</div>`).join("");
     bar.innerHTML=`<summary>Fleet view — ${fleet.targets_assessed}/${fleet.targets_total} targets assessed · ${fleet.findings_total} findings</summary>`+
-      `<span style="color:#DC2626;font-weight:700">${o.immediate||0} Immediate</span> · <span style="color:#D97706;font-weight:650">${o.out_of_cycle||0} Out-of-Cycle</span> · ${o.scheduled||0} Scheduled · ${o.defer||0} Defer · ${fleet.kev_total||0} on KEV`+
-      `${fleet.coverage_incomplete_targets?` · <span style="color:#D97706">${fleet.coverage_incomplete_targets} with bounded coverage</span>`:""}${queue?`<div style="margin-top:6px">${queue}</div>`:""}`;
+      `<span style="color:var(--c-immediate);font-weight:700">${o.immediate||0} Immediate</span> · <span style="color:var(--c-outofcycle);font-weight:650">${o.out_of_cycle||0} Out-of-Cycle</span> · ${o.scheduled||0} Scheduled · ${o.defer||0} Defer · ${fleet.kev_total||0} on KEV`+
+      `${fleet.coverage_incomplete_targets?` · <span style="color:var(--c-outofcycle)">${fleet.coverage_incomplete_targets} with bounded coverage</span>`:""}${queue?`<div style="margin-top:6px">${queue}</div>`:""}`;
     bar.hidden=false;
   }catch(error){bar.hidden=true;}
 }

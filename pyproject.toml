@@ -24,6 +24,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 patchtriage = ["data/*.json", "data/*.yaml", "data/fixtures/*.json"]
+"patchtriage.webapp" = ["fonts/*.woff2", "fonts/OFL.txt"]
 
 [tool.pytest.ini_options]
 markers = ["network: test requires network access"]

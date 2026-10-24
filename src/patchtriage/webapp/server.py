@@ -61,6 +61,19 @@ _RUN_SLOTS = threading.BoundedSemaphore(
 _IMPORT_SLOTS = threading.BoundedSemaphore(
     max(1, int(os.environ.get("PATCHTRIAGE_MAX_CONCURRENT_IMPORTS", 2))))
 
+# Bundled IBM Plex Latin-1 subsets (SIL OFL 1.1, see fonts/OFL.txt) keep the GUI offline.
+_FONT_NAME = re.compile(r"[A-Za-z0-9-]+\.woff2")
+
+
+def _font_bytes(name: str) -> bytes | None:
+    if not _FONT_NAME.fullmatch(name):
+        return None
+    try:
+        return (resources.files(__package__) / "fonts" / name).read_bytes()
+    except OSError:
+        return None
+
+
 try:
     APP_VERSION = version("patchtriage")
 except PackageNotFoundError:
@@ -385,9 +398,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "cross-origin request rejected"}, 403)
         self._guard(self._do_DELETE)
 
+    def _send_font(self, name: str):
+        raw = _font_bytes(name)
+        if raw is None:
+            return self._send(b"not found", status=404)
+        # Publicly cached assets must never carry a workspace session cookie.
+        self.send_response(200)
+        self.send_header("Content-Type", "font/woff2")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(raw)
+
     def _do_GET(self):
-        workspace = self._workspace()
         path = self.path.split("?", 1)[0]
+        if path.startswith("/fonts/"):
+            return self._send_font(path[len("/fonts/"):])
+        workspace = self._workspace()
         if path == "/":
             return self._send(INDEX_HTML.encode("utf-8"))
         if path == "/api/config":
