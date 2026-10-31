@@ -274,10 +274,10 @@ _TEMPLATE = r"""<!doctype html>
 
   :root{
   color-scheme:dark;
-  --bg:#000000;--s1:#161617;--s2:#1d1d1f;--line:#2c2c2e;--line2:#3a3a3c;
-  --ink:#f5f5f7;--mut:#a1a1a6;--dim:#6e6e73;--acc:#2997ff;--acc2:#0071e3;
+  --bg:#081028;--s1:#0b1739;--s2:#131f47;--line:#212c4d;--line2:#343b4f;
+  --ink:#ffffff;--mut:#aeb9e1;--dim:#7e89ac;--acc:#cb3cff;--acc2:#7f25fb;
   --glow:0 0 0 1px var(--acc);
-  --c-immediate:#ff5a5f;--c-outofcycle:#ffb340;--c-scheduled:#5b8cff;--c-defer:#64748b;
+  --c-immediate:#ff5a65;--c-outofcycle:#fdb52a;--c-scheduled:#00c2ff;--c-defer:#7e89ac;
   --void:var(--bg);--void2:var(--s1);--panel:var(--s1);--panel2:var(--s2);
   --muted:var(--mut);--paper:var(--bg);--dark:var(--ink);--glass:var(--s1);--surface:var(--s2);
   --hot:var(--ink);--amber:var(--mut);--blue:var(--acc2);--cyan:var(--acc);--accent:var(--acc);
@@ -446,9 +446,9 @@ _TEMPLATE = r"""<!doctype html>
 
   .btn:hover,.btn.ghost:hover,.btn.attach:hover,.btn.danger:hover,.sidebarfoot .btn:hover{background:var(--s2);border-color:var(--line2)}
 
-  /* Apple blue: white text meets 4.5:1 on #0071e3. */
+  /* Dashdark violet: white text meets 4.5:1 on #7f25fb. */
   .btn.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;border-radius:980px}
-  .btn.primary:hover{background:#0077ed;border-color:#0077ed}
+  .btn.primary:hover{background:#8f3bff;border-color:#8f3bff}
   .btn{transition:background-color 160ms ease,border-color 160ms ease,transform 160ms cubic-bezier(.23,1,.32,1)}
   .btn:active:not(:disabled){transform:scale(.97)}
   @media (prefers-reduced-motion:reduce){.btn:active:not(:disabled){transform:none}}
@@ -630,7 +630,7 @@ _TEMPLATE = r"""<!doctype html>
   h1,h2,h3,.sectiontitle h2,.action{letter-spacing:-.015em}
   .btn{border-radius:980px;white-space:nowrap}
   .btn:not(.primary){background:var(--s2);border-color:transparent}
-  .btn:not(.primary):hover{background:#2c2c2e;border-color:transparent}
+  .btn:not(.primary):hover{background:var(--line);border-color:transparent}
   ::selection{background:var(--acc2);color:#fff}
   .topbar{background:var(--bg);border-bottom:1px solid var(--line)}
 
@@ -638,12 +638,12 @@ _TEMPLATE = r"""<!doctype html>
   .brand{gap:10px;font-weight:600;letter-spacing:0;color:var(--ink)}
   .brand .wordmark{font:600 17px/1 var(--ui-font);letter-spacing:-.022em;color:var(--ink)}
   .brandmark,.landing .brandmark{display:block;flex:none;width:26px;height:26px;border:0;border-radius:0;background:none;position:static}
-  .brandmark .tile{fill:var(--ink)}
-  .brandmark .bar{fill:none;stroke:var(--bg);stroke-width:2.4;stroke-linecap:round}
-  .brandmark .bar.first{stroke:var(--acc2)}
+  .brandmark .tile{fill:var(--acc2)}
+  .brandmark .bar{fill:none;stroke:#fff;stroke-opacity:.55;stroke-width:2.4;stroke-linecap:round}
+  .brandmark .bar.first{stroke:#fff;stroke-opacity:1}
 
   /* Patch decisions: headline number, one segmented bar, readable counts. */
-  #outcomesummary{display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch;align-items:start;gap:0;text-align:left;padding:20px 24px;min-height:0;border:0;border-radius:18px;background:var(--s1)}
+  #outcomesummary{display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch;align-items:start;gap:0;text-align:left;padding:20px 24px;min-height:0;border:1px solid var(--line);border-radius:18px;background:var(--s1)}
   #outcomesummary .summaryhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
   #outcomesummary .headline{font:500 15px var(--ui-font);color:var(--mut)}
   #outcomesummary .headline b{font:600 34px/1 var(--ui-font);letter-spacing:-.03em;color:var(--ink);margin-right:6px;font-variant-numeric:tabular-nums}
@@ -661,12 +661,12 @@ _TEMPLATE = r"""<!doctype html>
 
   /* Add a target: a single-column sheet that asks plain questions. */
   #contextdialog{width:min(560px,calc(100% - 32px));padding:0;border:1px solid var(--line);border-radius:18px;background:var(--s1)}
-  #contextdialog::backdrop{background:rgba(0,0,0,.6)}
+  #contextdialog::backdrop{background:rgba(4,8,22,.7)}
   #contextdialog .add{margin:0;padding:0;border:0;background:none}
   #contextdialog .addhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:22px 24px 6px;border:0}
   #contextdialog .addhead h3{margin:0;font:600 21px var(--ui-font);letter-spacing:-.02em;color:var(--ink)}
   #contextdialog .dialogclose{float:none;position:static;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--s2);color:var(--mut);font:400 20px/1 var(--ui-font);cursor:pointer}
-  #contextdialog .dialogclose:hover{color:var(--ink);background:#2c2c2e}
+  #contextdialog .dialogclose:hover{color:var(--ink);background:var(--line)}
   #contextdialog .form{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:14px 24px 24px;border:0}
   #contextdialog .addrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
   #contextdialog .fieldlabel{gap:6px;font:500 13px var(--ui-font);letter-spacing:0;text-transform:none;color:var(--ink)}
