@@ -274,7 +274,7 @@ _TEMPLATE = r"""<!doctype html>
 
   :root{
   color-scheme:dark;
-  --bg:#081028;--s1:#0b1739;--s2:#131f47;--line:#212c4d;--line2:#343b4f;
+  --bg:#081028;--s1:#0b1739;--s2:#0e1a3e;--line:#1a2546;--line2:#273253;
   --ink:#ffffff;--mut:#aeb9e1;--dim:#7e89ac;--acc:#cb3cff;--acc2:#7f25fb;
   --glow:0 0 0 1px var(--acc);
   --c-immediate:#ff5a65;--c-outofcycle:#fdb52a;--c-scheduled:#00c2ff;--c-defer:#7e89ac;
