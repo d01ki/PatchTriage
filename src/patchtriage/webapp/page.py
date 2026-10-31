@@ -274,15 +274,15 @@ _TEMPLATE = r"""<!doctype html>
 
   :root{
   color-scheme:dark;
-  --bg:#060a13;--s1:#0b1222;--s2:#101a2f;--line:#1b2740;--line2:#26344f;
-  --ink:#e4eaf6;--mut:#8391ab;--dim:#56637c;--acc:#22d3ee;--acc2:#3b82f6;
+  --bg:#000000;--s1:#161617;--s2:#1d1d1f;--line:#2c2c2e;--line2:#3a3a3c;
+  --ink:#f5f5f7;--mut:#a1a1a6;--dim:#6e6e73;--acc:#2997ff;--acc2:#0071e3;
   --glow:0 0 0 1px var(--acc);
   --c-immediate:#ff5a5f;--c-outofcycle:#ffb340;--c-scheduled:#5b8cff;--c-defer:#64748b;
   --void:var(--bg);--void2:var(--s1);--panel:var(--s1);--panel2:var(--s2);
   --muted:var(--mut);--paper:var(--bg);--dark:var(--ink);--glass:var(--s1);--surface:var(--s2);
   --hot:var(--ink);--amber:var(--mut);--blue:var(--acc2);--cyan:var(--acc);--accent:var(--acc);
   --immediate:var(--c-immediate);--outofcycle:var(--c-outofcycle);--scheduled:var(--c-scheduled);--defer:var(--c-defer);
-  --ui-font:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --ui-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI Variable Text","Segoe UI","IBM Plex Sans",system-ui,sans-serif;
   --mono-font:"IBM Plex Mono",ui-monospace,Consolas,monospace;
   }
 
@@ -446,9 +446,9 @@ _TEMPLATE = r"""<!doctype html>
 
   .btn:hover,.btn.ghost:hover,.btn.attach:hover,.btn.danger:hover,.sidebarfoot .btn:hover{background:var(--s2);border-color:var(--line2)}
 
-  /* Solid accent: dark text meets 4.5:1 here; white does not. */
-  .btn.primary{background:var(--acc);border-color:var(--acc);color:var(--bg)}
-  .btn.primary:hover{background:color-mix(in srgb,var(--acc) 82%,var(--ink));border-color:color-mix(in srgb,var(--acc) 82%,var(--ink))}
+  /* Apple blue: white text meets 4.5:1 on #0071e3. */
+  .btn.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;border-radius:980px}
+  .btn.primary:hover{background:#0077ed;border-color:#0077ed}
   .btn{transition:background-color 160ms ease,border-color 160ms ease,transform 160ms cubic-bezier(.23,1,.32,1)}
   .btn:active:not(:disabled){transform:scale(.97)}
   @media (prefers-reduced-motion:reduce){.btn:active:not(:disabled){transform:none}}
@@ -624,10 +624,95 @@ _TEMPLATE = r"""<!doctype html>
     .flowoutcomes{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
   .assumedmark{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--c-outofcycle);color:var(--bg);font:700 10px/1 var(--ui-font);vertical-align:1px;margin-left:2px}
+
+  /* ---- Apple-style polish: system type, pill buttons, quiet chrome ---- */
+  body{letter-spacing:0;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,.sectiontitle h2,.action{letter-spacing:-.015em}
+  .btn{border-radius:980px;white-space:nowrap}
+  .btn:not(.primary){background:var(--s2);border-color:transparent}
+  .btn:not(.primary):hover{background:#2c2c2e;border-color:transparent}
+  ::selection{background:var(--acc2);color:#fff}
+  .topbar{background:var(--bg);border-bottom:1px solid var(--line)}
+
+  /* Logo: a prioritized queue — the longest, most urgent item first. */
+  .brand{gap:10px;font-weight:600;letter-spacing:0;color:var(--ink)}
+  .brand .wordmark{font:600 17px/1 var(--ui-font);letter-spacing:-.022em;color:var(--ink)}
+  .brandmark,.landing .brandmark{display:block;flex:none;width:26px;height:26px;border:0;border-radius:0;background:none;position:static}
+  .brandmark .tile{fill:var(--ink)}
+  .brandmark .bar{fill:none;stroke:var(--bg);stroke-width:2.4;stroke-linecap:round}
+  .brandmark .bar.first{stroke:var(--acc2)}
+
+  /* Patch decisions: headline number, one segmented bar, readable counts. */
+  #outcomesummary{display:grid;grid-template-columns:minmax(0,1fr);justify-items:stretch;align-items:start;gap:0;text-align:left;padding:20px 24px;min-height:0;border:0;border-radius:18px;background:var(--s1)}
+  #outcomesummary .summaryhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  #outcomesummary .headline{font:500 15px var(--ui-font);color:var(--mut)}
+  #outcomesummary .headline b{font:600 34px/1 var(--ui-font);letter-spacing:-.03em;color:var(--ink);margin-right:6px;font-variant-numeric:tabular-nums}
+  #outcomesummary .summaryhead span{font-size:13px;color:var(--mut)}
+  #outcomesummary .outcomebar{display:flex;gap:2px;height:8px;margin:16px 0 14px;border-radius:4px;overflow:hidden;background:var(--s2)}
+  #outcomesummary .outcomebar .seg{min-width:4px;height:100%}
+  #outcomesummary .outcomerows{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  #outcomesummary .outcomerow{display:block;border:0;padding:0;margin:0;background:none}
+  #outcomesummary .outcomerow .name{display:flex;align-items:center;gap:7px;font:400 13px var(--ui-font);color:var(--mut);white-space:nowrap}
+  #outcomesummary .outcomerow .name i{width:8px;height:8px;border-radius:50%}
+  #outcomesummary .outcomerow .count{display:flex;align-items:baseline;gap:6px;margin-top:4px;font:600 22px/1.1 var(--ui-font);letter-spacing:-.02em;color:var(--ink)}
+  #outcomesummary .outcomerow .count small{font:400 13px var(--ui-font);letter-spacing:0;color:var(--mut);margin:0}
+  #outcomesummary .outcomerow.zero .count{color:var(--mut)}
+  @media(max-width:700px){#outcomesummary{padding:16px}#outcomesummary .outcomerows{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:14px}#outcomesummary .headline b{font-size:28px}}
+
+  /* Add a target: a single-column sheet that asks plain questions. */
+  #contextdialog{width:min(560px,calc(100% - 32px));padding:0;border:1px solid var(--line);border-radius:18px;background:var(--s1)}
+  #contextdialog::backdrop{background:rgba(0,0,0,.6)}
+  #contextdialog .add{margin:0;padding:0;border:0;background:none}
+  #contextdialog .addhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:22px 24px 6px;border:0}
+  #contextdialog .addhead h3{margin:0;font:600 21px var(--ui-font);letter-spacing:-.02em;color:var(--ink)}
+  #contextdialog .dialogclose{float:none;position:static;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:var(--s2);color:var(--mut);font:400 20px/1 var(--ui-font);cursor:pointer}
+  #contextdialog .dialogclose:hover{color:var(--ink);background:#2c2c2e}
+  #contextdialog .form{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:14px 24px 24px;border:0}
+  #contextdialog .addrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+  #contextdialog .fieldlabel{gap:6px;font:500 13px var(--ui-font);letter-spacing:0;text-transform:none;color:var(--ink)}
+  #contextdialog .fieldlabel .optional{font-weight:400;color:var(--mut)}
+  #contextdialog input,#contextdialog select{height:38px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--bg);color:var(--ink);font:400 14px var(--ui-font)}
+  #contextdialog input:focus,#contextdialog select:focus{border-color:var(--acc)}
+  #contextdialog .ssvcblock{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding:4px 16px;border:0;border-radius:14px;background:var(--s2)}
+  #contextdialog .ssvchead{display:flex;justify-content:space-between;align-items:center;padding:12px 0 10px}
+  #contextdialog .ssvchead strong{font:600 15px var(--ui-font);color:var(--ink)}
+  #contextdialog .ssvchead .standardtag{display:none}
+  #contextdialog .ssvcprogress{border:0;background:none;padding:0;font:400 12px var(--ui-font);letter-spacing:0;text-transform:none;color:var(--mut)}
+  #contextdialog .ssvcprogress.done{color:var(--ink)}
+  #contextdialog .ssvcfield{display:grid;grid-template-columns:minmax(0,1fr) 190px;align-items:center;gap:4px 12px;padding:12px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
+  #contextdialog .fieldq{margin:0;font:400 14px var(--ui-font);color:var(--ink)}
+  #contextdialog .fieldnow{grid-column:1/-1;margin:0;padding:0;border:0;font:400 12px/1.45 var(--ui-font);color:var(--mut)}
+  #contextdialog .fieldnow b{font-weight:500;color:var(--mut)}
+  #contextdialog .fieldnow.fallback b{color:var(--c-outofcycle)}
+  #contextdialog .derived{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:12px;padding:12px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
+  #contextdialog .derivedlabel{font:400 14px var(--ui-font);letter-spacing:0;text-transform:none;color:var(--ink)}
+  #contextdialog .derivedvalue{display:contents}
+  #contextdialog .derivedlabel{white-space:nowrap}
+  #contextdialog .derivedvalue b{justify-self:end}
+  #contextdialog #d-humanpath{grid-column:1/-1;margin-top:-6px}
+  #contextdialog .derivedvalue b{font:600 14px var(--ui-font);color:var(--ink)}
+  #contextdialog .derivedvalue span{font-size:12px;color:var(--mut)}
+  #contextdialog .ssvcabout{padding:10px 0 12px;border-top:1px solid var(--line);background:none}
+  #contextdialog .ssvcabout>summary{font:400 13px var(--ui-font);color:var(--acc);cursor:pointer;list-style:none}
+  #contextdialog .ssvcabout>summary::-webkit-details-marker{display:none}
+  #contextdialog .ssvcabout .aboutbody{display:grid;gap:8px;margin-top:10px;font-size:12.5px;line-height:1.5;color:var(--mut)}
+  #contextdialog .ssvcabout .standardtag{font-size:10.5px;padding:0 5px}
+  #contextdialog .advanced{border:0;border-radius:0;background:none;padding:0}
+  #contextdialog .advanced>summary{font:400 13px var(--ui-font);color:var(--acc)}
+  #contextdialog .formactions{display:flex;justify-content:flex-end;gap:10px;margin:0}
+  #contextdialog .formactions .btn{flex:none;width:auto;min-width:120px;padding:10px 22px;font-size:14px}
+  #contextdialog .ssvcabout>summary::before,#contextdialog .ssvcabout>summary::after{content:none}
+  @media(max-width:560px){#contextdialog .addrow{grid-template-columns:minmax(0,1fr)}#contextdialog .ssvcfield{grid-template-columns:minmax(0,1fr)}#contextdialog .form{padding:12px 16px 18px}#contextdialog .addhead{padding:18px 16px 4px}}
+
+  /* Decision path: the chosen route reads in white so the outcome keeps the only color. */
+  .tree .edge.on{stroke:var(--ink)}
+  .tree .edge.final{stroke:var(--outcome)}
+  .tree .node.on rect{stroke:var(--ink)}
+  .treelegend .swatch.path{background:var(--ink)}
 </style></head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#home" aria-label="PatchTriage home"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span><small>Patch decision workspace</small></a>
+  <a class="brand" href="#home" aria-label="PatchTriage home"><svg class="brandmark" viewBox="0 0 24 24" aria-hidden="true"><rect class="tile" width="24" height="24" rx="6.5"></rect><path class="bar first" d="M6.5 7.5H17.5"></path><path class="bar" d="M6.5 12H14.5"></path><path class="bar" d="M6.5 16.5H11.5"></path></svg><span class="wordmark">PatchTriage</span></a>
   <div class="topactions"><a class="btn small ghost" id="home-link" href="#home" hidden>Home</a><a class="btn small ghost" id="workspace-link" href="#workspace">Open workspace →</a><button class="btn small run-control" id="demo">Run the offline demo</button></div>
 </header>
 <main class="landing" id="home" aria-labelledby="home-title">
@@ -698,52 +783,48 @@ _TEMPLATE = r"""<!doctype html>
     </main>
   </div>
 </section>
-<dialog id="contextdialog" aria-labelledby="form-title"><button class="dialogclose btn small" id="context-close" aria-label="Close target form">Close ×</button>
-      <section class="add lightpanel" id="targetform" aria-labelledby="form-title">
-        <div class="addhead"><h3 id="form-title">Add a target</h3><span class="hint">Name your system. Add evidence after saving.</span></div>
+<dialog id="contextdialog" aria-labelledby="form-title">
+      <section class="add" id="targetform" aria-labelledby="form-title">
+        <div class="addhead"><h3 id="form-title">Add a target</h3><button class="dialogclose" id="context-close" type="button" aria-label="Close target form">&times;</button></div>
         <div class="form">
           <div class="addrow">
-            <label class="fieldlabel">System name<input type="text" id="f-name" maxlength="120" placeholder="e.g. checkout-api" aria-label="System name"></label>
-            <label class="fieldlabel">Reference URL (optional)<input type="text" id="f-url" placeholder="Dashboard or repository link; not scanned" aria-label="Reference link URL"></label>
-            <div class="formactions"><button class="btn primary" id="add">Add target</button><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button></div>
+            <label class="fieldlabel">System name<input type="text" id="f-name" maxlength="120" placeholder="checkout-api" aria-label="System name"></label>
+            <label class="fieldlabel"><span>Link <span class="optional">(optional)</span></span><input type="text" id="f-url" placeholder="https://" aria-label="Reference link URL"></label>
           </div>
           <div class="ssvcblock">
             <div class="ssvchead">
-              <div><strong>Patch priority context</strong><span class="standardtag">CERT/CC SSVC</span></div>
+              <div><strong>How critical is this system?</strong><span class="standardtag">CERT/CC SSVC</span></div>
               <span class="ssvcprogress" id="ssvc-progress">0 of 3 answered</span>
             </div>
+            <label class="ssvcfield" id="fw-exposure">
+              <span class="fieldq">Who can reach it?</span>
+              <select id="f-exposure"><option value="unknown" selected>Not assessed</option><option value="open">Open</option><option value="controlled">Controlled</option><option value="small">Small</option></select>
+              <span class="fieldnow" id="d-exposure"></span>
+            </label>
+            <label class="ssvcfield" id="fw-mission">
+              <span class="fieldq">What stops if it fails?</span>
+              <select id="f-mission"><option value="unknown" selected>Not assessed</option><option value="degraded">Degraded</option><option value="mef_support_crippled">MEF Support Crippled</option><option value="mef_failure">MEF Failure</option><option value="mission_failure">Mission Failure</option></select>
+              <span class="fieldnow" id="d-mission"></span>
+            </label>
+            <label class="ssvcfield" id="fw-safety">
+              <span class="fieldq">Worst credible harm?</span>
+              <select id="f-safety"><option value="unknown" selected>Not assessed</option><option value="negligible">Negligible</option><option value="marginal">Marginal</option><option value="critical">Critical</option><option value="catastrophic">Catastrophic</option></select>
+              <span class="fieldnow" id="d-safety"></span>
+            </label>
+            <div class="derived">
+              <span class="derivedlabel">Human Impact</span>
+              <span class="derivedvalue"><b id="d-human">—</b><span id="d-humanpath"></span></span>
+            </div>
             <details class="ssvcabout">
-              <summary>What are these three questions?</summary>
+              <summary>Learn more</summary>
               <div class="aboutbody">
-                <span>They are the official SSVC decision points that describe <b>your deployment</b>, not the vulnerability. They are categories, not a numeric risk score.</span>
+                <span>The three questions are the official SSVC decision points that describe <b>your deployment</b>, not the vulnerability: System Exposure <span class="standardtag">EXP 1.0.1</span>, Mission Impact <span class="standardtag">MI 2.0.0</span> and Safety Impact <span class="standardtag">SI 2.0.1</span>. They are categories, not a numeric risk score.</span>
+                <span>Mission + safety determine Human Impact <span class="standardtag">HI 2.0.2</span>. Exploitation and Automatable belong to the vulnerability rather than the system and are evaluated per finding.</span>
                 <span>Leave one on <b>Not assessed</b> and PatchTriage stores it as missing, applies the conservative CERT/CC fallback shown under the question, and flags the decision for confirmation.</span>
                 <span>Session data is isolated and expires from the server after six hours.</span>
                 <a href="https://certcc.github.io/SSVC/howto/deployer_tree/" target="_blank" rel="noopener">Official CERT/CC SSVC Deployer model and definitions ↗</a>
               </div>
             </details>
-            <label class="ssvcfield" id="fw-exposure">
-              <span class="fieldhead"><span class="fieldnum">1</span><span class="fieldname">System Exposure</span><span class="standardtag">EXP 1.0.1</span></span>
-              <span class="fieldq">Who can reach this system?</span>
-              <select id="f-exposure"><option value="unknown" selected>Not assessed</option><option value="open">Open</option><option value="controlled">Controlled</option><option value="small">Small</option></select>
-              <span class="fieldnow" id="d-exposure"></span>
-            </label>
-            <label class="ssvcfield" id="fw-mission">
-              <span class="fieldhead"><span class="fieldnum">2</span><span class="fieldname">Mission Impact</span><span class="standardtag">MI 2.0.0</span></span>
-              <span class="fieldq">What essential work stops if this system fails?</span>
-              <select id="f-mission"><option value="unknown" selected>Not assessed</option><option value="degraded">Degraded</option><option value="mef_support_crippled">MEF Support Crippled</option><option value="mef_failure">MEF Failure</option><option value="mission_failure">Mission Failure</option></select>
-              <span class="fieldnow" id="d-mission"></span>
-            </label>
-            <label class="ssvcfield" id="fw-safety">
-              <span class="fieldhead"><span class="fieldnum">3</span><span class="fieldname">Safety Impact</span><span class="standardtag">SI 2.0.1</span></span>
-              <span class="fieldq">What is the worst credible harm if exploitation succeeds?</span>
-              <select id="f-safety"><option value="unknown" selected>Not assessed</option><option value="negligible">Negligible</option><option value="marginal">Marginal</option><option value="critical">Critical</option><option value="catastrophic">Catastrophic</option></select>
-              <span class="fieldnow" id="d-safety"></span>
-            </label>
-            <div class="derived">
-              <span class="derivedlabel">Derived · Human Impact <span class="standardtag">HI 2.0.2</span></span>
-              <span class="derivedvalue"><b id="d-human">—</b><span id="d-humanpath"></span></span>
-              <span class="derivednote">Mission + safety determine Human Impact. Exploitation and Automatable belong to the vulnerability rather than the system and are evaluated per finding.</span>
-            </div>
           </div>
           <details class="advanced" id="bodform">
             <summary>Optional context · CISA BOD 26-04 policy and supporting evidence</summary>
@@ -769,7 +850,7 @@ _TEMPLATE = r"""<!doctype html>
               </div>
             </div>
           </details>
-          <div class="hint">You can leave answers unassessed. Conservative defaults stay flagged until you confirm them.</div>
+          <div class="formactions"><button class="btn" id="cancel-edit" type="button" hidden>Cancel</button><button class="btn primary" id="add">Add target</button></div>
         </div>
       </section>
 </dialog>
@@ -983,8 +1064,15 @@ function renderOutcomeSummary(){
   const totals={immediate:0,out_of_cycle:0,scheduled:0,defer:0};
   RESULTS.forEach(r=>OUTCOME_ORDER.forEach(([k])=>totals[k]+=((r.outcomes||{})[k]||0)));
   const total=Object.values(totals).reduce((a,b)=>a+b,0);
-  const rows=OUTCOME_ORDER.map(([k,label,meaning])=>`<div class="outcomerow"><div class="name"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)}</div><div class="count">${totals[k]}<small>${total?Math.round(totals[k]/total*100)+"%":"—"}</small></div><div class="meaning">${esc(meaning)}</div></div>`).join("");
-  el.innerHTML=`${donutSvg(totals,112,"SSVC outcomes across all assessed targets")}<div><div class="microtitle">SSVC outcomes across ${RESULTS.size} assessed target${RESULTS.size===1?"":"s"} · ${total} findings</div><div class="outcomerows">${rows}</div></div>`;
+  // Part of a whole across four ordered outcomes: one segmented bar, with every
+  // count and share written out so color is never the only cue.
+  const pct=k=>total?Math.round(totals[k]/total*100):0;
+  const segs=total?OUTCOME_ORDER.filter(([k])=>totals[k]).map(([k,label])=>`<span class="seg" style="flex-grow:${totals[k]};background:${OUTCOME_COLOR[k]}" title="${esc(label)}: ${totals[k]} of ${total} (${pct(k)}%)"></span>`).join(""):"";
+  const rows=OUTCOME_ORDER.map(([k,label,meaning])=>`<div class="outcomerow${totals[k]?"":" zero"}" title="${esc(meaning)}"><div class="name"><i style="background:${OUTCOME_COLOR[k]}" aria-hidden="true"></i>${esc(label)}</div><div class="count">${totals[k]}<small>${total?pct(k)+"%":"—"}</small></div></div>`).join("");
+  const targets=`${RESULTS.size} target${RESULTS.size===1?"":"s"} assessed`;
+  el.innerHTML=`<div class="summaryhead"><div class="headline"><b>${total}</b> finding${total===1?"":"s"}</div><span>${total?targets:RESULTS.size?targets+" · no findings":"Run triage to see outcomes"}</span></div>
+    <div class="outcomebar" role="img" aria-label="SSVC outcomes across all assessed targets: ${esc(OUTCOME_ORDER.map(([k,label])=>`${label} ${totals[k]}`).join(", "))}">${segs}</div>
+    <div class="outcomerows">${rows}</div>`;
 }
 function breakdownBlock(summary){
   const o=summary.outcomes||{};const total=OUTCOME_ORDER.reduce((n,[k])=>n+(o[k]||0),0);if(!total)return "";
