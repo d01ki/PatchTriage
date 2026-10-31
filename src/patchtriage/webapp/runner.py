@@ -36,6 +36,11 @@ MAX_SUMMARY_ACTIONS = max(
 MAX_DECISION_PATHS = max(
     1, int(os.environ.get("PATCHTRIAGE_MAX_DECISION_PATHS", 100)))
 
+# Findings listed in the GUI overview. Rows carry only decision point values,
+# so the cap can be far higher than the full decision paths above.
+MAX_OVERVIEW_ROWS = max(
+    1, int(os.environ.get("PATCHTRIAGE_MAX_OVERVIEW_ROWS", 5000)))
+
 _SOURCE_NAMES = {
     "msrc": "Microsoft", "rhsa": "Red Hat", "usn": "Ubuntu",
     "debian": "Debian", "ghsa": "GitHub", "exploitdb": "Exploit-DB",
@@ -113,6 +118,34 @@ def decision_path(finding) -> dict | None:
         } if policy else None),
         "evidence": _evidence_links(finding),
     }
+
+
+def overview_row(finding, path: int | None) -> dict | None:
+    """Compact SSVC record for the overview: decision point values only.
+
+    ``path`` is the finding's index in ``decision_paths`` when the summary
+    carries its full path, so the GUI can open it from the overview list.
+    """
+    ssvc = (finding.triage or {}).get("ssvc") or {}
+    if not ssvc:
+        return None
+    keys = ("exploitation", "system_exposure", "automatable", "human_impact")
+    row = {
+        "finding_key": finding.key,
+        "vuln_id": finding.vuln_id,
+        "package": finding.package.name,
+        "version": finding.package.version,
+        "asset": finding.asset.identifier,
+        "decision": ssvc.get("decision", ""),
+        "decision_label": ssvc.get("decision_label", ""),
+        **{key: (ssvc.get(key) or {}).get("value", "") for key in keys},
+        "assumed": [key for key in keys
+                    if (ssvc.get(key) or {}).get("needs_confirmation")],
+        "kev": bool(finding.enrichment.in_cisa_kev),
+    }
+    if path is not None:
+        row["path"] = path
+    return row
 
 
 def asset_from_target(target: dict) -> Asset:
@@ -302,6 +335,18 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "needs_confirmation", [])
     })
     ordered_input_findings = sorted(findings, key=ssvc_order_key)
+    decision_paths, path_index = [], {}
+    for finding in ordered_input_findings[:MAX_DECISION_PATHS]:
+        path = decision_path(finding)
+        if path:
+            path_index[finding.key] = len(decision_paths)
+            decision_paths.append(path)
+    overview = [
+        row for row in (
+            overview_row(f, path_index.get(f.key))
+            for f in ordered_input_findings[:MAX_OVERVIEW_ROWS])
+        if row
+    ]
     ssvc_inputs = []
     review_total = 0
     for finding in ordered_input_findings:
@@ -407,14 +452,11 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         },
         "ssvc_confirmation_fields": confirmation_fields,
         "ssvc_inputs": ssvc_inputs,
-        "decision_paths": [
-            path for path in (
-                decision_path(f)
-                for f in ordered_input_findings[:MAX_DECISION_PATHS])
-            if path
-        ],
+        "decision_paths": decision_paths,
         "decision_paths_truncated": (
             len(ordered_input_findings) > MAX_DECISION_PATHS),
+        "overview": overview,
+        "overview_truncated": len(ordered_input_findings) > MAX_OVERVIEW_ROWS,
         "ssvc_inputs_total": len(ordered_input_findings),
         "ssvc_inputs_review_total": review_total,
         "ssvc_inputs_truncated": len(ordered_input_findings) > len(ssvc_inputs),

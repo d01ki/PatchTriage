@@ -27,6 +27,7 @@ from patchtriage.repository import (
     RepositoryReference,
     RepositorySbom,
 )
+from patchtriage.webapp import runner as webrunner
 from patchtriage.webapp import server as webserver
 
 
@@ -622,6 +623,47 @@ def test_decision_paths_come_from_the_engine_table(enhanced_server):
     for path in paths:
         counts[path["decision"]] = counts.get(path["decision"], 0) + 1
     assert {k: v for k, v in summary["outcomes"].items() if v} == counts
+
+
+def test_overview_rows_mirror_engine_values_and_link_to_paths(enhanced_server):
+    """The overview lists every finding with the engine's decision points."""
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    summary = _run_demo(opener, enhanced_server, target["id"])
+    rows, paths = summary["overview"], summary["decision_paths"]
+    assert summary["overview_truncated"] is False
+    assert len(rows) == summary["total"]
+    keys = ("exploitation", "system_exposure", "automatable", "human_impact")
+    for row in rows:
+        # Each row links to the decision path of the same finding.
+        path = paths[row["path"]]
+        assert row["finding_key"] == path["finding_key"]
+        assert row["decision"] == path["decision"]
+        for key in keys:
+            assert row[key] == path["points"][key]["value"]
+        assert row["assumed"] == [
+            key for key in keys if path["points"][key]["needs_confirmation"]]
+        assert isinstance(row["kev"], bool)
+    # Assumed inputs stay visible rather than reading as confirmed.
+    assert any(row["assumed"] for row in rows)
+    assert any(row["kev"] for row in rows)
+
+
+def test_overview_is_capped_and_omits_links_past_the_path_limit(
+        enhanced_server, monkeypatch):
+    monkeypatch.setattr(webrunner, "MAX_DECISION_PATHS", 1)
+    monkeypatch.setattr(webrunner, "MAX_OVERVIEW_ROWS", 2)
+    opener = _opener()
+    target = _create_demo(opener, enhanced_server)
+    summary = _run_demo(opener, enhanced_server, target["id"])
+    assert summary["total"] > 2
+    assert summary["overview_truncated"] is True
+    assert summary["decision_paths_truncated"] is True
+    first, second = summary["overview"]
+    assert first["path"] == 0
+    assert first["finding_key"] == summary["decision_paths"][0]["finding_key"]
+    # No full path was serialized for this finding, so nothing to open.
+    assert "path" not in second
 
 
 def test_ui_has_outcome_donut_and_decision_tree(enhanced_server):

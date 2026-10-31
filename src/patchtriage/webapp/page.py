@@ -569,11 +569,43 @@ _TEMPLATE = r"""<!doctype html>
   .treelegend .swatch.alt{width:14px;height:10px;border:1px solid var(--line2);border-radius:3px}
   /* Sources wrap to two columns at this width; start each row flush left. */
   @media(max-width:1000px){.pathsources{row-gap:16px}.pathsource{padding:0 10px}.pathsource:nth-child(odd){border-left:0;padding-left:0}}
+  /* Overview: flat flow chart; ribbons carry the outcome color, nodes stay neutral. */
+  .overview{display:grid;gap:12px}
+  .overviewhead h3{margin:0;font:600 15px var(--ui-font);color:var(--ink);letter-spacing:-.01em}
+  .overviewhead span{display:block;margin-top:3px;font-size:12px;color:var(--mut)}
+  .flowcanvas{overflow-x:auto}
+  .treecanvas svg.flowchart{display:block;width:100%;min-width:720px;max-height:none;height:auto}
+  .flowchart .colhead{fill:var(--mut);font:500 12px var(--ui-font)}
+  .flowchart .ribbon{fill:var(--outcome);fill-opacity:.4;cursor:pointer;transition:fill-opacity 150ms ease}
+  .flowchart .ribbon.dim{fill-opacity:.06}
+  .flowchart .ribbon.hit{fill-opacity:.55;pointer-events:none}
+  .flowchart .flownode[data-flow]{cursor:pointer}
+  .flowchart .flownode rect{fill:var(--s1);stroke:var(--line2);stroke-width:1;transition:stroke 150ms ease}
+  .flowchart .flownode text{fill:var(--ink);font:500 12px var(--ui-font);pointer-events:none}
+  .flowchart .flownode .count{fill:var(--mut);font-variant-numeric:tabular-nums}
+  .flowchart .flownode.empty text{fill:var(--mut)}
+  .flowchart .flownode.empty rect{fill:transparent;stroke-dasharray:3 3}
+  .flowchart .flownode.leaf .dot{fill:var(--outcome)}
+  .flowchart .flownode.leaf:not(.empty) rect{stroke:color-mix(in srgb,var(--outcome) 60%,var(--line2))}
+  .flowchart .flownode.on rect{fill:var(--s2);stroke:var(--acc);stroke-width:1.5}
+  @media (hover:hover) and (pointer:fine){
+    .flowchart .ribbon:hover{fill-opacity:.62}
+    .flowchart .ribbon.dim:hover{fill-opacity:.2}
+    .flowchart .flownode[data-flow]:hover rect{stroke:var(--acc)}
+  }
+  .flowchart .ribbon:focus-visible{fill-opacity:.62;outline:none;stroke:var(--acc);stroke-width:1.5}
+  .flowchart .flownode:focus-visible{outline:none}
+  .flowchart .flownode:focus-visible rect{stroke:var(--acc);stroke-width:2}
+  .overviewbar{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px;font-size:12px;color:var(--mut)}
+  .overviewtable td{vertical-align:middle}
+  .overviewtable .openpath{font:500 12.5px var(--mono-font);color:var(--acc);padding:0;white-space:nowrap}
+  .overviewtable .cve{font:500 12.5px var(--mono-font)}
+  .assumedmark{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--c-outofcycle);color:var(--bg);font:700 10px/1 var(--ui-font);vertical-align:1px;margin-left:2px}
 </style></head>
 <body>
 <header class="topbar">
   <a class="brand" href="#home" aria-label="PatchTriage home"><span class="brandmark" aria-hidden="true"></span>PATCH<span>TRIAGE</span><small>Patch decision workspace</small></a>
-  <div class="topactions"><a class="btn small ghost" id="home-link" href="#home" hidden>Overview</a><a class="btn small ghost" id="workspace-link" href="#workspace">Open workspace →</a><button class="btn small run-control" id="demo">Run the offline demo</button></div>
+  <div class="topactions"><a class="btn small ghost" id="home-link" href="#home" hidden>Home</a><a class="btn small ghost" id="workspace-link" href="#workspace">Open workspace →</a><button class="btn small run-control" id="demo">Run the offline demo</button></div>
 </header>
 <main class="landing" id="home" aria-labelledby="home-title">
 <section class="hero">
@@ -992,6 +1024,74 @@ function treeBlock(summary){
     <div class="treebody">${pathDetail(paths[selected])}</div></section>`;
 }
 
+// Overview: every finding's route through the Deployer tree at once. The
+// browser only counts the engine's values; it never decides an outcome.
+const FLOW_LEVELS=[...TREE_LEVELS,["decision","SSVC outcome",[["defer","Defer"],["scheduled","Scheduled"],["out_of_cycle","Out-of-Cycle"],["immediate","Immediate"]]]];
+const FLOW_LABEL=Object.fromEntries(FLOW_LEVELS.map(([key,,values])=>[key,Object.fromEntries(values)]));
+function overviewRows(summary){
+  if(Array.isArray(summary.overview))return summary.overview;
+  // Summaries stored before the overview existed: rebuild from decision paths.
+  return (summary.decision_paths||[]).map((p,i)=>{const P=p.points||{};return {finding_key:p.finding_key,vuln_id:p.vuln_id,package:p.package,version:p.version,asset:p.asset,decision:p.decision,decision_label:p.decision_label,
+    exploitation:(P.exploitation||{}).value,system_exposure:(P.system_exposure||{}).value,automatable:(P.automatable||{}).value,human_impact:(P.human_impact||{}).value,
+    assumed:TREE_LEVELS.map(([k])=>k).filter(k=>(P[k]||{}).needs_confirmation),path:i};});
+}
+function matchesFilter(row,filter){return Object.entries(filter||{}).every(([k,v])=>row[k]===v);}
+function flowSvg(rows,filter){
+  const W=1000,top=34,bottom=8,nodeW=132,minH=24,gap=10,colX=[0,217,434,651,868],maxPlot=278,base=4*minH+3*gap;
+  // Every finding passes through each column, so the four-value columns are the
+  // tallest; size the chart to them instead of leaving empty space for few findings.
+  const scale=rows.length?Math.min(16,(maxPlot-base)/rows.length):0,plotH=base+rows.length*scale,H=top+plotH+bottom,active=Object.keys(filter||{}).length>0;
+  const nodes={};let svg="";
+  FLOW_LEVELS.forEach(([key,label,values],c)=>{
+    const counts=values.map(([v])=>rows.filter(r=>r[key]===v).length);
+    const heights=counts.map(n=>minH+n*scale),colH=heights.reduce((a,b)=>a+b,0)+gap*(values.length-1);
+    let y=top+(plotH-colH)/2;
+    values.forEach(([v],i)=>{nodes[key+":"+v]={x:colX[c],y,h:heights[i],n:counts[i]};y+=heights[i]+gap;});
+    svg+=`<text class="colhead" x="${colX[c]+nodeW/2}" y="16" text-anchor="middle">${esc(label)}</text>`;
+  });
+  // One ribbon per (from, to, outcome), stacked inside each node in outcome order.
+  const ribbons=(subset,cls)=>{let out="";const off={};
+    for(let c=0;c<FLOW_LEVELS.length-1;c++){
+      const [ka,,va]=FLOW_LEVELS[c],[kb,,vb]=FLOW_LEVELS[c+1];
+      va.forEach(([a])=>vb.forEach(([b])=>OUTCOME_ORDER.forEach(([o,olabel])=>{
+        const n=subset.filter(r=>r[ka]===a&&r[kb]===b&&r.decision===o).length;if(!n)return;
+        const p=nodes[ka+":"+a],q=nodes[kb+":"+b],w=n*scale,so=off["o"+ka+a]||0,ti=off["i"+kb+b]||0;
+        off["o"+ka+a]=so+w;off["i"+kb+b]=ti+w;
+        const y1=p.y+(p.h-p.n*scale)/2+so,y2=q.y+(q.h-q.n*scale)/2+ti,x1=p.x+nodeW,x2=q.x,mx=(x1+x2)/2;
+        const title=`${n} finding${n===1?"":"s"}: ${FLOW_LABEL[ka][a]} → ${FLOW_LABEL[kb][b]} · ${olabel}`;
+        out+=`<path class="ribbon ${cls}" data-outcome="${esc(o)}" data-flow='${esc(JSON.stringify({[ka]:a,[kb]:b,decision:o}))}' tabindex="${cls==="base"?0:-1}" role="button" aria-label="${esc(title)} · filter the list" d="M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2} L ${x2} ${y2+w} C ${mx} ${y2+w}, ${mx} ${y1+w}, ${x1} ${y1+w} Z"><title>${esc(title)}</title></path>`;
+      })));
+    }
+    return out;};
+  svg+=ribbons(rows,active?"base dim":"base");
+  if(active)svg+=ribbons(rows.filter(r=>matchesFilter(r,filter)),"hit");
+  FLOW_LEVELS.forEach(([key,,values],c)=>values.forEach(([v,label])=>{
+    const node=nodes[key+":"+v],leaf=key==="decision",on=active&&filter[key]===v,hits=active?rows.filter(r=>r[key]===v&&matchesFilter(r,filter)).length:node.n;
+    const title=`${FLOW_LABEL[key][v]}: ${node.n} finding${node.n===1?"":"s"}${node.n?" · filter the list":""}`,x=colX[c],mid=node.y+node.h/2;
+    svg+=`<g class="flownode${leaf?" leaf":""}${node.n?"":" empty"}${on?" on":""}"${leaf?` data-outcome="${esc(v)}"`:""}${node.n?` data-flow='${esc(JSON.stringify({[key]:v}))}' tabindex="0" role="button"`:""} aria-label="${esc(title)}"><rect x="${x}" y="${node.y}" width="${nodeW}" height="${node.h}" rx="6"></rect>${leaf?`<circle class="dot" cx="${x+12}" cy="${mid}" r="3.5"></circle>`:""}<text x="${x+(leaf?22:10)}" y="${mid+4.5}">${esc(label)}</text><text class="count" x="${x+nodeW-10}" y="${mid+4.5}" text-anchor="end">${active&&hits!==node.n?`${hits}/`:""}${node.n}</text><title>${esc(title)}</title></g>`;
+  }));
+  return `<svg class="flowchart" viewBox="0 0 ${W} ${H}" role="group" aria-label="Decision flow of ${rows.length} findings through the SSVC Deployer tree">${svg}</svg>`;
+}
+function overviewBlock(summary){
+  const rows=overviewRows(summary);
+  if(!rows.length)return `<div class="emptyresult"><b>${summary.result_state==="coverage_incomplete"?"Coverage incomplete":summary.total?"No decision path available":"No findings reported"}</b><span>${esc(summary.result_message||"Review coverage and evidence in the full report.")}</span></div>`;
+  const filter=VIEWS.get(summary.target_id)?.filter||{},active=Object.keys(filter).length>0,shown=rows.filter(r=>matchesFilter(r,filter));
+  const filterText=Object.entries(filter).map(([k,v])=>`${FLOW_LEVELS.find(l=>l[0]===k)[1]}: ${FLOW_LABEL[k][v]}`).join(", ");
+  const cell=(row,key)=>`${esc(FLOW_LABEL[key][row[key]]||row[key]||"—")}${(row.assumed||[]).includes(key)?' <span class="assumedmark" title="Conservative default; needs confirmation">?</span>':""}`;
+  const body=shown.map(row=>`<tr><td><span class="outcomepill ${esc(String(row.decision).replaceAll("_","-"))}"><i style="background:${OUTCOME_COLOR[row.decision]||"var(--c-defer)"}" aria-hidden="true"></i>${esc(row.decision_label)}</span></td>
+    <td>${row.path!=null?`<button class="textbutton openpath" data-path="${esc(row.path)}" title="Open this finding's decision path">${esc(row.vuln_id)}</button>`:`<span class="cve">${esc(row.vuln_id)}</span>`}${row.kev?' <span class="tag hot">KEV</span>':""}</td>
+    <td>${esc(row.package)} <span class="hint">${esc(row.version||"")}</span></td><td class="hint">${esc(row.asset||"")}</td>
+    <td>${cell(row,"exploitation")}</td><td>${cell(row,"system_exposure")}</td><td>${cell(row,"automatable")}</td><td>${cell(row,"human_impact")}</td></tr>`).join("");
+  return `<section class="overview" aria-label="All findings at a glance">
+    <div class="overviewhead"><h3>How ${rows.length} finding${rows.length===1?"":"s"} reached their outcome</h3><span>Ribbon width is the number of findings; color is the SSVC outcome. Select a box or ribbon to filter the list.</span></div>
+    <div class="treecanvas flowcanvas">${flowSvg(rows,filter)}</div>
+    <div class="overviewbar" aria-live="polite"><span>${active?`Showing ${shown.length} of ${rows.length} · ${esc(filterText)}`:`All ${rows.length} findings, most urgent first`}</span>${active?'<button class="btn small clearflow">Clear filter</button>':""}</div>
+    ${summary.overview_truncated?`<p class="hint">Showing the highest-priority ${rows.length} of ${summary.total} findings; the full report lists every finding.</p>`:""}
+    <div class="queuewrap"><table class="queuetable overviewtable"><thead><tr><th>SSVC outcome</th><th>Finding</th><th>Package</th><th>Asset</th><th>Exploitation</th><th>Exposure</th><th>Automatable</th><th>Human Impact</th></tr></thead><tbody>${body}</tbody></table></div>
+    <ul class="treelegend" aria-label="Legend"><li><i class="swatch assumed" aria-hidden="true">?</i>Assumed input, needs confirmation</li><li>Select a CVE to open its decision path</li></ul>
+  </section>`;
+}
+
 const OBLIGATIONS={remediate:"Remediate",remediate_at_next_major_upgrade:"Remediate at next major upgrade",forensic_triage:"Forensic triage"};
 const RULES={ssvc_only:"SSVC workflow (BOD not applied)",bod_maximum:"BOD 26-04 maximum",workflow_target_stricter:"Workflow target is stricter",bod_fix_on_upgrade:"BOD: fix on system upgrade",bod_unresolved_provisional:"Provisional: BOD inputs unresolved"};
 function bodCell(b){
@@ -1046,10 +1146,10 @@ function renderResult(summary){
   const outcome=hasFindings?(summary.top_ssvc_decision||"No decision"):summary.result_state==="coverage_incomplete"?"Partial coverage":"No findings";
   const cls=hasFindings?outcome.toLowerCase().replaceAll(" ","-"):"no-findings";
   const outcomeKey=OUTCOME_ORDER.find(([,label])=>label===outcome)?.[0]||"";
-  const view=VIEWS.get(summary.target_id)||{tab:"path",finding:0};
+  const view=VIEWS.get(summary.target_id)||{tab:"overview",finding:0};
   const review=summary.ssvc_inputs_review_total||0;
-  const tabs=[["path","Decision path",""],["actions","Action queue",summary.actions],["evidence","Evidence & policy",""],["review","Review inputs",review]];
-  const content=view.tab==="actions"?(queueBlock(summary)||'<div class="emptyresult"><b>No package actions</b><span>Review the evidence and coverage in the report.</span></div>'):view.tab==="evidence"?`<div class="microtitle">Highest-priority finding · ${esc(summary.explanation?.vuln_id||"No findings")}</div>${explainBlock(summary)}${qualityBlock(summary)}<details class="compare"><summary>Compare ranking methods</summary>${compareBlock(summary)}</details>`:view.tab==="review"?(ssvcInputBlock(summary)||'<div class="emptyresult"><b>No finding inputs to review</b></div>'):treeBlock(summary);
+  const tabs=[["overview","Overview",summary.total],["path","Decision path",""],["actions","Action queue",summary.actions],["evidence","Evidence & policy",""],["review","Review inputs",review]];
+  const content=view.tab==="overview"?overviewBlock(summary):view.tab==="actions"?(queueBlock(summary)||'<div class="emptyresult"><b>No package actions</b><span>Review the evidence and coverage in the report.</span></div>'):view.tab==="evidence"?`<div class="microtitle">Highest-priority finding · ${esc(summary.explanation?.vuln_id||"No findings")}</div>${explainBlock(summary)}${qualityBlock(summary)}<details class="compare"><summary>Compare ranking methods</summary>${compareBlock(summary)}</details>`:view.tab==="review"?(ssvcInputBlock(summary)||'<div class="emptyresult"><b>No finding inputs to review</b></div>'):treeBlock(summary);
   const warnings=[...(summary.enrichment_errors||[]),...(summary.vendor_errors||[])];
   const context=summary.evaluated_context||{};
   return `<article class="result" style="--top:${OUTCOME_COLOR[outcomeKey]||"var(--line2)"}" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
@@ -1119,7 +1219,7 @@ async function refreshFleet(){
 async function launchDemo(){
   const button=document.getElementById("demo");if(button.disabled)return;
   button.disabled=true;window.location.hash="workspace";showPage();
-  try{notify("Loading bundled threat evidence…");const target=await api("POST","/api/demo",{});await loadTargets();selectTarget(target.id);const outcomes=await runTargets([target.id]);if(outcomes.every(Boolean))notify("Offline demo is ready. Select a finding to inspect its decision path.");}
+  try{notify("Loading bundled threat evidence…");const target=await api("POST","/api/demo",{});await loadTargets();selectTarget(target.id);const outcomes=await runTargets([target.id]);if(outcomes.every(Boolean))notify("Offline demo is ready. Select a CVE to open its decision path.");}
   catch(error){notify(error.message,true);}
   finally{button.disabled=false;}
 }
@@ -1199,7 +1299,7 @@ async function runTargets(ids){
   ids=ids.filter(id=>TARGETS.find(t=>t.id===id)?.source_file);
   if(!ids.length){notify("Upload an SBOM or import a repository first.",true);return [];}
   const backend=document.getElementById("backend").value||CFG.backends[0]||"rules";
-  const pending=ids.map(id=>{const view=VIEWS.get(id)||{tab:"path",finding:0};view.manage=false;VIEWS.set(id,view);return enqueue(id,backend);});
+  const pending=ids.map(id=>{const view=VIEWS.get(id)||{tab:"overview",finding:0};view.manage=false;VIEWS.set(id,view);return enqueue(id,backend);});
   renderResults();pumpQueue();const settled=await Promise.all(pending);
   const failed=settled.filter(ok=>!ok).length;if(failed)notify(`${failed} assessment(s) need attention. Select the target for details.`,true);
   return settled;
@@ -1235,12 +1335,25 @@ document.getElementById("results").onclick=event=>{
   if(event.target.closest(".demo-trigger"))launchDemo();
   if(event.target.closest(".new-target-trigger"))openTargetForm();
   const tab=event.target.closest("[data-tab]");if(tab){const view=VIEWS.get(selectedTarget)||{finding:0};view.tab=tab.dataset.tab;VIEWS.set(selectedTarget,view);renderResults();document.getElementById("tab-"+view.tab).focus();}
+  const flow=event.target.closest("[data-flow]");if(flow)toggleFlowFilter(flow);
+  if(event.target.closest(".clearflow")){const view=VIEWS.get(selectedTarget);if(view){view.filter={};renderResults();document.getElementById("tab-overview")?.focus();}}
+  const open=event.target.closest(".openpath");if(open){const view=VIEWS.get(selectedTarget)||{};view.tab="path";view.finding=Number(open.dataset.path);VIEWS.set(selectedTarget,view);renderResults();document.getElementById("tab-path").focus();}
   const action=event.target.closest("[data-action]");if(action)handleTargetAction(action);
   const reconnect=event.target.closest(".reconnect-run");if(reconnect)reconnectTarget(reconnect.dataset.id);
   const retry=event.target.closest(".retry-run");if(retry)runTargets([retry.dataset.id]);
   const save=event.target.closest(".save-ssvc-inputs");if(save)saveSsvcInputs(save.closest(".result"));
 };
+function toggleFlowFilter(el){
+  const id=el.closest(".result")?.dataset.result;if(!id)return;
+  const view=VIEWS.get(id)||{tab:"overview",finding:0},next=JSON.parse(el.dataset.flow),current=view.filter||{};
+  // Selecting the active filter again clears it.
+  const same=Object.keys(next).length===Object.keys(current).length&&Object.entries(next).every(([k,v])=>current[k]===v);
+  view.filter=same?{}:next;VIEWS.set(id,view);renderResults();
+  // The chart was redrawn; keep keyboard focus on the same box or ribbon.
+  [...document.querySelectorAll('[data-flow][tabindex="0"]')].find(n=>n.dataset.flow===el.dataset.flow)?.focus({preventScroll:true});
+}
 document.getElementById("results").addEventListener("keydown",event=>{
+  if(event.target.matches("[data-flow]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();toggleFlowFilter(event.target);return;}
   if(!event.target.matches('[role="tab"]'))return;
   const tabs=[...event.target.parentElement.querySelectorAll('[role="tab"]')],index=tabs.indexOf(event.target);
   const next=event.key==="ArrowRight"?(index+1)%tabs.length:event.key==="ArrowLeft"?(index+tabs.length-1)%tabs.length:event.key==="Home"?0:event.key==="End"?tabs.length-1:null;
@@ -1316,7 +1429,7 @@ document.getElementById("cancel-edit").onclick=()=>{resetForm();document.getElem
 async function handleTargetAction(button){
   const card=button.closest("[data-id]"),id=card.dataset.id,action=button.dataset.action;
   if(action==="select"){selectTarget(id);return;}
-  if(action==="manage"||action==="view"){const view=VIEWS.get(id)||{tab:"path",finding:0};view.manage=action==="manage";VIEWS.set(id,view);renderResults();return;}
+  if(action==="manage"||action==="view"){const view=VIEWS.get(id)||{tab:"overview",finding:0};view.manage=action==="manage";VIEWS.set(id,view);renderResults();return;}
   if(isPending(id)&&["edit","import","repository","delete"].includes(action)){notify("Wait for this assessment to finish before changing its inputs.",true);return;}
   if(action==="edit")editContext(TARGETS.find(target=>target.id===id));
   if(action==="import"){pickTarget=id;document.getElementById("filepick").click();}
