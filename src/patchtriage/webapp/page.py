@@ -600,6 +600,29 @@ _TEMPLATE = r"""<!doctype html>
   .overviewtable td{vertical-align:middle}
   .overviewtable .openpath{font:500 12.5px var(--mono-font);color:var(--acc);padding:0;white-space:nowrap}
   .overviewtable .cve{font:500 12.5px var(--mono-font)}
+  /* Narrow screens: the graphs scroll sideways, so state the route and outcomes up front. */
+  .pathsteps,.flowoutcomes,.scrollhint{display:none}
+  @media(max-width:1000px){
+    .pathsteps{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0 0 12px;padding:0}
+    .pathstep{display:grid;gap:1px;padding:6px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--s1);min-width:0}
+    .pathstep span{font-size:11px;color:var(--mut)}
+    .pathstep b{font:600 13px var(--ui-font);color:var(--ink);white-space:nowrap}
+    .pathstep.assumed{border-color:var(--c-outofcycle);border-style:dashed}
+    .pathstep.outcome{border-color:var(--outcome);background:color-mix(in srgb,var(--outcome) 14%,var(--s1))}
+    .pathstep.outcome b{color:var(--outcome-ink)}
+    .pathstep .dot,.flowoutcome .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--outcome);margin-right:6px;vertical-align:1px}
+    .flowoutcomes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+    .flowoutcome{display:flex;align-items:center;gap:0;padding:8px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--s1);color:var(--ink);font:500 13px var(--ui-font);text-align:left;cursor:pointer;min-width:0}
+    .flowoutcome b{margin-left:auto;padding-left:8px;font-variant-numeric:tabular-nums}
+    .flowoutcome[aria-pressed=true]{border-color:var(--acc);background:var(--s2)}
+    .flowoutcome:disabled{cursor:default;color:var(--mut);border-style:dashed}
+    .scrollhint{display:block;margin:0 0 6px;font-size:11px;color:var(--mut)}
+  }
+  @media(max-width:700px){
+    .pathsteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+    .pathstep.outcome{grid-column:1/-1}
+    .flowoutcomes{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
   .assumedmark{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--c-outofcycle);color:var(--bg);font:700 10px/1 var(--ui-font);vertical-align:1px;margin-left:2px}
 </style></head>
 <body>
@@ -1007,7 +1030,11 @@ function pathDetail(path){
   const P=path.points||{};
   const sources=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<div class="pathsource ${point.needs_confirmation?"assumed":""}"><span class="sourcekey">${esc(label)}</span><strong>${esc(point.label||"Unknown")}${point.needs_confirmation?" ?":""}</strong><span class="sourcevia">${esc(point.source||"Source unavailable")}</span></div>`;}).join("");
   const evidence=(path.evidence||[]).map(e=>{const more=e.more?` (+${esc(e.more)} more in the report)`:"";return e.url?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.source)} · ${esc(e.label)} ↗${more}</a>`:`<span>${esc(e.source)} · ${esc(e.label)}${more}</span>`;}).join("");
-  return `<div class="treecanvas">${treeSvg(path)}</div>
+  // Narrow screens scroll the tree sideways, so restate the route and outcome first.
+  const steps=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<li class="pathstep${point.needs_confirmation?" assumed":""}"><span>${esc(label)}</span><b>${esc(point.label||"Unknown")}${point.needs_confirmation?' <i class="assumedmark" title="Conservative default; needs confirmation">?</i>':""}</b></li>`;}).join("");
+  return `<ol class="pathsteps" aria-label="Selected path">${steps}<li class="pathstep outcome" data-outcome="${esc(path.decision)}"><span>SSVC outcome</span><b><i class="dot" aria-hidden="true"></i>${esc(path.decision_label)}</b></li></ol>
+    <div class="scrollhint" aria-hidden="true">Full tree · scroll sideways</div>
+    <div class="treecanvas">${treeSvg(path)}</div>
     <ul class="treelegend" aria-label="Legend"><li><i class="swatch path" aria-hidden="true"></i>Selected path</li><li><i class="swatch assumed" aria-hidden="true">?</i>Assumed input, needs confirmation</li><li><i class="swatch alt" aria-hidden="true"></i>Other outcomes vary Human Impact</li></ul>
     <div class="pathsources">${sources}</div>
     <div class="pathcontext"><span>Human Impact: <b>${esc((P.mission_impact||{}).label)}</b> mission + <b>${esc((P.safety_impact||{}).label)}</b> safety</span>${path.version_source?`<span class="reviewflag">Version inferred: ${esc(path.version_source)}</span>`:""}${path.bod2604?`<span class="policyhint">BOD 26-04: ${esc(path.bod2604.label)}${path.bod2604.applied?"":" · reference only"}</span>`:""}</div>
@@ -1084,6 +1111,8 @@ function overviewBlock(summary){
     <td>${cell(row,"exploitation")}</td><td>${cell(row,"system_exposure")}</td><td>${cell(row,"automatable")}</td><td>${cell(row,"human_impact")}</td></tr>`).join("");
   return `<section class="overview" aria-label="All findings at a glance">
     <div class="overviewhead"><h3>How ${rows.length} finding${rows.length===1?"":"s"} reached their outcome</h3><span>Ribbon width is the number of findings; color is the SSVC outcome. Select a box or ribbon to filter the list.</span></div>
+    <div class="flowoutcomes" role="group" aria-label="Filter by SSVC outcome">${FLOW_LEVELS[4][2].slice().reverse().map(([k,label])=>{const n=rows.filter(r=>r.decision===k).length;return `<button class="flowoutcome" data-outcome="${esc(k)}"${n?` data-flow='${esc(JSON.stringify({decision:k}))}'`:" disabled"} aria-pressed="${filter.decision===k&&Object.keys(filter).length===1}"><i class="dot" aria-hidden="true"></i>${esc(label)}<b>${n}</b></button>`;}).join("")}</div>
+    <div class="scrollhint" aria-hidden="true">Full flow · scroll sideways</div>
     <div class="treecanvas flowcanvas">${flowSvg(rows,filter)}</div>
     <div class="overviewbar" aria-live="polite"><span>${active?`Showing ${shown.length} of ${rows.length} · ${esc(filterText)}`:`All ${rows.length} findings, most urgent first`}</span>${active?'<button class="btn small clearflow">Clear filter</button>':""}</div>
     ${summary.overview_truncated?`<p class="hint">Showing the highest-priority ${rows.length} of ${summary.total} findings; the full report lists every finding.</p>`:""}
@@ -1350,7 +1379,7 @@ function toggleFlowFilter(el){
   const same=Object.keys(next).length===Object.keys(current).length&&Object.entries(next).every(([k,v])=>current[k]===v);
   view.filter=same?{}:next;VIEWS.set(id,view);renderResults();
   // The chart was redrawn; keep keyboard focus on the same box or ribbon.
-  [...document.querySelectorAll('[data-flow][tabindex="0"]')].find(n=>n.dataset.flow===el.dataset.flow)?.focus({preventScroll:true});
+  [...document.querySelectorAll('[data-flow]:is(button,[tabindex="0"])')].find(n=>n.dataset.flow===el.dataset.flow&&n.tagName===el.tagName)?.focus({preventScroll:true});
 }
 document.getElementById("results").addEventListener("keydown",event=>{
   if(event.target.matches("[data-flow]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();toggleFlowFilter(event.target);return;}
