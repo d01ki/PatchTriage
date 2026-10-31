@@ -633,6 +633,10 @@ def test_ui_has_outcome_donut_and_decision_tree(enhanced_server):
     # The browser draws the branches it is given instead of a local table.
     assert "path.branches" in page
     assert "_DEPLOYER_TABLE" not in page
+    # The GUI theme is flat: solid fills and lines, no gradient washes.
+    assert "gradient(" not in page.lower()
+    assert "<lineargradient" not in page.lower()
+    assert "<radialgradient" not in page.lower()
 
 
 def test_bundled_fonts_are_served_offline_without_session_cookie(enhanced_server):

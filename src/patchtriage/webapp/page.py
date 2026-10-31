@@ -75,7 +75,7 @@ _TEMPLATE = r"""<!doctype html>
   .btn.primary{background:var(--hot);border-color:var(--hot);color:#fff;box-shadow:0 8px 32px rgba(255,77,61,.2)}
   .btn.primary:hover{background:#ff6255}.btn.ghost{background:transparent}.btn.small{padding:7px 11px;font-size:13px}
   .btn.danger{color:#ff8a80;background:transparent}.btn:disabled{opacity:.45;cursor:not-allowed}
-  .proof{border:1px solid var(--line);background:linear-gradient(145deg,#111722,#0c1018);padding:24px;position:relative;overflow:hidden}
+  .proof{border:1px solid var(--line);background:var(--s1);padding:24px;position:relative;overflow:hidden}
   .proof:after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;background:var(--hot);filter:blur(100px);opacity:.12;right:-60px;top:-60px}
   .proofhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;color:var(--muted);font:12px "SFMono-Regular",Consolas,monospace;text-transform:uppercase;letter-spacing:.1em}
   .flow{display:grid;grid-template-columns:1fr 26px 1fr 26px 1fr;align-items:stretch;gap:5px}
@@ -276,7 +276,7 @@ _TEMPLATE = r"""<!doctype html>
   color-scheme:dark;
   --bg:#060a13;--s1:#0b1222;--s2:#101a2f;--line:#1b2740;--line2:#26344f;
   --ink:#e4eaf6;--mut:#8391ab;--dim:#56637c;--acc:#22d3ee;--acc2:#3b82f6;
-  --glow:0 0 0 1px #22d3ee66,0 0 20px #22d3ee33;
+  --glow:0 0 0 1px var(--acc);
   --c-immediate:#ff5a5f;--c-outofcycle:#ffb340;--c-scheduled:#5b8cff;--c-defer:#64748b;
   --void:var(--bg);--void2:var(--s1);--panel:var(--s1);--panel2:var(--s2);
   --muted:var(--mut);--paper:var(--bg);--dark:var(--ink);--glass:var(--s1);--surface:var(--s2);
@@ -416,11 +416,11 @@ _TEMPLATE = r"""<!doctype html>
 
   ::selection{background:var(--acc);color:var(--bg)}
 
-  .topbar{background:linear-gradient(180deg,#0a1120,#060a13);border-color:var(--line);box-shadow:none}
+  .topbar{background:var(--bg);border-color:var(--line);box-shadow:none}
 
   .brand,.brand span,.landing h1 em,.eyebrow,.landing .eyebrow,.emptycontent .eyebrow{color:var(--ink)}
 
-  .brandmark{border-color:var(--acc);background:linear-gradient(90deg,var(--acc2),var(--acc));border-radius:5px}
+  .brandmark{border-color:var(--acc);background:var(--acc);border-radius:5px}
 
   .brandmark:before,.brandmark:after{background:var(--bg)}
 
@@ -446,8 +446,12 @@ _TEMPLATE = r"""<!doctype html>
 
   .btn:hover,.btn.ghost:hover,.btn.attach:hover,.btn.danger:hover,.sidebarfoot .btn:hover{background:var(--s2);border-color:var(--line2)}
 
-  /* Dark text meets 4.5:1 across this gradient; white does not. */
-  .btn.primary,.btn.primary:hover{background:linear-gradient(90deg,var(--acc2),var(--acc));border-color:transparent;color:var(--bg)}
+  /* Solid accent: dark text meets 4.5:1 here; white does not. */
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+  .btn.primary:hover{background:color-mix(in srgb,var(--acc) 82%,var(--ink));border-color:color-mix(in srgb,var(--acc) 82%,var(--ink))}
+  .btn{transition:background-color 160ms ease,border-color 160ms ease,transform 160ms cubic-bezier(.23,1,.32,1)}
+  .btn:active:not(:disabled){transform:scale(.97)}
+  @media (prefers-reduced-motion:reduce){.btn:active:not(:disabled){transform:none}}
 
   .btn:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
 
@@ -528,19 +532,43 @@ _TEMPLATE = r"""<!doctype html>
   .priority.no-findings{color:var(--ink);background:var(--s2)}
   .resulttab[aria-selected=true]{color:var(--ink);border-color:var(--acc)}
   .tag.hot{border-color:color-mix(in srgb,var(--c-immediate) 40%,transparent);color:#ff8a8d;background:color-mix(in srgb,var(--c-immediate) 8%,transparent)}
-  .treecanvas{background:var(--bg)}
-  .tree .edge{stroke:var(--line2)}
-  .tree .edge.on{stroke:var(--acc);stroke-width:2.6}
-  .tree .node rect,.tree .root rect{fill:var(--s1);stroke:var(--line2)}
-  .tree .node text,.tree .root text,.tree .node.on text{fill:var(--ink);font-family:var(--ui-font)}
-  .tree .node.on rect{fill:color-mix(in srgb,var(--acc) 14%,var(--s1));stroke:var(--acc)}
-  .tree .colhead{fill:var(--mut);font-family:var(--ui-font)}
-  .tree .node.on.assumed rect{stroke:var(--c-outofcycle)}
+  /* Decision path: a flat canvas where only the chosen route carries color. */
+  .treecanvas{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:14px 16px 12px}
+  .treecanvas svg,.treecanvas svg.tree{max-height:none}
+  .tree .grid{pointer-events:none}
+  .tree pattern circle{fill:var(--line)}
+  .tree .colhead{fill:var(--mut);font:500 12px var(--ui-font);letter-spacing:0;text-transform:none}
+  .tree .edge{fill:none;stroke:var(--line2);stroke-width:1}
+  .tree .edge.on{stroke:var(--acc);stroke-width:2;stroke-linecap:round}
+  .tree .edge.final{stroke:var(--outcome)}
+  .tree .node rect{fill:var(--s1);stroke:var(--line2);stroke-width:1}
+  .tree .node text{fill:var(--mut);font:400 13px var(--ui-font)}
+  .tree .node.on rect{fill:var(--s2);stroke:var(--acc);stroke-width:1.5}
+  .tree .node.on text{fill:var(--ink);font-weight:600}
+  .tree .node.assumed rect,.tree .node.on.assumed rect{fill:var(--s2);stroke:var(--c-outofcycle);stroke-width:1.5;stroke-dasharray:4 3}
+  .tree .assumedbadge circle{fill:var(--c-outofcycle);stroke:var(--s1);stroke-width:2}
+  .tree .assumedbadge text{fill:var(--bg);font:700 11px var(--ui-font)}
+  .tree .root rect{fill:var(--s2);stroke:var(--line2)}
+  .tree .root text.cve{fill:var(--ink);font:500 13px var(--mono-font)}
+  .tree .root text.asset{fill:var(--mut);font:400 12px var(--ui-font)}
+  .tree .leaf rect{fill:var(--s1);stroke:var(--line2);stroke-width:1}
+  .tree .leaf .dot{fill:var(--outcome)}
+  .tree .leaf text{fill:var(--mut);font:400 13px var(--ui-font)}
+  .tree .leaf.on rect{fill:color-mix(in srgb,var(--outcome) 14%,var(--s1));stroke:var(--outcome);stroke-width:1.5}
+  .tree .leaf.on text{fill:var(--outcome-ink);font-weight:600}
   .tree .leaf.off{opacity:1}
-  .tree .leaf rect{fill:color-mix(in srgb,var(--outcome) 12%,transparent);stroke:var(--outcome)}
-  .tree .leaf.on rect{stroke:var(--outcome);stroke-width:2.5}
-  .tree .leaf text{fill:var(--outcome-ink);font-family:var(--ui-font);font-weight:500}
-  .tree .root text.cve{font-family:var(--mono-font);font-weight:400}
+  @media (prefers-reduced-motion:no-preference){
+    .tree .edge.on{stroke-dasharray:1;stroke-dashoffset:1;animation:treedraw 220ms cubic-bezier(.23,1,.32,1) calc(var(--step) * 40ms) forwards}
+  }
+  @keyframes treedraw{to{stroke-dashoffset:0}}
+  .treelegend{display:flex;flex-wrap:wrap;gap:6px 20px;list-style:none;margin:10px 0 0;padding:0;font-size:12px;color:var(--mut)}
+  .treelegend li{display:flex;align-items:center;gap:8px}
+  .treelegend .swatch{display:inline-grid;place-items:center;flex:none;box-sizing:border-box}
+  .treelegend .swatch.path{width:18px;height:2px;border-radius:1px;background:var(--acc)}
+  .treelegend .swatch.assumed{width:14px;height:14px;border-radius:50%;background:var(--c-outofcycle);color:var(--bg);font:700 10px/1 var(--ui-font);font-style:normal}
+  .treelegend .swatch.alt{width:14px;height:10px;border:1px solid var(--line2);border-radius:3px}
+  /* Sources wrap to two columns at this width; start each row flush left. */
+  @media(max-width:1000px){.pathsources{row-gap:16px}.pathsource{padding:0 10px}.pathsource:nth-child(odd){border-left:0;padding-left:0}}
 </style></head>
 <body>
 <header class="topbar">
@@ -914,19 +942,21 @@ const TREE_LEVELS=[
   ["automatable","Automatable",[["no","No"],["yes","Yes"]]],
   ["human_impact","Human Impact",[["low","Low"],["medium","Medium"],["high","High"],["very_high","Very High"]]]];
 function treeSvg(path){
-  const W=1000,H=170,nodeW=128,nodeH=25,top=30,colX=[20,190,360,530,700,860],P=path.points||{};
-  const ys=n=>Array.from({length:n},(_,i)=>top+(H-top-20)*(i+0.5)/n);
-  let edges="",nodes="",prev={x:colX[0]+nodeW,y:top+(H-top-20)/2};
+  const W=1000,H=196,nodeW=128,nodeH=28,top=40,colX=[16,188,358,528,698,866],leafW=126,P=path.points||{};
+  const ys=n=>Array.from({length:n},(_,i)=>top+(H-top-12)*(i+0.5)/n);
+  let edges="",nodes="",prev={x:colX[0]+nodeW,y:top+(H-top-12)/2};
   const clip=(v,n)=>{v=String(v||"");return v.length>n?v.slice(0,n-1)+"…":v;};
-  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-27}" width="${nodeW}" height="54" rx="6"></rect><text x="${colX[0]+nodeW/2}" y="${prev.y-6}" text-anchor="middle">${esc(clip(path.asset,18))}</text><text class="cve" x="${colX[0]+nodeW/2}" y="${prev.y+13}" text-anchor="middle">${esc(clip(path.vuln_id,18))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
-  const heads=["Finding","Exploitation","System Exposure","Automatable","Human Impact","SSVC outcome"].map((h,i)=>`<text class="colhead" x="${colX[i]+(i===5?66:nodeW/2)}" y="20" text-anchor="middle">${h}</text>`).join("");
+  // The selected edge draws in once per column so a new finding reads left to right.
+  const onEdge=level=>` pathLength="1" style="--step:${level}"`;
+  nodes+=`<g class="node root"><rect x="${colX[0]}" y="${prev.y-28}" width="${nodeW}" height="56" rx="8"></rect><text class="cve" x="${colX[0]+14}" y="${prev.y-4}">${esc(clip(path.vuln_id,17))}</text><text class="asset" x="${colX[0]+14}" y="${prev.y+15}">${esc(clip(path.asset,19))}</text><title>${esc(path.asset)} · ${esc(path.package)} ${esc(path.version)} · ${esc(path.vuln_id)}</title></g>`;
+  const heads=["Finding","Exploitation","System Exposure","Automatable","Human Impact","SSVC outcome"].map((h,i)=>`<text class="colhead" x="${colX[i]+(i?nodeW/2:14)}" y="18" text-anchor="${i?"middle":"start"}">${h}</text>`).join("");
   let hiYs=[];
   TREE_LEVELS.forEach(([key,,values],level)=>{
     const x=colX[level+1],y=ys(values.length),chosen=(P[key]||{}).value,assumed=(P[key]||{}).needs_confirmation;let next=null;
     values.forEach(([value,label],i)=>{
-      const on=value===chosen;
-      edges+=`<path class="edge${on?" on":""}" d="M${prev.x} ${prev.y} C ${prev.x+30} ${prev.y}, ${x-30} ${y[i]}, ${x} ${y[i]}"></path>`;
-      nodes+=`<g class="node${on?" on":""}${on&&assumed?" assumed":""}"><rect x="${x}" y="${y[i]-nodeH/2}" width="${nodeW}" height="${nodeH}" rx="6"></rect><text x="${x+nodeW/2}" y="${y[i]+4}" text-anchor="middle">${esc(label)}${on&&assumed?" ?":""}</text><title>${esc(label)}${on?` · ${(P[key]||{}).source||""}${assumed?" · conservative default, needs confirmation":""}`:""}</title></g>`;
+      const on=value===chosen,flag=on&&assumed;
+      edges+=`<path class="edge${on?" on":""}"${on?onEdge(level):""} d="M${prev.x} ${prev.y} C ${prev.x+30} ${prev.y}, ${x-30} ${y[i]}, ${x} ${y[i]}"></path>`;
+      nodes+=`<g class="node${on?" on":""}${flag?" assumed":""}"><rect x="${x}" y="${y[i]-nodeH/2}" width="${nodeW}" height="${nodeH}" rx="7"></rect><text x="${x+nodeW/2}" y="${y[i]+4.5}" text-anchor="middle">${esc(label)}</text>${flag?`<g class="assumedbadge"><circle cx="${x+nodeW}" cy="${y[i]-nodeH/2}" r="8"></circle><text x="${x+nodeW}" y="${y[i]-nodeH/2+4}" text-anchor="middle">?</text></g>`:""}<title>${esc(label)}${on?` · ${(P[key]||{}).source||""}${assumed?" · conservative default, needs confirmation":""}`:""}</title></g>`;
       if(on)next={x:x+nodeW,y:y[i]};
     });
     if(level===3)hiYs=y;
@@ -934,10 +964,11 @@ function treeSvg(path){
   });
   (path.branches||[]).forEach((branch,i)=>{
     const on=branch.human_impact===(P.human_impact||{}).value,k=branch.decision,x=colX[5],y=hiYs[i],sx=colX[4]+nodeW;
-    edges+=`<path class="edge${on?" on":""}" d="M${sx} ${y} L ${x} ${y}"></path>`;
-    nodes+=`<g class="leaf ${on?"on":"off"}" data-outcome="${esc(k)}"><rect x="${x}" y="${y-nodeH/2}" width="132" height="${nodeH}" rx="5"></rect><text x="${x+66}" y="${y+4}" text-anchor="middle">${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
+    edges+=`<path class="edge${on?" on final":""}"${on?onEdge(4):""} data-outcome="${esc(k)}" d="M${sx} ${y} L ${x} ${y}"></path>`;
+    nodes+=`<g class="leaf ${on?"on":"off"}" data-outcome="${esc(k)}"><rect x="${x}" y="${y-nodeH/2}" width="${leafW}" height="${nodeH}" rx="7"></rect><circle class="dot" cx="${x+14}" cy="${y}" r="3.5"></circle><text x="${x+26}" y="${y+4.5}">${esc(branch.decision_label)}</text><title>Human Impact ${esc(branch.human_impact_label)} → ${esc(branch.decision_label)}</title></g>`;
   });
-  return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pathSentencePlain(path))}">${heads}${edges}${nodes}</svg>`;
+  const grid=`<defs><pattern id="treegrid" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1"></circle></pattern></defs><rect class="grid" width="${W}" height="${H}" fill="url(#treegrid)"></rect>`;
+  return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pathSentencePlain(path))}">${grid}${heads}${edges}${nodes}</svg>`;
 }
 function pathSentencePlain(path){const P=path.points||{};return `${path.asset}: ${path.vuln_id} in ${path.package} ${path.version} — Exploitation ${(P.exploitation||{}).label}, System Exposure ${(P.system_exposure||{}).label}, Automatable ${(P.automatable||{}).label}, Human Impact ${(P.human_impact||{}).label} → ${path.decision_label}`;}
 function pathDetail(path){
@@ -945,7 +976,7 @@ function pathDetail(path){
   const sources=TREE_LEVELS.map(([key,label])=>{const point=P[key]||{};return `<div class="pathsource ${point.needs_confirmation?"assumed":""}"><span class="sourcekey">${esc(label)}</span><strong>${esc(point.label||"Unknown")}${point.needs_confirmation?" ?":""}</strong><span class="sourcevia">${esc(point.source||"Source unavailable")}</span></div>`;}).join("");
   const evidence=(path.evidence||[]).map(e=>{const more=e.more?` (+${esc(e.more)} more in the report)`:"";return e.url?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.source)} · ${esc(e.label)} ↗${more}</a>`:`<span>${esc(e.source)} · ${esc(e.label)}${more}</span>`;}).join("");
   return `<div class="treecanvas">${treeSvg(path)}</div>
-    <div class="treelegend">Highlighted boxes = selected path · ? = assumed input, needs confirmation · Other outcomes vary Human Impact.</div>
+    <ul class="treelegend" aria-label="Legend"><li><i class="swatch path" aria-hidden="true"></i>Selected path</li><li><i class="swatch assumed" aria-hidden="true">?</i>Assumed input, needs confirmation</li><li><i class="swatch alt" aria-hidden="true"></i>Other outcomes vary Human Impact</li></ul>
     <div class="pathsources">${sources}</div>
     <div class="pathcontext"><span>Human Impact: <b>${esc((P.mission_impact||{}).label)}</b> mission + <b>${esc((P.safety_impact||{}).label)}</b> safety</span>${path.version_source?`<span class="reviewflag">Version inferred: ${esc(path.version_source)}</span>`:""}${path.bod2604?`<span class="policyhint">BOD 26-04: ${esc(path.bod2604.label)}${path.bod2604.applied?"":" · reference only"}</span>`:""}</div>
     ${evidence?`<div class="evidencelinks" aria-label="Vulnerability evidence">${evidence}</div>`:""}`;
