@@ -12,6 +12,7 @@ from patchtriage.ingest.parsers import (
     ScannerFormatError,
     load_file,
     load_file_with_metadata,
+    parse_grype,
 )
 
 FIX = Path(__file__).parent / "fixtures"
@@ -134,3 +135,51 @@ def test_partial_scanner_cannot_be_reported_as_complete(tmp_path):
     combined = combine_coverage({}, loaded.coverage, "")
     assert combined["status"] == "incomplete"
     assert combined["complete"] is False
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [(_trivy({**TRIVY_VULN, "FixedVersion": "1.1.0, 2.0.1"}),
+      ["1.1.0", "2.0.1"]),
+     (_grype({"vulnerability": {
+         "id": "CVE-2024-0002",
+         "fix": {"state": "fixed", "versions": ["1.1", "2.0"]}},
+       "artifact": {"name": "lodash", "version": "1.0"}}), ["1.1", "2.0"])])
+def test_every_listed_fix_version_is_retained(tmp_path, data, expected):
+    finding = load_file_with_metadata(_write(tmp_path, data)).findings[0]
+    assert finding.package.fixed_version == expected[0]
+    assert finding.package.fixed_version_candidates == expected
+
+
+def test_grype_parse_does_not_mutate_its_input():
+    match = {"vulnerability": {"id": "CVE-1", "cvss": [
+        {"metrics": {"baseScore": 5.0}}]},
+        "artifact": {"name": "a", "version": "1"},
+        "relatedVulnerabilities": [{"id": "CVE-1", "cvss": [
+            {"metrics": {"baseScore": 9.0}}]}]}
+    document = _grype(match)
+    snapshot = json.dumps(document, sort_keys=True)
+    first = list(parse_grype(document))
+    second = list(parse_grype(document))
+    assert json.dumps(document, sort_keys=True) == snapshot
+    assert first[0].cvss_score == second[0].cvss_score == 9.0
+
+
+def test_clean_trivy_report_without_results_is_recognized(tmp_path):
+    result = load_file_with_metadata(_write(
+        tmp_path, {"SchemaVersion": 2, "ArtifactName": "img"}))
+    assert result.coverage["source_type"] == "scanner:trivy"
+    assert result.coverage["complete"] is True
+
+
+def test_osv_null_packages_is_empty_not_malformed(tmp_path):
+    result = load_file_with_metadata(_write(
+        tmp_path, {"results": [{"packages": None}]}), fmt="osv")
+    assert result.coverage["complete"] is True
+
+
+def test_osv_commit_source_is_not_a_malformed_row(tmp_path):
+    result = load_file_with_metadata(_write(tmp_path, _osv(
+        {"package": {"commit": "abc", "name": "", "ecosystem": "GIT"},
+         "vulnerabilities": [{"id": "CVE-2024-9"}]})), fmt="osv")
+    assert result.coverage["complete"] is True

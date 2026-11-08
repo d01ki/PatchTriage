@@ -218,14 +218,26 @@ def _natural_key(value: str) -> tuple:
     return tuple(parts)
 
 
+_DPKG_ECOSYSTEMS = {"debian", "deb", "ubuntu"}
+# "-r10" is a package revision here, not a SemVer prerelease compared as text.
+_NATURAL_ORDER_ECOSYSTEMS = {"alpine", "wolfi", "chainguard"}
+_ZERO_EPOCH = re.compile(r"^0:")
+
+
 def compare_versions(left: str, right: str, ecosystem: str) -> int:
     """Compare common ecosystem versions without choosing a false scheme."""
     if left == right:
         return 0
     normalized = str(ecosystem or "").strip().lower()
-    if normalized in {"debian", "deb"}:
+    if normalized in _DPKG_ECOSYSTEMS:
         return _debian_compare(left, right)
-    if normalized in {"pypi", "python"}:
+    # An explicit epoch 0 is the same as no epoch.
+    left, right = _ZERO_EPOCH.sub("", left), _ZERO_EPOCH.sub("", right)
+    if left == right:
+        return 0
+    if normalized in _NATURAL_ORDER_ECOSYSTEMS:
+        parsers = ()
+    elif normalized in {"pypi", "python"}:
         parsers = (_pep440_key,)
     elif normalized == "maven":
         parsers = (_maven_key,)
@@ -247,7 +259,7 @@ def compare_versions(left: str, right: str, ecosystem: str) -> int:
 def versions_comparable(left: str, right: str, ecosystem: str) -> bool:
     """Whether two versions have a defensible order in this ecosystem."""
     normalized = str(ecosystem or "").strip().lower()
-    if normalized in {"debian", "deb"}:
+    if normalized in _DPKG_ECOSYSTEMS:
         return bool(left and right)
     for parser in (_pep440_key,) if normalized in {"pypi", "python"} else (
             (_maven_key,) if normalized == "maven"

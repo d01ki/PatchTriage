@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 from .. import fleet as fleetmod
 from .. import targets as tstore
+from ..dedup import legacy_finding_key
 from ..ingest.sbom import is_sbom
 from ..ingest.parsers import (ScannerFormatError, sniff_format,
                               validate_scanner_document)
@@ -716,6 +717,7 @@ class Handler(BaseHTTPRequestHandler):
                     overrides[key] = values
                 else:
                     overrides.pop(key, None)
+                    overrides.pop(legacy_finding_key(key), None)
             target = tstore.update_target_inputs(
                 m.group(1), workspace_id=workspace,
                 ssvc_overrides=overrides)

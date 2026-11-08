@@ -46,7 +46,9 @@ def _identity_part(ecosystem: str, value: str) -> str:
     apart. Elsewhere only case is folded, because scanners disagree on it.
     """
     value = value.strip()
-    if ecosystem == "npm":
+    # Without an ecosystem the rule is unknown; keep the spelling so it can
+    # still be normalized once a peer supplies the ecosystem.
+    if ecosystem == "npm" or not ecosystem:
         return value
     if ecosystem == "pypi":
         return re.sub(r"[-_.]+", "-", value).lower()

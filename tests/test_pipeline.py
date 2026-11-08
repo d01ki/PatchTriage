@@ -358,3 +358,9 @@ def test_legacy_key_maps_to_the_old_normalized_form():
     assert legacy_finding_key(
         "CVE-1|pypi||python-dateutil|2.0|host|a") == (
         "CVE-1|pypi||pythondateutil|2.0|host|a")
+
+
+def test_empty_ecosystem_keeps_npm_case_when_joining_a_peer():
+    findings = dedup([_identity_raw("JSONStream", "npm"),
+                      _identity_raw("JSONStream", "")])
+    assert len(findings) == 1

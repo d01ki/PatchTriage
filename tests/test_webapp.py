@@ -568,3 +568,18 @@ def test_partially_broken_scanner_upload_is_accepted(server):
         "POST", server + f"/api/targets/{target['id']}/source",
         {"content": json.dumps(document), "filename": "scan.json"})
     assert status == 200
+
+
+def test_clearing_an_override_also_removes_its_legacy_key(server):
+    _, target = _req("POST", server + "/api/targets", {"name": "legacy"})
+    url = server + f"/api/targets/{target['id']}/ssvc-inputs"
+    legacy = "CVE-1|npm||foobar|1.0.0|repo"
+    current = "CVE-1|npm||foo-bar|1.0.0|repo"
+    _, saved = _req("POST", url, {"inputs": [
+        {"finding_key": legacy, "exploitation": "auto", "automatable": "yes"}]})
+    assert saved["overrides"] == 1
+    status, cleared = _req("POST", url, {"inputs": [
+        {"finding_key": current, "exploitation": "auto",
+         "automatable": "auto"}]})
+    assert status == 200
+    assert cleared["overrides"] == 0

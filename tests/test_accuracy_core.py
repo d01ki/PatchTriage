@@ -298,3 +298,15 @@ def test_target_covers_disjoint_fix_lines():
                    _raw("CVE-2026-0048", version="1.0.0", fixed="2.0.1"))[0]
     assert action.kind == "upgrade"
     assert action.target_version == "2.0.1"
+
+
+@pytest.mark.parametrize(
+    ("ecosystem", "installed", "fixed"),
+    [("apk", "1.36.1-r9", "1.36.1-r10"), ("alpine", "1.2.3-r99", "1.2.3-r100"),
+     ("ubuntu", "1.2.3-1ubuntu9", "1.2.3-1ubuntu10"),
+     ("rpm", "1.0.2k-19.el7", "0:1.0.2k-21.el7")])
+def test_distribution_revisions_are_real_upgrades(ecosystem, installed, fixed):
+    action = _plan(_raw("CVE-2026-0050", ecosystem=ecosystem,
+                        version=installed, fixed=fixed))[0]
+    assert action.kind == "upgrade"
+    assert action.target_version == fixed

@@ -1247,7 +1247,7 @@ function queueBlock(summary){
   const rows=queue.map((item,index)=>{
     const label=item.outcome_label||"Unknown",cls=String(label).toLowerCase().replaceAll(" ","-");
     const cves=item.cves||[],more=Math.max(0,(item.finding_count||cves.length)-cves.length);
-    const kind=item.kind==="mitigate"?'<span class="kindtag mitigate">No fix</span>':"";
+    const kind=item.kind==="mitigate"?'<span class="kindtag mitigate">No fix</span>':item.kind==="investigate"?'<span class="kindtag mitigate">Review fix</span>':"";
     return `<tr><td class="num">${index+1}</td><td><span class="outcomepill ${esc(cls)}"><i aria-hidden="true"></i>${esc(label)}</span></td>
       <td>${kind}${esc(item.summary)}<span class="cves"><span class="cve">${esc(cves.join(", "))}</span>${more?` and ${more} more`:""}</span></td>
       <td class="num">${item.kev_count?`${esc(item.kev_count)} KEV`:"—"}</td><td class="num">${esc(item.finding_count)}</td>

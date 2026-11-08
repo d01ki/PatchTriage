@@ -251,6 +251,9 @@ def parse_trivy(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
                 for k in ("V3Score", "V40Score", "V2Score"):
                     if src.get(k) is not None:
                         cvss_score = max(cvss_score or 0.0, float(src[k]))
+            # Trivy joins the fixes of several release lines with commas.
+            fixes = [part.strip() for part in
+                     str(v.get("FixedVersion") or "").split(",") if part.strip()]
             yield RawFinding(
                 vuln_id=vuln_id,
                 aliases=aliases,
@@ -260,7 +263,8 @@ def parse_trivy(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
                     version=v.get("InstalledVersion", ""),
                     purl=(v.get("PkgIdentifier") or {}).get("PURL", ""),
                     ecosystem=result.get("Type", ""),
-                    fixed_version=v.get("FixedVersion", ""),
+                    fixed_version=fixes[0] if fixes else "",
+                    fixed_version_candidates=fixes,
                 ),
                 asset=asset,
                 severity=Severity.parse(v.get("Severity")),
@@ -289,7 +293,7 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
         vuln_id, aliases = _prefer_cve(vuln.get("id", ""), [r for r in related if r])
         art = m.get("artifact") or {}
         cvss_score = None
-        cvss_all = vuln.get("cvss") or []
+        cvss_all = list(vuln.get("cvss") or [])
         for rv in m.get("relatedVulnerabilities") or []:
             cvss_all += rv.get("cvss") or []
         for c in cvss_all:
@@ -297,7 +301,7 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
             if val is not None:
                 cvss_score = max(cvss_score or 0.0, float(val))
         fix = vuln.get("fix") or {}
-        fixed_versions = fix.get("versions") or []
+        fixed_versions = [str(v) for v in fix.get("versions") or [] if v]
         yield RawFinding(
             vuln_id=vuln_id,
             aliases=aliases,
@@ -308,6 +312,7 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
                 purl=art.get("purl", ""),
                 ecosystem=art.get("type", ""),
                 fixed_version=fixed_versions[0] if fixed_versions else "",
+                fixed_version_candidates=fixed_versions,
             ),
             asset=asset,
             severity=Severity.parse(vuln.get("severity")),
@@ -368,8 +373,11 @@ def sniff_format(data: Any) -> str | None:
     """Best-effort detection of which scanner produced this JSON."""
     if not isinstance(data, dict):
         return None
-    if (isinstance(data.get("Results"), list)
-            and ("ArtifactName" in data or "SchemaVersion" in data)):
+    # Trivy omits Results when a scan has nothing to report.
+    if "SchemaVersion" in data and "ArtifactName" in data:
+        return "trivy" if _list_or_empty(data.get("Results")) is not None else None
+    if isinstance(data.get("Results"), list) and (
+            "ArtifactName" in data or "SchemaVersion" in data):
         return "trivy"
     if isinstance(data.get("matches"), list) and "descriptor" in data:
         return "grype"
@@ -430,9 +438,9 @@ def _osv_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
     if not isinstance(data.get("results"), list):
         raise ScannerFormatError("OSV-Scanner JSON needs a results array")
     for index, result in enumerate(data["results"]):
-        packages = (result.get("packages")
+        packages = (_list_or_empty(result.get("packages"))
                     if isinstance(result, dict) else None)
-        if not isinstance(packages, list):
+        if packages is None:
             errors.append(f"results[{index}] is malformed")
             continue
         for p_index, package in enumerate(packages):
@@ -440,6 +448,11 @@ def _osv_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
             vulns = (_list_or_empty(package.get("vulnerabilities"))
                      if isinstance(package, dict)
                      and isinstance(package.get("package"), dict) else None)
+            if vulns and not package["package"].get("name") and (
+                    package["package"].get("commit")):
+                # A commit-identified Git source has no package name to plan.
+                yield None, label
+                continue
             if vulns is None:
                 errors.append(f"{label} is malformed")
                 continue
