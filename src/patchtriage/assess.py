@@ -300,6 +300,11 @@ def assess(
             backend, model, escalation_model,
             provider=ai_provider, base_url=ai_base_url), jobs=workers)
 
+    coverage["findings_total"] = len(findings)
+    coverage["findings_assessed"] = len(subset)
+    if len(subset) < len(findings):
+        progress(f"--limit: showing {len(subset)} of {len(findings)} findings; "
+                 "actions and evaluation cover only those shown")
     audit = audit_all(subset)
     # Separate response policy: CISA BOD 26-04 is evaluated next to, never
     # instead of, the SSVC Deployer result.

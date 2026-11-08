@@ -430,6 +430,8 @@ def test_start_offers_guided_remediation_after_report(tmp_path, monkeypatch):
         "",
         "",
         "",
+        "",
+        "",
         "n",
         "n",
         "",

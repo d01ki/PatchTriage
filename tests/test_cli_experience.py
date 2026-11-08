@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
 from patchtriage import cli
 from patchtriage.assess import Assessment
 
@@ -109,7 +112,7 @@ def test_start_accepts_a_repository_url_like_the_gui(monkeypatch, tmp_path):
     answers = "\n".join([
         "https://github.com/acme/missing",   # error, asked again
         "https://github.com/acme/widgets",
-        "", "open", "", "", "n", "n",        # context
+        "", "open", "", "", "", "", "n", "n",  # context
         "", "n", "", "",                     # backend, NVD, reports
     ]) + "\n"
 
@@ -124,3 +127,53 @@ def test_start_accepts_a_repository_url_like_the_gui(monkeypatch, tmp_path):
     assert captured["warnings"] == ["Dependency Graph coverage boundary."]
     assert captured["override"].identifier == "acme/widgets"
     assert captured["override"].system_exposure == "open"
+
+
+def _wizard_asset(monkeypatch, tmp_path, context):
+    """Run the guided flow far enough to capture its asset override."""
+    captured = {}
+
+    def fake_pipeline(files, fmt, asset, *args, **kwargs):
+        captured["asset"] = asset
+        return Assessment([], [], [], [], {})
+
+    monkeypatch.setattr(cli, "_pipeline", fake_pipeline)
+    monkeypatch.setattr(cli, "_emit", lambda *a, **k: None)
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "scan.json").write_text('{"results": []}', encoding="utf-8")
+    answers = "\n".join([
+        "n", "scan.json", "", *context, "n", "n", "", "n", "", "", "n",
+    ]) + "\n"
+    result = CliRunner().invoke(cli.app, ["start"], input=answers)
+    assert result.exception is None or isinstance(
+        result.exception, SystemExit), result.output
+    return captured["asset"], result.output
+
+
+def test_wizard_records_bod_inputs_without_touching_ssvc(monkeypatch, tmp_path):
+    asset, _ = _wizard_asset(
+        monkeypatch, tmp_path, ["", "", "", "required", "yes"])
+    assert asset.bod2604_applicability == "required"
+    assert asset.publicly_exposed == "yes"
+    assert asset.system_exposure == "unknown"
+
+
+def test_wizard_leaves_bod_unknown_by_default(monkeypatch, tmp_path):
+    asset, _ = _wizard_asset(monkeypatch, tmp_path, ["", "", "", "", ""])
+    assert asset is None
+
+
+def test_wizard_reprompts_for_invalid_bod_answer(monkeypatch, tmp_path):
+    asset, output = _wizard_asset(
+        monkeypatch, tmp_path, ["", "", "", "maybe", "voluntary", "unknown"])
+    assert "pick one of" in output
+    assert asset.bod2604_applicability == "voluntary"
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_limit_must_be_positive(tmp_path, value):
+    scan = tmp_path / "s.json"
+    scan.write_text('{"results": []}', encoding="utf-8")
+    result = CliRunner().invoke(cli.app, ["run", str(scan), "--limit", value])
+    assert result.exit_code == 2

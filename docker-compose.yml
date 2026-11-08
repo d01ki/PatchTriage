@@ -95,6 +95,7 @@ services:
       - ./:/work
       - ./out:/out
       - cache:/home/patchtriage/.cache
+      - cli-config:/home/patchtriage/.config
     working_dir: /work
     entrypoint: ["patchtriage"]
     command: ["start"]
@@ -122,10 +123,23 @@ services:
       - ./:/work
       - ./out:/out
       - cache:/home/patchtriage/.cache
+      - cli-config:/home/patchtriage/.config
     working_dir: /work
     entrypoint: ["patchtriage"]
     command: ["--help"]
 
+  # Saves API keys for `start` and `triage`, kept apart from the GUI's volume
+  # because anonymous GUI sessions must not depend on an operator's CLI keys.
+  setup:
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - cli-config:/home/patchtriage/.config
+    entrypoint: ["patchtriage"]
+    command: ["setup"]
+
 volumes:
   cache:
   config:
+  cli-config:

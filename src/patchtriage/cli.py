@@ -217,7 +217,7 @@ def run(
     output: Optional[Path] = typer.Option(None, "-o", help="Write full JSON report"),
     html: Optional[Path] = typer.Option(None, help="Write self-contained HTML dashboard"),
     limit: Optional[int] = typer.Option(
-        None, help="Report top-N after deterministic SSVC screening"),
+        None, min=1, help="Report top-N after deterministic SSVC screening"),
 ):
     """Ingest -> dedup -> context -> enrich -> triage -> plan -> report."""
     triage = triage or cfgmod.load().get("default_backend") or "rules"
@@ -869,17 +869,28 @@ def start():
             "SSVC Safety Impact",
             ("catastrophic", "critical", "marginal", "negligible", "unknown"),
         )
+        applicability = ask_ssvc(
+            "CISA BOD 26-04 applicability",
+            ("required", "voluntary", "not_applicable", "unknown"),
+        )
+        publicly_exposed = ask_ssvc(
+            "BOD 26-04 Publicly Exposed (not the same as SSVC System Exposure)",
+            ("yes", "no", "unknown"),
+        )
         reachable = typer.confirm(
             "Is the vulnerable path confirmed reachable?", default=False)
         runtime_observed = typer.confirm(
             "Was the component/path observed at runtime?", default=False)
         if (any(value != "unknown" for value in
-                (exposure, mission, safety))
+                (exposure, mission, safety, applicability,
+                 publicly_exposed))
                 or reachable or runtime_observed):
             override = Asset(
                 identifier="interactive", kind="host",
                 system_exposure=exposure,
                 mission_impact=mission, safety_impact=safety,
+                bod2604_applicability=applicability,
+                publicly_exposed=publicly_exposed,
                 reachable=reachable or None,
                 runtime_observed=runtime_observed or None,
             )

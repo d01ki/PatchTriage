@@ -215,3 +215,21 @@ def test_all_clear_with_inferred_versions_keeps_its_boundary():
         "total_components": 2, "queried_components": 2,
         "inferred_components": 2})
     assert "not necessarily the deployed version" in message
+
+
+def test_limit_reports_total_and_assessed(monkeypatch, tmp_path):
+    raw = [_raw("a", "npm"),
+           _raw("b", "npm").model_copy(update={"vuln_id": "CVE-2024-2222"})]
+    _offline(monkeypatch)
+    monkeypatch.setattr(
+        assessmod, "load_file_with_metadata",
+        lambda path, fmt=None, asset=None, progress=None: LoadResult(raw, {
+            "source_type": "scanner:osv", "complete": True}))
+    scan = tmp_path / "scan.json"
+    scan.write_text("{}", encoding="utf-8")
+    messages = []
+    result = assessmod.assess([scan], limit=1, progress=messages.append)
+    assert result.coverage["findings_total"] == 2
+    assert result.coverage["findings_assessed"] == 1
+    assert len(result.actions) == 1
+    assert any("1 of 2" in message for message in messages)
