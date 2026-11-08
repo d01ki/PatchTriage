@@ -1,5 +1,7 @@
 """Regression tests for component identity, version planning and AI audit."""
 
+import pytest
+
 from patchtriage.dedup import dedup
 from patchtriage.models import (
     Asset,
@@ -237,3 +239,62 @@ def test_audit_accepts_supported_ai_claims_and_matching_action():
     result = audit_finding(finding, RulesBackend())
     assert result["verified"] is True
     assert result["flags"] == []
+
+
+def _plan(*raws):
+    return build_plan(_triage(dedup(list(raws))))
+
+
+def test_downgrade_is_never_an_executable_upgrade():
+    action = _plan(_raw("CVE-2026-0040", version="3.0.0", fixed="2.0.0"))[0]
+    assert action.kind == "investigate"
+    assert action.target_version == ""
+    assert "newer than the installed" in action.manual_review_reason
+    assert action.target_version_candidates == ["2.0.0"]
+
+
+def test_fix_equal_to_installed_is_not_an_upgrade():
+    action = _plan(_raw("CVE-2026-0041", version="2.0.0", fixed="2.0.0"))[0]
+    assert action.kind == "investigate"
+
+
+def test_spelling_variants_of_one_fix_are_a_single_stable_target():
+    forward = _plan(_raw("CVE-2026-0042", version="1.0.0", fixed="v2.0.0"),
+                    _raw("CVE-2026-0043", version="1.0.0", fixed="2.0.0"))[0]
+    backward = _plan(_raw("CVE-2026-0043", version="1.0.0", fixed="2.0.0"),
+                     _raw("CVE-2026-0042", version="1.0.0", fixed="v2.0.0"))[0]
+    assert forward.kind == "upgrade"
+    assert forward.target_version == backward.target_version
+    assert forward.target_version_candidates == (
+        backward.target_version_candidates)
+
+
+@pytest.mark.parametrize("ecosystem", ["npm", "pypi"])
+def test_uncomparable_versions_need_manual_review(ecosystem):
+    action = _plan(_raw("CVE-2026-0044", ecosystem=ecosystem,
+                        version="1.0.0", fixed="latest-build"))[0]
+    assert action.kind == "investigate"
+    assert "cannot be compared" in action.manual_review_reason
+
+
+def test_unknown_installed_version_needs_manual_review():
+    action = _plan(_raw("CVE-2026-0045", version="", fixed="2.0.0"))[0]
+    assert action.kind == "investigate"
+    assert "installed version is unknown" in action.manual_review_reason
+
+
+def test_candidate_only_finding_is_not_recommended():
+    raw = _raw("CVE-2026-0046", version="1.0.0", fixed="")
+    raw.package = raw.package.model_copy(
+        update={"fixed_version_candidates": ["1.1.0", "2.0.0"]})
+    action = _plan(raw)[0]
+    assert action.kind == "investigate"
+    assert action.target_version_candidates == ["1.1.0", "2.0.0"]
+    assert "candidate" in action.manual_review_reason
+
+
+def test_target_covers_disjoint_fix_lines():
+    action = _plan(_raw("CVE-2026-0047", version="1.0.0", fixed="1.2.5"),
+                   _raw("CVE-2026-0048", version="1.0.0", fixed="2.0.1"))[0]
+    assert action.kind == "upgrade"
+    assert action.target_version == "2.0.1"

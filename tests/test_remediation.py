@@ -537,3 +537,11 @@ def test_regular_manifest_inside_clone_still_updates(tmp_path):
     manifest.write_text(MANIFEST, encoding="utf-8")
     assert update_dependency_manifests(workspace, _action()) == [manifest]
     assert "4.17.21" in manifest.read_text(encoding="utf-8")
+
+
+def test_old_report_with_a_downgrade_target_is_not_executable(tmp_path):
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"actions": [
+        _action(installed_version="3.0.0", target_version="2.0.0")
+        .model_dump(mode="json")]}), encoding="utf-8")
+    assert load_upgrade_actions(report) == []

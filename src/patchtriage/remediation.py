@@ -27,7 +27,7 @@ from typing import Callable, Iterable
 from pydantic import BaseModel, Field
 
 from .ingest.parsers import load_file_with_metadata
-from .plan import Action, compare_versions
+from .plan import Action, compare_versions, versions_comparable
 from .repository_local import osv_source_scan_command
 
 
@@ -480,6 +480,18 @@ def _safe_slug(value: str) -> str:
     return (slug or "dependency")[:48]
 
 
+def _is_real_upgrade(action: Action) -> bool:
+    """Older reports may name a target that is not an upgrade at all."""
+    return bool(
+        action.installed_version
+        and versions_comparable(
+            action.target_version, action.installed_version, action.ecosystem)
+        and compare_versions(
+            action.target_version, action.installed_version,
+            action.ecosystem) > 0
+    )
+
+
 def load_upgrade_actions(report_path: Path) -> list[Action]:
     """Load the ordered, confirmed dependency upgrades from a JSON report."""
     try:
@@ -500,6 +512,7 @@ def load_upgrade_actions(report_path: Path) -> list[Action]:
     return [
         action for action in actions
         if action.kind == "upgrade" and action.target_version
+        and _is_real_upgrade(action)
     ]
 
 

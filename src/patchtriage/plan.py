@@ -39,6 +39,7 @@ class Action(BaseModel):
     installed_version: str = ""
     target_version: str = ""
     target_version_candidates: list[str] = Field(default_factory=list)
+    manual_review_reason: str = ""  # why no upgrade target could be justified
     finding_keys: list[str] = Field(default_factory=list)
     cves: list[str] = Field(default_factory=list)
     top_priority: str = "P4"       # best (lowest) triage priority among findings
@@ -243,18 +244,68 @@ def compare_versions(left: str, right: str, ecosystem: str) -> int:
     return (left_key > right_key) - (left_key < right_key)
 
 
-def _version_candidates(group: list[Finding], ecosystem: str) -> list[str]:
-    candidates = {
+def versions_comparable(left: str, right: str, ecosystem: str) -> bool:
+    """Whether two versions have a defensible order in this ecosystem."""
+    normalized = str(ecosystem or "").strip().lower()
+    if normalized in {"debian", "deb"}:
+        return bool(left and right)
+    for parser in (_pep440_key,) if normalized in {"pypi", "python"} else (
+            (_maven_key,) if normalized == "maven"
+            else (_semver_key, _pep440_key)):
+        if parser(left) is not None and parser(right) is not None:
+            return True
+    # Distribution versions (rpm, apk) use the natural ordering.
+    return normalized not in {"pypi", "python", "npm"} and all(
+        re.match(r"^v?\d", value) for value in (left, right))
+
+
+def _version_order(ecosystem: str):
+    """A total order: equal versions fall back to spelling, so output is stable."""
+    def compare(left: str, right: str) -> int:
+        return (compare_versions(left, right, ecosystem)
+                or (left > right) - (left < right))
+    return cmp_to_key(compare)
+
+
+def _finding_fixes(finding: Finding) -> list[str]:
+    return sorted({
         candidate.strip()
-        for finding in group
         for candidate in (
             [finding.package.fixed_version]
             + list(finding.package.fixed_version_candidates)
         )
         if candidate.strip()
-    }
-    compare = lambda left, right: compare_versions(left, right, ecosystem)
-    return sorted(candidates, key=cmp_to_key(compare))
+    })
+
+
+def _version_candidates(group: list[Finding], ecosystem: str) -> list[str]:
+    candidates = {fix for finding in group for fix in _finding_fixes(finding)}
+    return sorted(candidates, key=_version_order(ecosystem))
+
+
+def _select_upgrade_target(group: list[Finding], installed: str,
+                           ecosystem: str) -> tuple[str, str]:
+    """(target, "") or ("", reason a person has to decide).
+
+    The target is the highest listed fix, so it is at or past every CVE's own
+    fix. It is executable only if all versions compare and it is an upgrade.
+    Per-CVE affected ranges are not available here, so this does not prove
+    that a later release line never reintroduced a vulnerability.
+    """
+    if not installed:
+        return "", "the installed version is unknown"
+    fixes: set[str] = set()
+    for finding in group:
+        if not finding.package.fixed_version:
+            return "", f"{finding.vuln_id} only has candidate fix versions"
+        for fix in _finding_fixes(finding):
+            if not versions_comparable(fix, installed, ecosystem):
+                return "", f"{finding.vuln_id}: versions cannot be compared"
+            fixes.add(fix)
+    target = max(fixes, key=_version_order(ecosystem))
+    if compare_versions(target, installed, ecosystem) <= 0:
+        return "", f"no listed fix is newer than the installed {installed}"
+    return target, ""
 
 
 def build_plan(findings: list[Finding]) -> list[Action]:
@@ -264,7 +315,7 @@ def build_plan(findings: list[Finding]) -> list[Action]:
         ecosystem, namespace, normalized_name, installed_version = (
             package_identity(f.package)
         )
-        if f.package.fixed_version:
+        if f.package.fixed_version or f.package.fixed_version_candidates:
             kind = "upgrade"
         else:
             kind = "mitigate"
@@ -279,13 +330,21 @@ def build_plan(findings: list[Finding]) -> list[Action]:
     for (kind, asset, ecosystem, namespace, _name, installed), group in groups.items():
         pkg = group[0].package.name
         candidates = _version_candidates(group, ecosystem)
-        target = candidates[-1] if candidates else ""
+        target, manual_reason = "", ""
+        if kind == "upgrade":
+            target, manual_reason = _select_upgrade_target(
+                group, installed, ecosystem)
+            if manual_reason:
+                kind = "investigate"
         prios = [(g.triage or {}).get("priority", "P4") for g in group]
         top = min(prios, key=lambda p: _PRIORITY_RANK.get(p, 9))
         deadlines = [(g.triage or {}).get("suggested_deadline_days", 90)
                      for g in group]
         if kind == "upgrade":
             summary = f"Upgrade {pkg} to {target} on {asset}"
+        elif kind == "investigate":
+            summary = (f"Review the fix for {pkg} on {asset}: "
+                       f"{manual_reason}")
         else:
             summary = (f"No fixed version confirmed for {pkg} on {asset} - "
                        f"investigate vendor guidance and apply mitigations")
@@ -310,6 +369,7 @@ def build_plan(findings: list[Finding]) -> list[Action]:
             installed_version=installed,
             target_version=target,
             target_version_candidates=candidates,
+            manual_review_reason=manual_reason,
             finding_keys=[g.key for g in group],
             cves=sorted({g.vuln_id for g in group}),
             top_priority=top,

@@ -184,8 +184,6 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
         })
         fixed = next((r.package.fixed_version for r in group
                       if r.package.fixed_version), "")
-        if not fixed and fixed_candidates:
-            fixed = fixed_candidates[0]
         title = next((r.title for r in group if r.title), "")
         desc = max((r.description for r in group), key=len, default="")
 
