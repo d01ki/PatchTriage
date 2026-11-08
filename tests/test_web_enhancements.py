@@ -438,7 +438,7 @@ def test_public_deployment_never_passes_service_token_to_repository_import(
         monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")
     monkeypatch.setenv("GITHUB_TOKEN", "service-account-secret")
-    assert webserver._github_import_token() is None
+    assert webserver._github_import_token() == ""
 
     monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "local")
     assert webserver._github_import_token() == "service-account-secret"
@@ -698,3 +698,25 @@ def test_bundled_fonts_are_served_offline_without_session_cookie(enhanced_server
         with pytest.raises(urllib.error.HTTPError) as excinfo:
             urllib.request.urlopen(f"{enhanced_server}/fonts/{bad}", timeout=15)
         assert excinfo.value.code == 404
+
+
+def test_public_import_request_carries_no_authorization(monkeypatch):
+    import httpx
+    import pytest as _pytest
+
+    from patchtriage.repository import RepositoryError, fetch_github_sbom
+
+    monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")
+    monkeypatch.setenv("GITHUB_TOKEN", "service-account-secret")
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(404, json={"message": "not found"})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with _pytest.raises(RepositoryError):
+            fetch_github_sbom(
+                "https://github.com/acme/widget", client=client,
+                github_token=webserver._github_import_token())
+    assert seen and "authorization" not in seen[0].headers
