@@ -52,6 +52,7 @@ MAX_SBOM_LINK_BYTES = 64 * 1024
 DEFAULT_MAX_SBOM_BYTES = 32 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 45.0
 MAX_TREE_BYTES = 16 * 1024 * 1024
+MAX_COMMIT_BYTES = 4 * 1024 * 1024
 MAX_MANIFESTS = 40
 MAX_MANIFEST_BYTES = 1024 * 1024
 
@@ -59,6 +60,7 @@ _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _BAD_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _SEGMENT_SAFE = "-._~!$&'()*+,;=:@"
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 _REPORT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}$")
 
 
@@ -155,6 +157,10 @@ class RepositoryProvenance:
     coverage_status: str
     warnings: tuple[str, ...]
     retrieved_at: str
+    requested_ref: str = ""
+    evidence_scope: str = ""
+    # The commit declared ranges came from; never proof of the graph's commit.
+    manifest_commit: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -446,7 +452,7 @@ def _registry_key(package: dict) -> tuple[str, str] | None:
 def _restore_declared_ranges(sbom: dict[str, Any],
                              reference: RepositoryReference,
                              client: httpx.Client, headers: dict[str, str],
-                             timeout: float) -> list[str]:
+                             timeout: float) -> tuple[list[str], str]:
     """Put back the version ranges GitHub's SBOM drops, as ``versionInfo``.
 
     The Dependency Graph lists ``fastapi>=0.104.0`` as a bare ``fastapi``.
@@ -455,18 +461,34 @@ def _restore_declared_ranges(sbom: dict[str, Any],
     ``python-multipart>=0.0.6`` would never be reported. The manifests are
     read as text through GitHub's tree API and raw file host; nothing in the
     repository is executed.
+
+    The graph describes the default branch and cannot be asked about another
+    ref, so ranges from a requested ref would mix two checkouts and are not
+    restored. The default branch is pinned to one commit, which is returned
+    so a moving HEAD cannot mix files from two commits.
     """
     missing = [p for p in sbom.get("packages") or []
                if not str(p.get("versionInfo") or "").strip()
                and _registry_key(p) is not None]
     if not missing:
-        return []
-    ref = quote(reference.ref or "HEAD", safe="")
+        return [], ""
+    if reference.ref:
+        return [f"{len(missing)} PyPI/npm dependencies keep no declared "
+                f"version range: GitHub's graph is not specific to "
+                f"'{reference.ref}', so that ref's manifests were not "
+                "combined with it."], ""
     repo = f"{quote(reference.owner or '', safe='')}/" \
            f"{quote(reference.name or '', safe='')}"
     try:
+        commit = json.loads(_get_bounded(
+            client, f"{GITHUB_API_ROOT}/repos/{repo}/commits/HEAD", headers,
+            timeout, MAX_COMMIT_BYTES))
+        commit_sha = commit.get("sha") if isinstance(commit, dict) else None
+        if not isinstance(commit_sha, str) or not _COMMIT_RE.fullmatch(
+                commit_sha):
+            raise RepositoryResponseError("unexpected commit response")
         tree = json.loads(_get_bounded(
-            client, f"{GITHUB_API_ROOT}/repos/{repo}/git/trees/{ref}"
+            client, f"{GITHUB_API_ROOT}/repos/{repo}/git/trees/{commit_sha}"
             "?recursive=1", headers, timeout, MAX_TREE_BYTES))
         entries = tree.get("tree") if isinstance(tree, dict) else None
         if not isinstance(entries, list):
@@ -474,7 +496,7 @@ def _restore_declared_ranges(sbom: dict[str, Any],
     except (RepositoryFetchError, httpx.HTTPError, ValueError) as exc:
         return [f"{len(missing)} PyPI/npm dependencies are listed without "
                 "their declared version range, and the repository file list "
-                f"needed to restore it was unavailable ({exc})."]
+                f"needed to restore it was unavailable ({exc})."], ""
     paths = sorted(
         (e["path"] for e in entries
          if isinstance(e, dict) and e.get("type") == "blob"
@@ -495,7 +517,7 @@ def _restore_declared_ranges(sbom: dict[str, Any],
     for path in paths:
         try:
             manifests[path] = _get_bounded(
-                client, f"{GITHUB_RAW_ROOT}/{repo}/{ref}/"
+                client, f"{GITHUB_RAW_ROOT}/{repo}/{commit_sha}/"
                 f"{quote(path, safe='/')}", raw_headers, timeout,
                 MAX_MANIFEST_BYTES).decode("utf-8")
         except (RepositoryFetchError, httpx.HTTPError,
@@ -521,7 +543,7 @@ def _restore_declared_ranges(sbom: dict[str, Any],
         warnings.append(
             f"{len(missing) - restored} dependencies have no declared range "
             "in a readable manifest and are checked at their newest release.")
-    return warnings
+    return warnings, commit_sha
 
 
 def _has_unsafe_url_chars(value: str) -> bool:
@@ -753,8 +775,9 @@ def fetch_github_sbom(
             "Dependency Graph; it is not proof that every manifest was "
             "discovered or that the repository has no vulnerable components."
         ]
-        warnings.extend(_restore_declared_ranges(
-            sbom, reference, client, headers, timeout))
+        restore_warnings, manifest_commit = _restore_declared_ranges(
+            sbom, reference, client, headers, timeout)
+        warnings.extend(restore_warnings)
     finally:
         if owns_client:
             client.close()
@@ -785,6 +808,9 @@ def fetch_github_sbom(
         coverage_status=coverage_status,
         warnings=tuple(warnings),
         retrieved_at=datetime.now(timezone.utc).isoformat(),
+        requested_ref=reference.ref or "",
+        evidence_scope="github_dependency_graph_default_branch",
+        manifest_commit=manifest_commit,
     )
     return RepositorySbom(
         content=json.dumps(sbom, ensure_ascii=False, indent=2, sort_keys=True),

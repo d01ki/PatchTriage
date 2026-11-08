@@ -306,6 +306,9 @@ def _select_upgrade_target(group: list[Finding], installed: str,
     """
     if not installed:
         return "", "the installed version is unknown"
+    if any(finding.package.version_source for finding in group):
+        return "", ("the installed version was inferred from a declared "
+                    "range, not observed")
     fixes: set[str] = set()
     for finding in group:
         if not finding.package.fixed_version:

@@ -310,3 +310,12 @@ def test_distribution_revisions_are_real_upgrades(ecosystem, installed, fixed):
                         version=installed, fixed=fixed))[0]
     assert action.kind == "upgrade"
     assert action.target_version == fixed
+
+
+def test_inferred_version_never_produces_an_executable_upgrade():
+    raw = _raw("CVE-2026-0060", version="1.0.0", fixed="2.0.0")
+    raw.package = raw.package.model_copy(
+        update={"version_source": "oldest release permitted by >=1.0"})
+    action = _plan(raw)[0]
+    assert action.kind == "investigate"
+    assert "inferred" in action.manual_review_reason

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from patchtriage import assess as assessmod
@@ -196,3 +197,21 @@ def test_ambiguous_legacy_override_is_not_applied(monkeypatch, tmp_path):
     # inherit an override that could have belonged to either package.
     assert by_name["foobar"] == OVERRIDE
     assert not by_name["foo-bar"]
+
+
+@pytest.mark.parametrize("field", [
+    "failed_components", "vulnerability_details_failed"])
+@pytest.mark.parametrize("extra", [
+    {"inferred_components": 2}, {"unqueryable_components": 1}, {}])
+def test_failed_lookup_outranks_every_no_vulnerability_message(field, extra):
+    message = assessmod.result_message([], [], True, "incomplete", {
+        "total_components": 3, "queried_components": 2, field: 1, **extra})
+    assert "No conclusion" in message
+    assert "none had a known vulnerability" not in message
+
+
+def test_all_clear_with_inferred_versions_keeps_its_boundary():
+    message = assessmod.result_message([], [], True, "incomplete", {
+        "total_components": 2, "queried_components": 2,
+        "inferred_components": 2})
+    assert "not necessarily the deployed version" in message

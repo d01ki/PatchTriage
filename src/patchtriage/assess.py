@@ -120,6 +120,12 @@ def result_message(findings: list, actions: list, incomplete: bool,
                     "be built.")
         return ""
 
+    failed = (int(coverage.get("failed_components") or 0)
+              + int(coverage.get("vulnerability_details_failed") or 0))
+    if failed:
+        return (f"No conclusion can be drawn: {failed} vulnerability "
+                "lookup(s) failed, so the absence of findings does not mean "
+                "those components are unaffected. Retry the assessment.")
     if inferred and total and not skipped:
         return (f"{checked} of {total} component(s) were checked against OSV "
                 "and none had a known vulnerability." + inferred_note
