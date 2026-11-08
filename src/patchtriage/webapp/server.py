@@ -82,9 +82,64 @@ except PackageNotFoundError:
     APP_VERSION = "development"
 
 
+MAX_CONNECTIONS = 128
+REQUEST_SOCKET_TIMEOUT_SECONDS = 30
+MAX_PUBLIC_WORKSPACES = 1000
+WORKSPACE_CLEANUP_INTERVAL_SECONDS = 60.0
+_last_workspace_cleanup = float("-inf")
+
+
+def _is_public_mode() -> bool:
+    return os.environ.get(
+        "PATCHTRIAGE_DEPLOYMENT_MODE", "local").strip().lower() == "public"
+
+
+def _ai_available() -> bool:
+    """Anonymous visitors spend the operator's AI budget only by opt-in."""
+    if not has_ai_configuration():
+        return False
+    return not _is_public_mode() or os.environ.get(
+        "PATCHTRIAGE_PUBLIC_AI", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _allowed_hosts() -> set[str] | None:
+    """Host names this server answers to; None accepts any Host.
+
+    A public deployment names its hostname behind the proxy. Local servers
+    default to loopback, which is what defeats DNS rebinding.
+    """
+    configured = {
+        host.strip().lower() for host in
+        os.environ.get("PATCHTRIAGE_ALLOWED_HOSTS", "").split(",")
+        if host.strip()}
+    if configured:
+        return configured
+    return None if _is_public_mode() else {"localhost", "127.0.0.1", "::1"}
+
+
+class _BoundedHTTPServer(ThreadingHTTPServer):
+    """Drop connections beyond a fixed number instead of adding threads."""
+
+    def __init__(self, *args, **kwargs):
+        self._connection_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._connection_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
+
+
 def _validate_backend(backend: str) -> str:
     allowed = {"rules"}
-    if has_ai_configuration():
+    if _ai_available():
         allowed.update(("ai", "cascade"))
         # Existing API clients may still send the pre-0.7 backend name.
         if resolve_provider_name() == "anthropic":
@@ -107,9 +162,8 @@ def _github_import_token() -> str:
     deployments remain able to use their own token for rate limits or private
     workspaces under the operator's control.
     """
-    mode = os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower()
-    if mode == "public":
-        return ""  # None would make the fetchers use their own default.
+    if _is_public_mode():
+        return ""  # None would make the fetchers fall back to GITHUB_TOKEN.
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
@@ -165,6 +219,17 @@ def _cleanup_expired_workspaces() -> int:
         }
     return tstore.cleanup_workspaces(
         SESSION_TTL_SECONDS, exclude_workspace_ids=active_workspaces)
+
+
+def _maybe_cleanup_expired_workspaces() -> None:
+    """Scanning every session on each new one would let requests pile up."""
+    global _last_workspace_cleanup
+    now = time.monotonic()
+    with _JOB_LOCK:
+        if now - _last_workspace_cleanup < WORKSPACE_CLEANUP_INTERVAL_SECONDS:
+            return
+        _last_workspace_cleanup = now
+    _cleanup_expired_workspaces()
 
 
 def _execute_job(job_id: str) -> None:
@@ -270,6 +335,7 @@ def _public_target(target: dict | None) -> dict | None:
 
 
 class Handler(BaseHTTPRequestHandler):
+    timeout = REQUEST_SOCKET_TIMEOUT_SECONDS
     server_version = "PatchTriage"
 
     # ------------------------------------------------------------ helpers
@@ -286,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             value = ""
         if not re.fullmatch(r"[0-9a-f]{32}", value):
             value = secrets.token_hex(16)
-            _cleanup_expired_workspaces()
+            _maybe_cleanup_expired_workspaces()
         tstore.touch_workspace(value)
         self._workspace_id = value
         return value
@@ -349,10 +415,17 @@ class Handler(BaseHTTPRequestHandler):
             raise RequestError("invalid Content-Length") from exc
         if length < 0 or length > MAX_REQUEST_BYTES:
             raise RequestError("request body is too large", 413)
+        if (_is_public_mode() and not tstore.workspace_exists(self._workspace())
+                and tstore.workspace_count() >= MAX_PUBLIC_WORKSPACES):
+            raise RequestError(
+                "the service is at capacity; try again later", 503)
         if not length:
             return {}
         try:
             body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except TimeoutError as exc:
+            self.close_connection = True
+            raise RequestError("request body timed out", 408) from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise RequestError("request body must be valid UTF-8 JSON") from exc
         if not isinstance(body, dict):
@@ -368,6 +441,13 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "")
         return parsed.scheme in ("http", "https") and parsed.netloc.lower() == host.lower()
 
+    def _host_allowed(self) -> bool:
+        allowed = _allowed_hosts()
+        if allowed is None:
+            return True
+        hostname = urlsplit(f"//{self.headers.get('Host', '')}").hostname
+        return (hostname or "").lower() in allowed
+
     def log_message(self, *args):  # quiet by default
         pass
 
@@ -376,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
         """Never drop the connection on an unhandled error — return JSON 500
         so the browser shows a message instead of a dead request."""
         try:
+            if not self._host_allowed():
+                raise RequestError("unrecognized Host header", 403)
             fn()
         except RequestError as exc:
             self._send_json({"error": str(exc)}, exc.status)
@@ -421,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self._send(INDEX_HTML.encode("utf-8"))
         if path == "/api/config":
-            has_ai = has_ai_configuration()
+            has_ai = _ai_available()
             backends = ["rules"] + (["ai", "cascade"] if has_ai else [])
             generic_repositories = _generic_repository_enabled()
             return self._send_json({
@@ -932,7 +1014,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(host: str = "127.0.0.1", port: int = 8765,
           open_browser: bool = True) -> None:
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    httpd = _BoundedHTTPServer((host, port), Handler)
     stop_sweeper = threading.Event()
 
     def sweep_expired_workspaces() -> None:

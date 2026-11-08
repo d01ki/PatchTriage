@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 # Values mirrored into the environment for provider/enrichment clients.
@@ -57,21 +58,27 @@ def load() -> dict:
     p = config_path()
     if p.exists():
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             return {}
+        return data if isinstance(data, dict) else {}
     return {}
 
 
 def save(cfg: dict) -> Path:
     d = config_dir()
-    d.mkdir(parents=True, exist_ok=True)
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
     p = config_path()
-    p.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    # mkstemp creates the file 0600, so keys are never briefly world-readable,
+    # and the rename means a crash cannot leave a half-written config.
+    descriptor, temporary = tempfile.mkstemp(dir=d, prefix=".config-")
     try:
-        p.chmod(0o600)  # keys inside — keep it private (no-op on Windows)
-    except OSError:
-        pass
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(cfg, handle, indent=2)
+        os.replace(temporary, p)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
     return p
 
 
@@ -80,7 +87,7 @@ def apply_to_env(cfg: dict | None = None) -> None:
     cfg = load() if cfg is None else cfg
     for key in ENV_KEYS:
         value = cfg.get(key)
-        if value and not os.environ.get(key):
+        if isinstance(value, str) and value and not os.environ.get(key):
             os.environ[key] = value
 
 

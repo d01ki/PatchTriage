@@ -500,6 +500,13 @@ available to them. To use a private registry, list the variables to forward in
 `PATCHTRIAGE_REMEDIATION_PASS_ENV` (comma-separated). `--check` commands are
 your own and keep your full environment.
 
+A lockfile is left unchanged, with a warning, when refreshing it would run code
+from the repository: a project-level `.npmrc` or `.pnpmfile.cjs`, or a
+`pyproject.toml` with dynamic metadata, a local build backend, or `tool.uv`
+settings. PatchTriage also no longer overrides Git's ownership check. If Git
+reports dubious ownership, add the repository with
+`git config --global --add safe.directory <path>` after confirming you trust it.
+
 In Docker, place (or clone) the application under the PatchTriage folder so it
 appears below `/work`:
 
@@ -648,6 +655,7 @@ Use explicit deployment settings behind TLS termination:
 PATCHTRIAGE_DEPLOYMENT_MODE=public
 PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=false
 PATCHTRIAGE_COOKIE_SECURE=true
+PATCHTRIAGE_ALLOWED_HOSTS=your.public.hostname
 PATCHTRIAGE_BUILD_SHA=<deployed-git-sha>
 ```
 

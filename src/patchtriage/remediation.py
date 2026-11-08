@@ -5,7 +5,8 @@ It operates only on a repository path explicitly supplied by the operator,
 clones the current committed revision into an isolated workspace, updates
 supported dependency manifests, refreshes supported lockfiles with lifecycle
 scripts disabled, runs explicitly requested checks, and optionally rescans the
-workspace with OSV-Scanner.
+workspace with OSV-Scanner. Lockfile refresh is skipped for a project whose
+own configuration or build backend a package manager would execute.
 
 The source checkout is never modified and this module never pushes, merges, or
 deploys a change.
@@ -20,6 +21,7 @@ import shlex
 import shutil
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Iterable
@@ -445,7 +447,8 @@ def lockfile_commands(workspace: Path, action: Action,
                 continue
             root, name = lock
             command = (
-                ["pnpm", "install", "--lockfile-only", "--ignore-scripts"]
+                ["pnpm", "install", "--lockfile-only", "--ignore-scripts",
+                 "--ignore-pnpmfile"]
                 if name == "pnpm-lock.yaml"
                 else [
                     "npm", "install", "--package-lock-only", "--ignore-scripts",
@@ -458,13 +461,48 @@ def lockfile_commands(workspace: Path, action: Action,
                 continue
             root, _name = lock
             command = [
-                "uv", "lock", "--upgrade-package",
+                "uv", "lock", "--no-build", "--no-config", "--upgrade-package",
                 f"{action.package}=={action.target_version}",
             ]
         else:
             continue
         commands[(str(root), command[0])] = (command, root)
     return list(commands.values())
+
+
+def _lockfile_refresh_hazard(command: list[str], cwd: Path) -> str:
+    """Why this refresh would run repository-controlled code, if it would.
+
+    ``--ignore-scripts`` does not cover an .npmrc naming its own ``git``
+    program, and ``uv --no-build`` still builds the root project when its
+    metadata is dynamic, so these cases are detected rather than flagged off.
+    """
+    if command[0] in {"npm", "pnpm"}:
+        for name in (".npmrc", ".pnpmfile.cjs"):
+            if (cwd / name).exists():
+                return f"the repository has its own {name}"
+        return ""
+    if command[0] == "uv":
+        try:
+            text = (cwd / "pyproject.toml").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return "its pyproject.toml could not be read"
+        if not re.search(r"^\s*\[project\]", text, re.M):
+            return "its pyproject.toml has no static [project] metadata"
+        if re.search(r"^\s*dynamic\s*=", text, re.M):
+            return "its project metadata is dynamic and would need a build"
+        if "backend-path" in text or "[tool.uv" in text:
+            return "its pyproject.toml configures a local build or uv source"
+    return ""
+
+
+def _find_tool(name: str) -> str | None:
+    """shutil.which, minus Windows' implicit search of the current folder."""
+    found = shutil.which(name)
+    if found and sys.platform == "win32" and (
+            Path(found).resolve().parent == Path.cwd().resolve()):
+        return None
+    return found
 
 
 def parse_check_command(value: str) -> list[str]:
@@ -486,7 +524,7 @@ def _run_command(
     command: list[str], *, cwd: Path, kind: str, runner: Runner,
     timeout: int, environment: dict[str, str],
 ) -> CommandRecord:
-    executable = shutil.which(command[0])
+    executable = _find_tool(command[0])
     if not executable:
         raise RemediationError(
             f"required executable {command[0]!r} was not found"
@@ -533,6 +571,11 @@ def _git(git: str, args: list[str], *, cwd: Path | None = None,
         check=False,
     )
     if completed.returncode:
+        if "dubious ownership" in str(completed.stderr or ""):
+            raise RemediationError(
+                "git does not trust this repository's owner; if you trust it, "
+                "add it with: git config --global --add safe.directory <path>"
+            )
         raise RemediationError(
             f"git command failed with exit code {completed.returncode}"
         )
@@ -559,8 +602,7 @@ def _require_matching_origin(expected: str, git: str, repository: Path,
     if not expected:
         return None
     completed = runner(
-        [git, "-c", f"safe.directory={repository}",
-         "remote", "get-url", "origin"],
+        [git, "remote", "get-url", "origin"],
         cwd=repository, capture_output=True, text=True,
         timeout=DEFAULT_COMMAND_TIMEOUT, check=False)
     origin = completed.stdout.strip() if completed.returncode == 0 else ""
@@ -765,7 +807,7 @@ def execute_remediation(
 
     action = _select_action(load_upgrade_actions(report_path), action_id)
 
-    git = shutil.which("git")
+    git = _find_tool("git")
     if not git:
         raise RemediationError("git is required for remediation")
     warnings: list[str] = []
@@ -775,7 +817,7 @@ def execute_remediation(
         warnings.append(origin_warning)
     source_status = _git(
         git,
-        ["-c", f"safe.directory={repository}", "status", "--porcelain"],
+        ["status", "--porcelain"],
         cwd=repository,
         runner=runner,
     ).stdout.strip()
@@ -787,8 +829,7 @@ def execute_remediation(
     workspace = output_dir / "workspace"
     _git(
         git,
-        ["-c", f"safe.directory={repository}",
-         "clone", "--quiet", "--local", "--no-hardlinks",
+        ["clone", "--quiet", "--local", "--no-hardlinks",
          str(repository), str(workspace)],
         runner=runner,
     )
@@ -826,6 +867,13 @@ def execute_remediation(
             )
     if refresh_lockfiles:
         for command, cwd in lock_commands:
+            hazard = _lockfile_refresh_hazard(command, cwd)
+            if hazard:
+                warnings.append(
+                    f"{command[0]} lockfile was not refreshed because {hazard}; "
+                    "review the project and refresh it yourself"
+                )
+                continue
             command_records.append(_run_command(
                 command,
                 cwd=cwd,
@@ -850,7 +898,7 @@ def execute_remediation(
 
     scan = ScanRecord()
     if rescan:
-        scanner = scanner_binary or shutil.which("osv-scanner")
+        scanner = scanner_binary or _find_tool("osv-scanner")
         if scanner:
             scan_path = output_dir / "osv-remediation.json"
             scanner_config = output_dir / "trusted-osv-scanner.toml"

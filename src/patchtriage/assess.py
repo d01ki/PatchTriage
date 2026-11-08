@@ -195,6 +195,7 @@ def assess(
     asset: Asset | None = None,
     inventory: Path | None = None,
     ssvc_overrides: dict | None = None,
+    max_findings: int | None = None,
     declared_coverage: dict | None = None,
     provider_status: str = "",
     snapshot: dict | None = None,
@@ -232,6 +233,19 @@ def assess(
 
     findings = dedup(raw)
     progress(f"{len(raw)} raw -> {len(findings)} deduplicated findings")
+    if max_findings is not None and len(findings) > max_findings:
+        omitted = len(findings) - max_findings
+        findings = findings[:max_findings]
+        coverage["complete"] = False
+        coverage["status"] = "incomplete"
+        coverage["omitted_findings"] = omitted
+        coverage["errors"] = [
+            *(coverage.get("errors") or []),
+            f"{omitted} findings exceed this deployment's limit of "
+            f"{max_findings} and were not assessed",
+        ]
+        if on_coverage:
+            on_coverage(coverage)
     legacy_matches = Counter(legacy_finding_key(f.key) for f in findings)
     for finding in findings:
         values = (ssvc_overrides or {}).get(finding.key)

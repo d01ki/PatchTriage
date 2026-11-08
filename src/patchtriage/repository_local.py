@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .repository import (
     RepositoryFetchError,
@@ -62,6 +63,13 @@ class LocalRepositoryEvidence:
     content: str
     format: str
     provenance: dict[str, Any]
+
+
+def _pinned_resolve_option(reference: Any, addresses: list[str]) -> str:
+    port = urlsplit(reference.normalized_url).port or 443
+    bracketed = ",".join(
+        f"[{address}]" if ":" in address else address for address in addresses)
+    return f"http.curloptResolve={reference.host}:{port}:{bracketed}"
 
 
 def _public_addresses(host: str, port: int = 443) -> list[str]:
@@ -297,7 +305,7 @@ def scan_public_repository(
 ) -> LocalRepositoryEvidence:
     """Clone and statically scan an explicitly allowed public repository."""
     reference = normalize_repository_url(repository_url)
-    _public_addresses(reference.host, 443)
+    addresses = _public_addresses(reference.host, 443)
     git = git_binary or shutil.which("git")
     scanner = scanner_binary or shutil.which("osv-scanner")
     if not git or not scanner:
@@ -320,6 +328,8 @@ def scan_public_repository(
             "-c", "protocol.https.allow=always",
             "-c", "credential.helper=",
             "-c", "http.followRedirects=false",
+            # Connect to the addresses just checked, not a fresh DNS answer.
+            "-c", _pinned_resolve_option(reference, addresses),
             "-c", f"core.hooksPath={os.devnull}",
             "-c", "submodule.recurse=false",
             "clone", "--quiet", "--depth", "1", "--single-branch",

@@ -10,6 +10,9 @@ concurrency:
   group: patchtriage-production
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: verify deploy candidate

@@ -15,6 +15,8 @@ from patchtriage.cli import app
 from patchtriage.plan import Action
 from patchtriage.remediation import (
     RemediationError,
+    _find_tool,
+    _lockfile_refresh_hazard,
     _require_regular_file_inside,
     execute_remediation,
     load_upgrade_actions,
@@ -288,7 +290,8 @@ def test_lockfile_commands_cover_npm_pnpm_and_uv(tmp_path):
         workspace, python_action, [python / "pyproject.toml"]
     )
     assert python_commands == [(
-        ["uv", "lock", "--upgrade-package", "requests==2.32.4"],
+        ["uv", "lock", "--no-build", "--no-config",
+         "--upgrade-package", "requests==2.32.4"],
         python,
     )]
 
@@ -677,3 +680,61 @@ def test_checkout_without_origin_warns_instead_of_guessing(tmp_path):
     result = execute_remediation(
         report, repository, tmp_path / "r", rescan=False)
     assert any("no origin remote" in w for w in result.warnings)
+
+
+@pytest.mark.parametrize(
+    ("tool", "files", "reason"),
+    [("npm", {".npmrc": "git=./x"}, ".npmrc"),
+     ("pnpm", {".pnpmfile.cjs": ""}, ".pnpmfile.cjs"),
+     ("uv", {"pyproject.toml": '[project]\ndynamic = ["dependencies"]\n'},
+      "dynamic"),
+     ("uv", {"pyproject.toml": '[build-system]\nbackend-path = ["."]\n'},
+      "no static"),
+     ("uv", {"pyproject.toml": '[project]\nname="a"\n[tool.uv.sources]\n'},
+      "uv source")])
+def test_refresh_that_would_run_repository_code_is_skipped(
+        tmp_path, tool, files, reason):
+    workspace = _workspace(tmp_path, files)
+    assert reason in _lockfile_refresh_hazard([tool], workspace)
+
+
+def test_static_project_is_refreshed(tmp_path):
+    workspace = _workspace(tmp_path, {
+        "pyproject.toml": '[project]\nname = "a"\nversion = "1"\n'})
+    assert _lockfile_refresh_hazard(["uv"], workspace) == ""
+
+
+def test_hazardous_lockfile_is_left_alone_with_a_warning(tmp_path):
+    repository = _repository(tmp_path, {
+        "package.json": _declares("4.17.20"), "package-lock.json": "{}",
+        ".npmrc": "git=./evil\n"})
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(
+        {"actions": [_action().model_dump(mode="json")]}), encoding="utf-8")
+    ran = []
+
+    def runner(command, **kwargs):
+        ran.append(command)
+        return subprocess.run(command, **kwargs)
+
+    result = execute_remediation(
+        report, repository, tmp_path / "r", rescan=False, runner=runner)
+    assert not any("npm" in str(command[0]).lower() for command in ran)
+    assert any(".npmrc" in warning for warning in result.warnings)
+
+
+def test_untrusted_repository_owner_is_not_auto_trusted(tmp_path, monkeypatch):
+    repository = _repository(tmp_path, {"package.json": _declares("4.17.20")})
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(
+        {"actions": [_action().model_dump(mode="json")]}), encoding="utf-8")
+    monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+    with pytest.raises(RemediationError, match="safe.directory"):
+        execute_remediation(report, repository, tmp_path / "r", rescan=False)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows search order")
+def test_tool_in_the_current_folder_is_not_used(tmp_path, monkeypatch):
+    (tmp_path / "patchtriage-probe.cmd").write_text("@echo off\n")
+    monkeypatch.chdir(tmp_path)
+    assert _find_tool("patchtriage-probe") is None

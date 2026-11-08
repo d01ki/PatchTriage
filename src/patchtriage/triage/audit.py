@@ -52,6 +52,13 @@ _ACTION_RANK = {
 }
 
 
+_SHELL_INSTRUCTION = re.compile(
+    r"\b(?:curl|wget|Invoke-Expression|iex|chmod\s+\+x|bash\s+-c)\b"
+    r"|\|\s*(?:sh|bash)\b",
+    re.IGNORECASE,
+)
+
+
 def _signal_values(f: Finding) -> set[float]:
     e = f.enrichment
     vals = [v for v in (e.epss_score, e.epss_percentile,
@@ -241,6 +248,11 @@ def audit_finding(f: Finding, rules: RulesBackend) -> dict:
             ai_text = " ".join(text for _field, text in text_fields)
             if _KEV_DOWNGRADE.search(ai_text):
                 flags.append("ai_kev_exploitation_downgrade_claim")
+        ai_text = " ".join(text for _field, text in text_fields)
+        known_links = {str(reference) for reference in f.references}
+        if (_SHELL_INSTRUCTION.search(ai_text) or any(
+                url not in known_links for url in _URL.findall(ai_text))):
+            flags.append("ai_unverified_link_or_command")
 
     return {
         "verified": not flags,

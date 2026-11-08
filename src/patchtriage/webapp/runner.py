@@ -175,6 +175,16 @@ def asset_from_target(target: dict) -> Asset:
     )
 
 
+def _run_finding_limit() -> int | None:
+    """Each finding costs provider lookups, so a public run is bounded."""
+    if os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower() != "public":
+        return None
+    try:
+        return max(1, int(os.environ.get("PATCHTRIAGE_MAX_FINDINGS", "1000")))
+    except ValueError:
+        return 1000
+
+
 def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                nvd_api_key: str | None = None,
                vendor_sources: str | None = "auto",
@@ -219,6 +229,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "repository": source_provenance.get("repository"),
         },
         provider_status=provider_status, snapshot=snapshot,
+        max_findings=_run_finding_limit(),
         use_nvd=use_nvd, nvd_api_key=nvd_api_key,
         vendor_sources=vendor_sources,
         github_token=(os.environ.get("GITHUB_TOKEN") or
