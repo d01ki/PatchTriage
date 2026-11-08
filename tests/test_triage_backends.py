@@ -91,7 +91,7 @@ def _quiet_finding():
     f.asset.internet_exposed = False
     f.asset.criticality = "low"
     f.asset.system_exposure = "small"
-    f.asset.automatable = "no"
+    f.ssvc_inputs = {"automatable": "no"}
     f.asset.mission_impact = "degraded"
     f.asset.safety_impact = "negligible"
     f.enrichment = Enrichment(

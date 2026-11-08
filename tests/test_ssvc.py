@@ -36,7 +36,7 @@ def _finding():
 def _explicit_context(finding, *, exposure="open", automatable="yes",
                       mission="mef_failure", safety="marginal"):
     finding.asset.system_exposure = exposure
-    finding.asset.automatable = automatable
+    finding.ssvc_inputs = {"automatable": automatable}
     finding.asset.mission_impact = mission
     finding.asset.safety_impact = safety
     return finding
@@ -243,3 +243,43 @@ def test_no_fix_changes_remediation_not_ssvc_priority():
     result = assess(finding)
     assert result.priority == "P1"
     assert result.recommended_action == "mitigate"
+
+
+def _automatable(finding):
+    return assess(finding).automatable
+
+
+def test_vulnrichment_outranks_a_target_wide_inventory_value():
+    first, second = _finding(), _finding()
+    first.asset.automatable = second.asset.automatable = "yes"
+    first.enrichment.ssvc_automatable = "no"
+    second.enrichment.ssvc_automatable = "yes"
+    assert _automatable(first).value == "no"
+    assert _automatable(first).source == "CISA Vulnrichment"
+    assert _automatable(second).value == "yes"
+
+
+def test_cvss_v4_outranks_inventory():
+    finding = _finding()
+    finding.asset.automatable = "no"
+    finding.enrichment.nvd_cvss_vector = "CVSS:4.0/AU:Y"
+    point = _automatable(finding)
+    assert (point.value, point.source) == ("yes", "CVSS v4 Automatable")
+
+
+def test_analyst_override_outranks_published_evidence():
+    finding = _finding()
+    finding.enrichment.ssvc_automatable = "yes"
+    finding.ssvc_inputs = {"automatable": "no"}
+    point = _automatable(finding)
+    assert (point.value, point.source) == ("no", "analyst-confirmed SSVC input")
+
+
+def test_inventory_value_is_a_low_confidence_fallback_needing_confirmation():
+    finding = _finding()
+    finding.asset.automatable = "no"
+    point = _automatable(finding)
+    assert point.value == "no"
+    assert "target-wide" in point.source
+    assert point.confidence.value == "low"
+    assert point.needs_confirmation is True
