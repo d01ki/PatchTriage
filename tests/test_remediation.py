@@ -730,6 +730,12 @@ def test_untrusted_repository_owner_is_not_auto_trusted(tmp_path, monkeypatch):
     report = tmp_path / "report.json"
     report.write_text(json.dumps(
         {"actions": [_action().model_dump(mode="json")]}), encoding="utf-8")
+    # CI runners trust every directory globally; test Git's default policy.
+    empty_config = tmp_path / "empty-gitconfig"
+    empty_config.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
     monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
     with pytest.raises(RemediationError, match="safe.directory"):
         execute_remediation(report, repository, tmp_path / "r", rescan=False)
