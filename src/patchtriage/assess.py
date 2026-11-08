@@ -300,7 +300,8 @@ def assess(
             backend, model, escalation_model,
             provider=ai_provider, base_url=ai_base_url), jobs=workers)
 
-    coverage["findings_total"] = len(findings)
+    coverage["findings_total"] = (
+        len(findings) + int(coverage.get("omitted_findings") or 0))
     coverage["findings_assessed"] = len(subset)
     if len(subset) < len(findings):
         progress(f"--limit: showing {len(subset)} of {len(findings)} findings; "

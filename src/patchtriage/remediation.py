@@ -610,7 +610,8 @@ def _require_matching_origin(expected: str, git: str, repository: Path,
         return (f"the report describes {expected}, but this checkout has no "
                 "origin remote to compare it with")
     normalized = re.sub(r"\.git/?$", "", origin).rstrip("/").casefold()
-    if not re.search(rf"[/:]{re.escape(expected.casefold())}$", normalized):
+    wanted = re.sub(r"\.git/?$", "", expected).casefold()
+    if not re.search(rf"[/:]{re.escape(wanted)}$", normalized):
         raise RemediationError(
             f"the report describes {expected}, which does not match this "
             "checkout's origin remote"

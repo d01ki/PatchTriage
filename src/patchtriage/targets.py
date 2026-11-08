@@ -598,8 +598,10 @@ def load_summary(target_id: str, workspace_id: str | None = None) -> dict | None
     target_id = _validate_target_id(target_id)
     with _LOCK:
         target = get_target(target_id, workspace_id)
+        if target is None:
+            return None
         path = summary_path(target_id, workspace_id)
-        if target is None or not path.exists():
+        if not path.exists():
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))

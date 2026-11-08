@@ -216,3 +216,13 @@ def test_ai_links_and_commands_are_flagged(text, flagged):
     assert bool(auditmod._SHELL_INSTRUCTION.search(text)
                 or any(url != "https://known.test/advisory"
                        for url in auditmod._URL.findall(text))) is flagged
+
+
+def test_healthcheck_loopback_survives_a_configured_hostname(base, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_ALLOWED_HOSTS", "patch-triage.test")
+    assert _call(base, "GET", "/api/targets", host="127.0.0.1:8765") == 200
+
+
+def test_report_lookup_without_a_session_creates_no_directory(base):
+    assert _call(base, "GET", "/report/aaaaaaaaaaaa") == 404
+    assert tstore.workspace_count() == 0

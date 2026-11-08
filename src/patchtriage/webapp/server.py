@@ -112,9 +112,10 @@ def _allowed_hosts() -> set[str] | None:
         host.strip().lower() for host in
         os.environ.get("PATCHTRIAGE_ALLOWED_HOSTS", "").split(",")
         if host.strip()}
+    loopback = {"localhost", "127.0.0.1", "::1"}  # the container healthcheck
     if configured:
-        return configured
-    return None if _is_public_mode() else {"localhost", "127.0.0.1", "::1"}
+        return configured | loopback
+    return None if _is_public_mode() else loopback
 
 
 class _BoundedHTTPServer(ThreadingHTTPServer):

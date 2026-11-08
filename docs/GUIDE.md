@@ -659,6 +659,10 @@ PATCHTRIAGE_ALLOWED_HOSTS=your.public.hostname
 PATCHTRIAGE_BUILD_SHA=<deployed-git-sha>
 ```
 
+Local mode answers only to `localhost` and loopback addresses. To reach it by a
+LAN name or IP, list those in `PATCHTRIAGE_ALLOWED_HOSTS`. A public deployment
+offers AI backends only with `PATCHTRIAGE_PUBLIC_AI=true`.
+
 `/api/config` exposes the application version, build SHA, UI schema version,
 repository capabilities, retention, and anonymous-workspace limits. Local and
 hosted deployments serve the same HTML and API; unavailable capabilities are

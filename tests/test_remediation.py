@@ -746,3 +746,12 @@ def test_tool_in_the_current_folder_is_not_used(tmp_path, monkeypatch):
     (tmp_path / "patchtriage-probe.cmd").write_text("@echo off\n")
     monkeypatch.chdir(tmp_path)
     assert _find_tool("patchtriage-probe") is None
+
+
+def test_generic_report_name_ending_in_git_matches_its_origin(tmp_path):
+    repository, report = _with_report_repository(tmp_path, "group/sub/b.git")
+    _git(repository, "remote", "add", "origin",
+         "https://git.example/group/sub/b.git")
+    result = execute_remediation(
+        report, repository, tmp_path / "r", rescan=False)
+    assert result.status == "patched_unverified"
