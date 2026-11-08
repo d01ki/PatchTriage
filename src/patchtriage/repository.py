@@ -13,8 +13,11 @@ explicit.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -29,7 +32,23 @@ from .models import parse_purl
 
 GITHUB_HOST = "github.com"
 GITHUB_API_ROOT = "https://api.github.com"
+GITHUB_API_HOST = "api.github.com"
 GITHUB_RAW_ROOT = "https://raw.githubusercontent.com"
+GITHUB_API_VERSION = "2026-03-10"
+GITHUB_USER_AGENT = "patchtriage/0.6"
+# GitHub does not document this origin; it was observed on the 302 from
+# fetch-report on 2026-11-08. *.blob.core.windows.net is multi-tenant, so only
+# the exact host is allowed. If GitHub moves exports, imports fail closed with
+# an "unapproved location" error until an operator adds the new host through
+# PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS.
+GITHUB_SBOM_DOWNLOAD_HOSTS = frozenset({"dgpproduction.blob.core.windows.net"})
+SBOM_POLL_DEADLINE_SECONDS = 60.0
+SBOM_POLL_MAX_ATTEMPTS = 20
+SBOM_POLL_MAX_DELAY_SECONDS = 10.0
+SBOM_POLL_TRANSIENT_RETRIES = 2
+SBOM_DOWNLOAD_DEADLINE_SECONDS = 120.0
+_TRANSIENT_POLL_STATUSES = frozenset({500, 502, 503, 504})
+MAX_SBOM_LINK_BYTES = 64 * 1024
 DEFAULT_MAX_SBOM_BYTES = 32 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 45.0
 MAX_TREE_BYTES = 16 * 1024 * 1024
@@ -40,6 +59,28 @@ _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _BAD_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _SEGMENT_SAFE = "-._~!$&'()*+,;=:@"
+_REPORT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}$")
+
+
+def _sbom_download_hosts() -> frozenset[str]:
+    extra = os.environ.get("PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS", "")
+    return GITHUB_SBOM_DOWNLOAD_HOSTS | {
+        host.strip().lower() for host in extra.split(",") if host.strip()}
+
+
+class _SignedDownloadLogFilter(logging.Filter):
+    """Keep httpx's request log line from recording a signed download URL."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        text = f"{record.msg} {record.args}"
+        return not any(host in text for host in _sbom_download_hosts())
+
+
+# httpcore's DEBUG trace includes the response headers, so the 302 Location
+# reaches its loggers as well as httpx's request line.
+for _logger_name in ("httpx", "httpcore.connection", "httpcore.http11",
+                     "httpcore.http2", "httpcore.proxy"):
+    logging.getLogger(_logger_name).addFilter(_SignedDownloadLogFilter())
 
 
 class RepositoryError(Exception):
@@ -291,9 +332,9 @@ def _raise_for_github_status(response: httpx.Response, raw: bytes) -> None:
             "GitHub repository or Dependency Graph SBOM was not found; "
             "confirm that the repository is visible to the configured "
             f"credentials and dependency graph data is available{suffix}")
-    if status == 429 or (
-            status == 403
-            and response.headers.get("x-ratelimit-remaining") == "0"):
+    if status == 429 or (status == 403 and (
+            response.headers.get("x-ratelimit-remaining") == "0"
+            or "retry-after" in response.headers)):
         retry_after = (response.headers.get("retry-after")
                        or response.headers.get("x-ratelimit-reset"))
         raise RepositoryRateLimitError(
@@ -311,7 +352,9 @@ def _raise_for_github_status(response: httpx.Response, raw: bytes) -> None:
         f"GitHub SBOM API returned HTTP {status}{suffix}")
 
 
-def _read_response(response: httpx.Response, max_bytes: int) -> bytes:
+def _read_response(response: httpx.Response, max_bytes: int,
+                   deadline: float | None = None,
+                   monotonic: Callable[[], float] = time.monotonic) -> bytes:
     length = response.headers.get("content-length")
     if length:
         try:
@@ -327,6 +370,9 @@ def _read_response(response: httpx.Response, max_bytes: int) -> bytes:
         if size > max_bytes:
             raise RepositoryTooLargeError(
                 f"GitHub SBOM exceeds the {max_bytes}-byte import limit")
+        if deadline is not None and monotonic() > deadline:
+            raise RepositoryFetchError(
+                "GitHub SBOM download timed out; retry the import")
         parts.append(chunk)
     return b"".join(parts)
 
@@ -356,10 +402,15 @@ def _parse_github_sbom(raw: bytes) -> tuple[dict[str, Any], int]:
     except json.JSONDecodeError as exc:
         raise RepositoryResponseError(
             "GitHub SBOM response is not valid JSON") from exc
-    if not isinstance(payload, dict) or not isinstance(payload.get("sbom"), dict):
+    if not isinstance(payload, dict):
         raise RepositoryResponseError(
-            "GitHub SBOM response is missing the 'sbom' object")
-    sbom = payload["sbom"]
+            "GitHub SBOM response is not a JSON object")
+    # The export download is a bare SPDX document; tolerate the {"sbom": ...}
+    # envelope the REST schema describes for the same data.
+    sbom = payload["sbom"] if "sbom" in payload else payload
+    if not isinstance(sbom, dict):
+        raise RepositoryResponseError(
+            "GitHub SBOM response has an invalid 'sbom' object")
     if not str(sbom.get("spdxVersion", "")).startswith("SPDX-"):
         raise RepositoryResponseError(
             "GitHub SBOM response is not a recognized SPDX document")
@@ -473,6 +524,168 @@ def _restore_declared_ranges(sbom: dict[str, Any],
     return warnings
 
 
+def _has_unsafe_url_chars(value: str) -> bool:
+    return "\\" in value or any(
+        ord(char) <= 32 or ord(char) == 127 for char in value)
+
+
+def _report_poll_url(value: Any, reference: RepositoryReference) -> str:
+    """The polling URL, only if it is this repository's fetch-report route."""
+    invalid = RepositoryResponseError(
+        "GitHub returned an SBOM report link outside the expected repository "
+        "API route; it was not requested")
+    if not isinstance(value, str) or _has_unsafe_url_chars(value):
+        raise invalid
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError as exc:
+        raise invalid from exc
+    prefix = (f"/repos/{reference.owner}/{reference.name}"
+              "/dependency-graph/sbom/fetch-report/")
+    if (parts.scheme != "https" or parts.hostname != GITHUB_API_HOST
+            or parts.username is not None or parts.password is not None
+            or port not in (None, 443) or parts.query or parts.fragment
+            or not parts.path.casefold().startswith(prefix.casefold())):
+        raise invalid
+    report_id = parts.path[len(prefix):]
+    if not _REPORT_ID_RE.fullmatch(report_id):
+        raise invalid
+    return f"{GITHUB_API_ROOT}{prefix}{report_id}"
+
+
+def _check_download_url(value: str | None) -> str:
+    """Accept only the HTTPS storage origin GitHub serves exports from."""
+    invalid = RepositoryResponseError(
+        "GitHub redirected the SBOM download to an unapproved location; it "
+        "was not requested")
+    if not value or _has_unsafe_url_chars(value):
+        raise invalid
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError as exc:
+        raise invalid from exc
+    if (parts.scheme != "https"
+            or parts.hostname not in _sbom_download_hosts()
+            or parts.username is not None or parts.password is not None
+            or port not in (None, 443)):
+        raise invalid
+    return value
+
+
+def _backoff(attempt: int) -> float:
+    return min(2.0 ** attempt, SBOM_POLL_MAX_DELAY_SECONDS)
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait before polling again, honouring Retry-After."""
+    try:
+        delay = float(response.headers.get("retry-after", ""))
+    except ValueError:
+        return _backoff(attempt)
+    if not 0 <= delay < float("inf"):
+        return _backoff(attempt)
+    return max(delay, 1.0)
+
+
+def _download_github_report(client: httpx.Client, url: str, timeout: float,
+                            max_bytes: int,
+                            monotonic: Callable[[], float]) -> bytes:
+    """Fetch the signed export with a clean request.
+
+    The URL is a bearer capability, so it never reaches an exception message,
+    provenance, or report. The request is constructed directly because
+    ``client.build_request`` would merge client-level headers and cookies.
+    """
+    request = httpx.Request(
+        "GET", url, headers={"User-Agent": GITHUB_USER_AGENT},
+        extensions={"timeout": httpx.Timeout(timeout).as_dict()})
+    deadline = monotonic() + SBOM_DOWNLOAD_DEADLINE_SECONDS
+    response = client.send(
+        request, stream=True, auth=None, follow_redirects=False)
+    try:
+        if response.status_code != 200:
+            raise RepositoryFetchError(
+                "GitHub SBOM download failed with HTTP "
+                f"{response.status_code}; retry the import")
+        return _read_response(response, max_bytes, deadline, monotonic)
+    finally:
+        response.close()
+
+
+def _export_github_sbom(
+    client: httpx.Client,
+    reference: RepositoryReference,
+    generate_url: str,
+    headers: dict[str, str],
+    timeout: float,
+    max_bytes: int,
+    poll_deadline: float,
+    sleep: Callable[[float], None],
+    monotonic: Callable[[], float],
+) -> bytes:
+    """Run GitHub's generate, poll, and download SBOM export flow."""
+    deadline = monotonic() + poll_deadline
+    with client.stream("GET", generate_url, headers=headers, timeout=timeout,
+                       follow_redirects=False) as response:
+        if response.status_code != 201:
+            _raise_for_github_status(response, _read_error_response(response))
+        try:
+            raw = _read_response(response, MAX_SBOM_LINK_BYTES)
+        except RepositoryTooLargeError as exc:
+            raise RepositoryResponseError(
+                "GitHub SBOM report response is unexpectedly large") from exc
+    try:
+        link = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RepositoryResponseError(
+            "GitHub SBOM report response is not valid JSON") from exc
+    poll_url = _report_poll_url(
+        link.get("sbom_url") if isinstance(link, dict) else None, reference)
+
+    not_ready = RepositoryFetchError(
+        "GitHub is still generating the SBOM; retry the import shortly")
+    location: str | None = None
+    transient_failures = 0
+    for attempt in range(SBOM_POLL_MAX_ATTEMPTS):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise not_ready
+        try:
+            with client.stream("GET", poll_url, headers=headers,
+                               timeout=min(timeout, remaining),
+                               follow_redirects=False) as response:
+                status = response.status_code
+                if status == 302:
+                    location = response.headers.get("location")
+                    break
+                if status in _TRANSIENT_POLL_STATUSES and (
+                        transient_failures < SBOM_POLL_TRANSIENT_RETRIES):
+                    transient_failures += 1
+                elif status != 202:
+                    _raise_for_github_status(
+                        response, _read_error_response(response))
+                failed = status != 202
+                delay = _retry_delay(response, attempt)
+        except httpx.TransportError:
+            if transient_failures >= SBOM_POLL_TRANSIENT_RETRIES:
+                raise
+            transient_failures += 1
+            failed = True
+            delay = _backoff(attempt)
+        if (attempt == SBOM_POLL_MAX_ATTEMPTS - 1
+                or delay >= deadline - monotonic()):
+            if failed:
+                raise RepositoryFetchError(
+                    "GitHub SBOM report status check failed with a temporary "
+                    "error; retry the import")
+            raise not_ready
+        sleep(delay)
+    return _download_github_report(
+        client, _check_download_url(location), timeout, max_bytes, monotonic)
+
+
 def fetch_github_sbom(
     repository: str | RepositoryReference,
     *,
@@ -480,13 +693,18 @@ def fetch_github_sbom(
     client: httpx.Client | None = None,
     max_bytes: int = DEFAULT_MAX_SBOM_BYTES,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    poll_deadline: float = SBOM_POLL_DEADLINE_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> RepositorySbom:
     """Fetch a GitHub repository's provider-generated SPDX SBOM.
 
     ``client`` is injectable for policy-specific transports and deterministic
     tests. Public repositories need no token; a local operator may supply one
-    for a repository it authorizes. Redirects are never followed so an
-    Authorization header cannot be forwarded to another origin.
+    for a repository it authorizes. Redirects are never followed
+    automatically so an Authorization header cannot be forwarded to another
+    origin; the export's temporary download is a separate unauthenticated
+    request to GitHub's storage origin.
     """
     reference = (normalize_repository_url(repository)
                  if isinstance(repository, str) else repository)
@@ -499,14 +717,17 @@ def fetch_github_sbom(
     if timeout <= 0:
         raise ValueError("timeout must be positive")
 
+    if poll_deadline <= 0:
+        raise ValueError("poll_deadline must be positive")
+
     api_url = (
         f"{GITHUB_API_ROOT}/repos/{quote(reference.owner, safe='')}/"
-        f"{quote(reference.name, safe='')}/dependency-graph/sbom"
+        f"{quote(reference.name, safe='')}/dependency-graph/sbom/generate-report"
     )
     headers = {
         "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "patchtriage/0.6",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": GITHUB_USER_AGENT,
     }
     token = github_token if github_token is not None else os.environ.get(
         "GITHUB_TOKEN")
@@ -517,14 +738,9 @@ def fetch_github_sbom(
     client = client or httpx.Client()
     try:
         try:
-            with client.stream(
-                "GET", api_url, headers=headers, timeout=timeout,
-                follow_redirects=False,
-            ) as response:
-                if response.status_code != 200:
-                    raw_error = _read_error_response(response)
-                    _raise_for_github_status(response, raw_error)
-                raw = _read_response(response, max_bytes)
+            raw = _export_github_sbom(
+                client, reference, api_url, headers, timeout, max_bytes,
+                poll_deadline, sleep, monotonic)
         except httpx.TimeoutException as exc:
             raise RepositoryFetchError(
                 "GitHub SBOM request timed out") from exc

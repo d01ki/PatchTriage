@@ -54,6 +54,17 @@ to isolated workers with no application secrets, CPU/memory/PID/disk limits,
 an outbound firewall that blocks private and metadata networks, cancellation,
 and guaranteed cleanup.
 
+## GitHub export egress
+
+GitHub SBOM imports use the asynchronous export API: `generate-report`, then
+`fetch-report` until it redirects to a temporary download. Restricted networks
+must allow `api.github.com` and `dgpproduction.blob.core.windows.net`. GitHub
+does not document the download host (it was observed on 2026-11-08). If GitHub
+changes it, imports stop with an "unapproved location" error until an operator
+adds the new host to `PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS` (comma-separated,
+exact host names). A report that is not ready within 60
+seconds fails, and each retry requests a new report.
+
 ## Coverage states
 
 Every result carries source provenance and a coverage status:

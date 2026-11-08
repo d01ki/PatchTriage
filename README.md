@@ -20,6 +20,8 @@ to produce an action queue: **Immediate**, **Out-of-Cycle**, **Scheduled**, or
 **Live tool:** [patch-triage.com](https://patch-triage.com/) ·
 **Demo video:** [youtu.be/UxSTwKSwf0U](https://youtu.be/UxSTwKSwf0U)
 
+[![Watch the PatchTriage demo video on YouTube](https://img.youtube.com/vi/UxSTwKSwf0U/hqdefault.jpg)](https://youtu.be/UxSTwKSwf0U)
+
 ## Quick start (Windows PowerShell)
 
 You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and
