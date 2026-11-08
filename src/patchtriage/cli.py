@@ -415,6 +415,7 @@ def _execute_remediation_cli(
     rescan: bool,
     scanner: Optional[str],
     timeout: int,
+    manifest: Optional[str] = None,
 ):
     from .remediation import RemediationError, execute_remediation
 
@@ -429,6 +430,7 @@ def _execute_remediation_cli(
             rescan=rescan,
             scanner_binary=scanner,
             timeout=timeout,
+            manifest=manifest,
         )
     except RemediationError as exc:
         console.print(f"[red]remediation failed:[/red] {exc}")
@@ -450,6 +452,7 @@ def _guided_remediation(
     no_scan: bool,
     scanner: Optional[str],
     timeout: int,
+    manifest: Optional[str] = None,
 ):
     """Collect missing local remediation inputs and execute the patch."""
     from .remediation import RemediationError
@@ -529,6 +532,7 @@ def _guided_remediation(
         rescan=rescan,
         scanner=scanner,
         timeout=timeout,
+        manifest=manifest,
     )
 
 
@@ -567,6 +571,11 @@ def remediate(
     timeout: int = typer.Option(
         600, min=1, help="Per-command timeout in seconds",
     ),
+    manifest: Optional[str] = typer.Option(
+        None, "--manifest",
+        help="Manifest to patch when the package is declared in several "
+             "directories (path relative to the repository)",
+    ),
 ):
     """Create and verify one dependency patch in an isolated local clone.
 
@@ -589,6 +598,7 @@ def remediate(
             no_scan=no_scan,
             scanner=scanner,
             timeout=timeout,
+            manifest=manifest,
         )
     except (RemediationError, ValueError, OSError) as exc:
         console.print(f"[red]remediation failed:[/red] {exc}")
@@ -913,6 +923,7 @@ def start():
         override = (override or Asset(identifier=name)).model_copy(
             update={"identifier": name, "kind": "repository"})
         declared_coverage = dict(evidence.provenance.get("coverage") or {})
+        declared_coverage["repository"] = evidence.provenance.get("repository")
         provider_status = str(evidence.provenance.get("coverage_status") or "")
         warnings = list(evidence.provenance.get("warnings") or [])
         evidence_dir = Path(tempfile.mkdtemp(prefix="patchtriage-evidence-"))

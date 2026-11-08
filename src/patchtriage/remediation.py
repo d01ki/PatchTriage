@@ -55,6 +55,23 @@ _QUOTED_DEPENDENCY = re.compile(
     r"(?P<spec>(?:(?:===|==|~=|!=|<=|>=|<|>)[^'\"]*)?)"
     r"(?P=quote)"
 )
+_NON_REGISTRY_PREFIXES = (
+    "file:", "git:", "git+", "github:", "http:", "https:", "link:", "npm:",
+    "portal:", "ssh:", "workspace:",
+)
+_PACKAGE_MANAGER_ENV = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+    "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA", "TEMP", "TMP",
+    "TMPDIR", "LANG", "LC_ALL", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
+}
+_PACKAGE_MANAGER_FLAGS = {
+    "CI": "true",
+    "NPM_CONFIG_AUDIT": "false",
+    "NPM_CONFIG_FUND": "false",
+    "NPM_CONFIG_IGNORE_SCRIPTS": "true",
+    "npm_config_ignore_scripts": "true",
+}
 _POETRY_DEPENDENCY = re.compile(
     r"^(?P<indent>\s*)(?P<name>[A-Za-z0-9_.-]+)\s*=\s*"
     r"(?P<value>.+?)(?P<comment>\s+#.*)?$"
@@ -156,8 +173,26 @@ def _write_if_changed(path: Path, before: str, after: str) -> bool:
     return True
 
 
-def _update_package_json(path: Path, package: str,
-                         target_version: str) -> bool:
+def _require_current_pin(path: Path, name: str, pinned: str, installed: str,
+                         target_version: str) -> None:
+    """An exact pin to some other version means the report does not match."""
+    if installed and pinned not in (installed, target_version):
+        raise RemediationError(
+            f"{path}: {name} is pinned to {pinned}, but the report observed "
+            f"{installed}; regenerate the report for this checkout"
+        )
+
+
+def _require_python_pin(path: Path, name: str, spec: str, installed: str,
+                        target_version: str) -> None:
+    pinned = re.fullmatch(r"\s*==\s*([^,*\s]+)\s*", spec or "")
+    if pinned:
+        _require_current_pin(
+            path, name, pinned.group(1), installed, target_version)
+
+
+def _update_package_json(path: Path, package: str, target_version: str,
+                         installed: str = "") -> bool:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -175,12 +210,14 @@ def _update_package_json(path: Path, package: str,
                 raise RemediationError(
                     f"{path}: dependency {name} is not a string"
                 )
-            if value.startswith((
-                "file:", "git+", "http:", "https:", "workspace:",
-            )):
+            if value.startswith(_NON_REGISTRY_PREFIXES) or "/" in value:
                 raise RemediationError(
                     f"{path}: dependency {name} uses a non-registry source"
                 )
+            pinned = re.fullmatch(r"=?v?(\d\S*)", value.strip())
+            if pinned:
+                _require_current_pin(
+                    path, name, pinned.group(1), installed, target_version)
             if value != target_version:
                 dependencies[name] = target_version
                 changed = True
@@ -194,8 +231,8 @@ def _update_package_json(path: Path, package: str,
     return True
 
 
-def _update_requirements(path: Path, package: str,
-                         target_version: str) -> bool:
+def _update_requirements(path: Path, package: str, target_version: str,
+                         installed: str = "") -> bool:
     before = path.read_text(encoding="utf-8")
     output: list[str] = []
     changed = False
@@ -207,6 +244,8 @@ def _update_requirements(path: Path, package: str,
                 != _normalized_package(package)):
             output.append(line)
             continue
+        _require_python_pin(path, match.group("name"), match.group("spec"),
+                            installed, target_version)
         replacement = (
             f"{match.group('indent')}{match.group('name')}"
             f"{match.group('extras') or ''}=={target_version}"
@@ -218,8 +257,8 @@ def _update_requirements(path: Path, package: str,
     return _write_if_changed(path, before, "".join(output)) if changed else False
 
 
-def _replace_quoted_dependency(line: str, package: str,
-                               target_version: str) -> tuple[str, bool]:
+def _replace_quoted_dependency(line: str, package: str, target_version: str,
+                               path: Path, installed: str) -> tuple[str, bool]:
     changed = False
 
     def replace(match: re.Match) -> str:
@@ -227,6 +266,8 @@ def _replace_quoted_dependency(line: str, package: str,
         if (_normalized_package(match.group("name"))
                 != _normalized_package(package)):
             return match.group(0)
+        _require_python_pin(path, match.group("name"), match.group("spec"),
+                            installed, target_version)
         changed = True
         return (
             f"{match.group('quote')}{match.group('name')}"
@@ -271,8 +312,8 @@ def _replace_poetry_dependency(line: str, package: str,
     )
 
 
-def _update_pyproject(path: Path, package: str,
-                      target_version: str) -> bool:
+def _update_pyproject(path: Path, package: str, target_version: str,
+                      installed: str = "") -> bool:
     before = path.read_text(encoding="utf-8")
     section = ""
     output: list[str] = []
@@ -299,7 +340,7 @@ def _update_pyproject(path: Path, package: str,
             process_array = True
         if process_array:
             line, line_changed = _replace_quoted_dependency(
-                line, package, target_version
+                line, package, target_version, path, installed
             )
             if section == "project" and "]" in line:
                 in_project_dependencies = False
@@ -320,12 +361,17 @@ def _update_pyproject(path: Path, package: str,
     return _write_if_changed(path, before, "".join(output)) if changed else False
 
 
-def update_dependency_manifests(workspace: Path, action: Action) -> list[Path]:
-    """Update supported direct dependency declarations for one action."""
+def update_dependency_manifests(workspace: Path, action: Action,
+                                manifest: str | None = None) -> list[Path]:
+    """Update supported direct dependency declarations for one action.
+
+    A report does not say which workspace of a monorepo it scanned, so a
+    package declared in several directories needs ``manifest`` to choose one.
+    """
     if action.kind != "upgrade" or not action.target_version:
         raise RemediationError("the selected action has no confirmed upgrade")
     ecosystem = action.ecosystem.casefold()
-    updates: list[tuple[Path, Callable[[Path, str, str], bool]]] = []
+    updates: list[tuple[Path, Callable[..., bool]]] = []
     if ecosystem in {"npm", "node", "javascript"}:
         updates += [(path, _update_package_json)
                     for path in _iter_files(workspace, {"package.json"})]
@@ -345,10 +391,28 @@ def update_dependency_manifests(workspace: Path, action: Action) -> list[Path]:
     # Check every file first so one unsafe entry leaves nothing half-updated.
     for path, _update in updates:
         _require_regular_file_inside(path, workspace)
+    if manifest:
+        chosen = (workspace / manifest).parent
+        updates = [item for item in updates if item[0].parent == chosen]
+        if not any(item[0] == workspace / manifest for item in updates):
+            raise RemediationError(
+                f"{manifest} is not a supported manifest in this repository"
+            )
+    originals = {path: path.read_bytes() for path, _update in updates}
     changed = [
         path for path, update in updates
-        if update(path, action.package, action.target_version)
+        if update(path, action.package, action.target_version,
+                  action.installed_version)
     ]
+    directories = sorted({path.parent.relative_to(workspace).as_posix()
+                          for path in changed})
+    if len(directories) > 1:
+        for path in changed:
+            path.write_bytes(originals[path])
+        raise RemediationError(
+            f"{action.package} is declared in several directories "
+            f"({', '.join(directories)}); choose one with --manifest"
+        )
     if not changed:
         raise RemediationError(
             f"no supported direct declaration of {action.package!r} was found"
@@ -478,6 +542,64 @@ def _git(git: str, args: list[str], *, cwd: Path | None = None,
 def _safe_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9._-]+", "-", value.casefold()).strip("-._")
     return (slug or "dependency")[:48]
+
+
+def _report_repository(report_path: Path) -> str:
+    """The owner/name a report's evidence was imported from, when known."""
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        return str((report.get("coverage") or {}).get("repository") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _require_matching_origin(expected: str, git: str, repository: Path,
+                             runner: Runner) -> str | None:
+    """Reject a checkout of another repository; returns a warning if unknown."""
+    if not expected:
+        return None
+    completed = runner(
+        [git, "-c", f"safe.directory={repository}",
+         "remote", "get-url", "origin"],
+        cwd=repository, capture_output=True, text=True,
+        timeout=DEFAULT_COMMAND_TIMEOUT, check=False)
+    origin = completed.stdout.strip() if completed.returncode == 0 else ""
+    if not origin:
+        return (f"the report describes {expected}, but this checkout has no "
+                "origin remote to compare it with")
+    normalized = re.sub(r"\.git/?$", "", origin).rstrip("/").casefold()
+    if not re.search(rf"[/:]{re.escape(expected.casefold())}$", normalized):
+        raise RemediationError(
+            f"the report describes {expected}, which does not match this "
+            "checkout's origin remote"
+        )
+    return None
+
+
+def package_manager_environment(home: Path) -> dict[str, str]:
+    """A minimal environment for tools that process repository content.
+
+    Tokens and user-level registry configuration stay out. An operator who
+    needs a private registry names those variables explicitly in
+    PATCHTRIAGE_REMEDIATION_PASS_ENV.
+    """
+    allowed = set(_PACKAGE_MANAGER_ENV) | {
+        name.strip().upper() for name in
+        os.environ.get("PATCHTRIAGE_REMEDIATION_PASS_ENV", "").split(",")
+        if name.strip()}
+    environment = {key: value for key, value in os.environ.items()
+                   if key.upper() in allowed}
+    home.mkdir(parents=True, exist_ok=True)
+    for name in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+                 "XDG_CONFIG_HOME"):
+        if name not in environment:
+            environment[name] = str(home)
+    environment.setdefault("NPM_CONFIG_USERCONFIG", str(home / ".npmrc"))
+    if not any(key.upper() == "NPM_CONFIG_REGISTRY" for key in environment):
+        # Outranks a repository .npmrc, which could name its own registry.
+        environment["NPM_CONFIG_REGISTRY"] = "https://registry.npmjs.org/"
+    environment.update(_PACKAGE_MANAGER_FLAGS)
+    return environment
 
 
 def _is_real_upgrade(action: Action) -> bool:
@@ -613,6 +735,7 @@ def execute_remediation(
     output_dir: Path,
     *,
     action_id: str | None = None,
+    manifest: str | None = None,
     checks: Iterable[str] = (),
     refresh_lockfiles: bool = True,
     rescan: bool = True,
@@ -646,6 +769,10 @@ def execute_remediation(
     if not git:
         raise RemediationError("git is required for remediation")
     warnings: list[str] = []
+    origin_warning = _require_matching_origin(
+        _report_repository(report_path), git, repository, runner)
+    if origin_warning:
+        warnings.append(origin_warning)
     source_status = _git(
         git,
         ["-c", f"safe.directory={repository}", "status", "--porcelain"],
@@ -674,15 +801,12 @@ def execute_remediation(
     )
     _git(git, ["switch", "-c", branch], cwd=workspace, runner=runner)
 
-    changed_manifests = update_dependency_manifests(workspace, action)
-    environment = os.environ.copy()
-    environment.update({
-        "CI": "true",
-        "NPM_CONFIG_AUDIT": "false",
-        "NPM_CONFIG_FUND": "false",
-        "NPM_CONFIG_IGNORE_SCRIPTS": "true",
-        "npm_config_ignore_scripts": "true",
-    })
+    changed_manifests = update_dependency_manifests(
+        workspace, action, manifest)
+    environment = package_manager_environment(output_dir / "tool-home")
+    # Checks are the operator's own commands, so they keep the operator's
+    # environment; package managers and the scanner above do not.
+    check_environment = {**os.environ, **_PACKAGE_MANAGER_FLAGS}
     command_records: list[CommandRecord] = []
 
     lock_commands = lockfile_commands(workspace, action, changed_manifests)
@@ -721,7 +845,7 @@ def execute_remediation(
             kind="check",
             runner=runner,
             timeout=timeout,
-            environment=environment,
+            environment=check_environment,
         ))
 
     scan = ScanRecord()

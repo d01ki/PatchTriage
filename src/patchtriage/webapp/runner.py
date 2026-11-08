@@ -214,7 +214,10 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
     result = assess(
         [source], asset=override,
         ssvc_overrides=target.get("ssvc_overrides") or {},
-        declared_coverage=dict(source_provenance.get("coverage") or {}),
+        declared_coverage={
+            **dict(source_provenance.get("coverage") or {}),
+            "repository": source_provenance.get("repository"),
+        },
         provider_status=provider_status, snapshot=snapshot,
         use_nvd=use_nvd, nvd_api_key=nvd_api_key,
         vendor_sources=vendor_sources,

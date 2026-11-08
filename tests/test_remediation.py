@@ -19,6 +19,7 @@ from patchtriage.remediation import (
     execute_remediation,
     load_upgrade_actions,
     lockfile_commands,
+    package_manager_environment,
     parse_check_command,
     update_dependency_manifests,
 )
@@ -545,3 +546,134 @@ def test_old_report_with_a_downgrade_target_is_not_executable(tmp_path):
         _action(installed_version="3.0.0", target_version="2.0.0")
         .model_dump(mode="json")]}), encoding="utf-8")
     assert load_upgrade_actions(report) == []
+
+
+def _workspace(tmp_path, files):
+    workspace = tmp_path / "workspace"
+    for name, content in files.items():
+        path = workspace / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return workspace
+
+
+def _declares(version):
+    return json.dumps({"dependencies": {"lodash": version}})
+
+
+def test_same_dependency_in_two_workspaces_requires_a_choice(tmp_path):
+    workspace = _workspace(tmp_path, {
+        "a/package.json": _declares("^4.17.20"),
+        "b/package.json": _declares("^4.17.20")})
+    with pytest.raises(RemediationError, match="several directories.*a, b"):
+        update_dependency_manifests(workspace, _action())
+    for name in ("a", "b"):
+        assert (workspace / name / "package.json").read_text(
+            encoding="utf-8") == _declares("^4.17.20")
+
+
+def test_manifest_option_changes_only_the_chosen_workspace(tmp_path):
+    workspace = _workspace(tmp_path, {
+        "a/package.json": _declares("^4.17.20"),
+        "b/package.json": _declares("^4.17.20")})
+    changed = update_dependency_manifests(
+        workspace, _action(), "b/package.json")
+    assert changed == [workspace / "b" / "package.json"]
+    assert (workspace / "a" / "package.json").read_text(
+        encoding="utf-8") == _declares("^4.17.20")
+
+
+def test_unknown_manifest_choice_is_rejected(tmp_path):
+    workspace = _workspace(tmp_path, {"package.json": _declares("4.17.20")})
+    with pytest.raises(RemediationError, match="not a supported manifest"):
+        update_dependency_manifests(workspace, _action(), "nope/package.json")
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [("package.json", _declares("3.0.0")),
+     ("requirements.txt", "lodash==3.0.0\n")])
+def test_pin_to_a_different_version_is_a_stale_report(tmp_path, name, content):
+    ecosystem = "npm" if name == "package.json" else "pypi"
+    workspace = _workspace(tmp_path, {name: content})
+    with pytest.raises(RemediationError, match="pinned to 3.0.0"):
+        update_dependency_manifests(workspace, _action(ecosystem=ecosystem))
+    assert (workspace / name).read_text(encoding="utf-8") == content
+
+
+@pytest.mark.parametrize("source", [
+    "file:../x", "git+https://e.test/x.git", "github:a/b", "a/b",
+    "link:../x", "npm:other@1", "workspace:*", "portal:../x"])
+def test_non_registry_dependency_source_is_rejected(tmp_path, source):
+    workspace = _workspace(tmp_path, {"package.json": _declares(source)})
+    with pytest.raises(RemediationError, match="non-registry"):
+        update_dependency_manifests(workspace, _action())
+
+
+def test_tokens_reach_checks_but_not_package_managers(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "dummy-secret")
+    monkeypatch.setenv("NPM_TOKEN", "dummy-secret")
+    repository = _repository(tmp_path, {
+        "package.json": _declares("4.17.20"), "package-lock.json": "{}"})
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(
+        {"actions": [_action().model_dump(mode="json")]}), encoding="utf-8")
+    environments = {}
+
+    def runner(command, **kwargs):
+        if command[0].lower().endswith(("npm", "npm.cmd", "python", "python.exe")):
+            kind = "lock" if "install" in command else "check"
+            environments[kind] = kwargs["env"]
+            return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.run(command, **kwargs)
+
+    execute_remediation(
+        report, repository, tmp_path / "result", rescan=False, runner=runner,
+        checks=['python -c "print(1)"'])
+    if "lock" not in environments:
+        pytest.skip("npm is not installed")
+    lock = environments["lock"]
+    assert "GITHUB_TOKEN" not in lock and "NPM_TOKEN" not in lock
+    assert "dummy-secret" not in lock.values()
+    assert str(tmp_path / "result") in lock["NPM_CONFIG_USERCONFIG"]
+    assert environments["check"]["GITHUB_TOKEN"] == "dummy-secret"
+
+
+def test_operator_can_pass_a_named_variable_explicitly(tmp_path, monkeypatch):
+    monkeypatch.setenv("NPM_TOKEN", "operator-token")
+    monkeypatch.setenv("PATCHTRIAGE_REMEDIATION_PASS_ENV", "NPM_TOKEN")
+    assert package_manager_environment(tmp_path)["NPM_TOKEN"] == (
+        "operator-token")
+
+
+def _with_report_repository(tmp_path, repository_name):
+    repository = _repository(tmp_path, {"package.json": _declares("4.17.20")})
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({
+        "coverage": {"repository": repository_name},
+        "actions": [_action().model_dump(mode="json")]}), encoding="utf-8")
+    return repository, report
+
+
+def test_report_for_another_repository_is_rejected(tmp_path):
+    repository, report = _with_report_repository(tmp_path, "acme/widget")
+    _git(repository, "remote", "add", "origin",
+         "https://github.com/other/thing.git")
+    with pytest.raises(RemediationError, match="does not match"):
+        execute_remediation(report, repository, tmp_path / "r", rescan=False)
+
+
+def test_report_for_matching_repository_is_accepted(tmp_path):
+    repository, report = _with_report_repository(tmp_path, "Acme/Widget")
+    _git(repository, "remote", "add", "origin",
+         "git@github.com:acme/widget.git")
+    result = execute_remediation(
+        report, repository, tmp_path / "r", rescan=False)
+    assert result.status == "patched_unverified"
+
+
+def test_checkout_without_origin_warns_instead_of_guessing(tmp_path):
+    repository, report = _with_report_repository(tmp_path, "acme/widget")
+    result = execute_remediation(
+        report, repository, tmp_path / "r", rescan=False)
+    assert any("no origin remote" in w for w in result.warnings)

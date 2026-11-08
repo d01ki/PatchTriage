@@ -489,6 +489,17 @@ when their package-manager executable is installed. Unsupported lockfiles are
 left unchanged and called out in the result. The command never modifies the
 source checkout and never pushes, merges, or deploys a change.
 
+If a package is declared in several directories of a monorepo, choose one with
+`--manifest path/to/package.json`. A manifest pinned to a version other than
+the one in the report is refused, because the report does not describe that
+checkout.
+
+Package managers and the rescan run with a minimal environment and an isolated
+home directory, so tokens and your user-level registry settings are not
+available to them. To use a private registry, list the variables to forward in
+`PATCHTRIAGE_REMEDIATION_PASS_ENV` (comma-separated). `--check` commands are
+your own and keep your full environment.
+
 In Docker, place (or clone) the application under the PatchTriage folder so it
 appears below `/work`:
 
