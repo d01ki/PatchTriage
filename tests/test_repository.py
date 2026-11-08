@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 import json
+import logging
 
 import httpx
 import pytest
@@ -16,6 +18,7 @@ from patchtriage.repository import (
     RepositoryTooLargeError,
     RepositoryURLValidationError,
     UnsupportedRepositoryProvider,
+    acquire_repository_evidence,
     fetch_github_sbom,
     fetch_repository_sbom,
     normalize_repository_url,
@@ -46,6 +49,36 @@ def _github_payload(packages=None):
             "packages": packages,
         }
     }
+
+
+BLOB_HOST = "dgpproduction.blob.core.windows.net"
+GENERATE_URL = ("https://api.github.com/repos/acme/widget/dependency-graph/"
+                "sbom/generate-report")
+REPORT_URL = ("https://api.github.com/repos/acme/widget/dependency-graph/"
+              "sbom/fetch-report/cd8fa1d3-eddb-4dae-8a91-5c1276e4dc08")
+DOWNLOAD_URL = f"https://{BLOB_HOST}/sboms/report.json?sig=SIGNED-SECRET&se=1"
+
+
+def _bare(packages=None):
+    return _github_payload(packages)["sbom"]
+
+
+def _export_response(request, download):
+    """Answer GitHub's export API; ``download`` is the storage response."""
+    if str(request.url) == GENERATE_URL:
+        return httpx.Response(201, json={"sbom_url": REPORT_URL})
+    if str(request.url) == REPORT_URL:
+        return httpx.Response(302, headers={"location": DOWNLOAD_URL})
+    return download
+
+
+def _via_export(handler):
+    """Serve the export API in front of a handler for everything else."""
+    def transport(request: httpx.Request) -> httpx.Response:
+        if str(request.url) in (GENERATE_URL, REPORT_URL):
+            return _export_response(request, None)
+        return handler(request)
+    return httpx.MockTransport(transport)
 
 
 @pytest.mark.parametrize(
@@ -139,16 +172,11 @@ def test_fetch_public_github_sbom_without_token_returns_spdx_and_provenance():
         observed["request"] = request
         return httpx.Response(200, json=_github_payload())
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_repository_sbom(
             "https://github.com/acme/widget.git", client=client)
 
-    request = observed["request"]
-    assert str(request.url) == (
-        "https://api.github.com/repos/acme/widget/dependency-graph/sbom")
-    assert request.headers["accept"] == "application/vnd.github+json"
-    assert request.headers["x-github-api-version"] == "2022-11-28"
-    assert "authorization" not in request.headers
+    assert observed["request"].url.host == BLOB_HOST
 
     document = json.loads(result.content)
     assert "sbom" not in document
@@ -169,9 +197,10 @@ def test_github_token_is_optional_and_never_placed_in_url(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "test-secret")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["authorization"] == "Bearer test-secret"
+        if request.url.host == "api.github.com":
+            assert request.headers["authorization"] == "Bearer test-secret"
         assert "test-secret" not in str(request.url)
-        return httpx.Response(200, json=_github_payload())
+        return _export_response(request, httpx.Response(200, json=_bare()))
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         fetch_github_sbom("https://github.com/acme/widget", client=client)
@@ -181,8 +210,9 @@ def test_explicit_token_overrides_environment(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "environment-secret")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["authorization"] == "Bearer explicit-secret"
-        return httpx.Response(200, json=_github_payload())
+        if request.url.host == "api.github.com":
+            assert request.headers["authorization"] == "Bearer explicit-secret"
+        return _export_response(request, httpx.Response(200, json=_bare()))
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         fetch_github_sbom(
@@ -195,7 +225,7 @@ def test_tree_ref_is_visible_as_partial_not_claimed_as_resolved():
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_github_payload())
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_github_sbom(
             "https://github.com/acme/widget/tree/release/2026.1",
             client=client,
@@ -212,7 +242,7 @@ def test_empty_provider_document_is_marked_incomplete_not_clean():
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_github_payload([]))
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_github_sbom(
             "https://github.com/acme/widget", client=client)
     assert result.provenance.component_count == 0
@@ -287,7 +317,7 @@ def test_rejects_invalid_github_sbom_schema(payload):
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=payload)
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         with pytest.raises(RepositoryResponseError):
             fetch_github_sbom(
                 "https://github.com/acme/widget", client=client)
@@ -298,7 +328,7 @@ def test_rejects_non_json_or_non_utf8_provider_content(content):
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=content)
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         with pytest.raises(RepositoryResponseError):
             fetch_github_sbom(
                 "https://github.com/acme/widget", client=client)
@@ -310,7 +340,7 @@ def test_response_size_is_limited_even_without_trusted_content_length():
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=content)
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         with pytest.raises(RepositoryTooLargeError, match="import limit"):
             fetch_github_sbom(
                 "https://github.com/acme/widget", client=client,
@@ -323,7 +353,7 @@ def test_content_length_is_rejected_before_parsing():
         return httpx.Response(
             200, headers={"content-length": "9999"}, content=b"{}")
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         with pytest.raises(RepositoryTooLargeError):
             fetch_github_sbom(
                 "https://github.com/acme/widget", client=client,
@@ -389,7 +419,7 @@ def test_declared_ranges_dropped_by_github_are_restored_from_manifests():
 
     def handler(request: httpx.Request) -> httpx.Response:
         requested.append(str(request.url))
-        if request.url.path.endswith("/dependency-graph/sbom"):
+        if request.url.host == BLOB_HOST:
             return httpx.Response(200, json=_github_payload([
                 _versionless("fastapi", "pkg:pypi/fastapi"),
                 _versionless("python-multipart", "pkg:pypi/python-multipart"),
@@ -403,7 +433,7 @@ def test_declared_ranges_dropped_by_github_are_restored_from_manifests():
         return httpx.Response(
             200, text=files[request.url.path.split("/HEAD/", 1)[1]])
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_github_sbom("https://github.com/acme/widget",
                                    client=client)
     packages = {p["name"]: p for p in json.loads(result.content)["packages"]}
@@ -421,14 +451,338 @@ def test_declared_ranges_dropped_by_github_are_restored_from_manifests():
 
 def test_unavailable_file_list_leaves_sbom_usable_and_says_so():
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/dependency-graph/sbom"):
+        if request.url.host == BLOB_HOST:
             return httpx.Response(200, json=_github_payload([
                 _versionless("fastapi", "pkg:pypi/fastapi")]))
         return httpx.Response(403, json={"message": "rate limited"})
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+    with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_github_sbom("https://github.com/acme/widget",
                                    client=client)
     assert "versionInfo" not in json.loads(result.content)["packages"][0]
     assert any("file list" in w and "HTTP 403" in w
                for w in result.provenance.warnings)
+
+
+class _Clock:
+    """A fake clock that advances only when the poller sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _fetch(handler, clock=None, url="https://github.com/acme/widget", **kwargs):
+    clock = clock or _Clock()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        return fetch_github_sbom(url, client=client, sleep=clock.sleep,
+                                 monotonic=clock.monotonic, **kwargs)
+
+
+def _flow(*polls, generate=None, download=None, seen=None):
+    """Script generate/poll/download; synchronous endpoint calls fail."""
+    pending = list(polls)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        assert not request.url.path.endswith("/dependency-graph/sbom"), (
+            "the retired synchronous endpoint must not be called")
+        if str(request.url) == GENERATE_URL:
+            return generate or httpx.Response(
+                201, json={"sbom_url": REPORT_URL})
+        if str(request.url) == REPORT_URL:
+            return pending.pop(0)
+        if request.url.host == BLOB_HOST:
+            return download or httpx.Response(200, json=_bare())
+        raise AssertionError(f"unexpected request to {request.url.host}")
+    return handler
+
+
+def _ready():
+    return httpx.Response(302, headers={"location": DOWNLOAD_URL})
+
+
+def test_export_polls_through_202_then_downloads_bare_spdx():
+    clock = _Clock()
+    seen = []
+    result = _fetch(_flow(
+        httpx.Response(202, headers={"retry-after": "3"}),
+        httpx.Response(202),
+        _ready(), seen=seen), clock)
+
+    assert clock.sleeps == [3.0, 2.0]
+    assert json.loads(result.content)["spdxVersion"] == "SPDX-2.3"
+    assert [str(r.url) for r in seen[:2]] == [GENERATE_URL, REPORT_URL]
+    assert seen[0].headers["x-github-api-version"] == "2026-03-10"
+    assert result.provenance.api_url == GENERATE_URL
+    assert result.provenance.component_count == 2
+
+
+def test_export_ready_immediately_does_not_sleep():
+    clock = _Clock()
+    _fetch(_flow(_ready()), clock)
+    assert clock.sleeps == []
+
+
+def test_signed_download_gets_no_credentials_or_cookies():
+    seen = []
+    client = httpx.Client(
+        transport=httpx.MockTransport(_flow(_ready(), seen=seen)),
+        headers={"Authorization": "Bearer client-default",
+                 "X-Api-Key": "client-secret"},
+        cookies={"session": "cookie-secret"})
+    with client:
+        fetch_github_sbom("https://github.com/acme/widget", client=client,
+                          github_token="api-secret")
+    assert seen[0].headers["authorization"] == "Bearer api-secret"
+    download = seen[-1]
+    assert download.url.host == BLOB_HOST
+    assert "authorization" not in download.headers
+    assert "cookie" not in download.headers
+    assert "x-api-key" not in download.headers
+
+
+def test_signed_url_never_reaches_provenance_or_content():
+    result = _fetch(_flow(_ready()))
+    assert "SIGNED-SECRET" not in result.content
+    assert "SIGNED-SECRET" not in json.dumps(result.provenance.to_dict())
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "exception"),
+    [(403, {}, RepositoryAccessDeniedError),
+     (404, {}, RepositoryNotFoundError),
+     (429, {"retry-after": "7"}, RepositoryRateLimitError),
+     (200, {}, RepositoryFetchError)])
+def test_fetch_report_failures_are_classified(status, headers, exception):
+    with pytest.raises(exception):
+        _fetch(_flow(httpx.Response(status, headers=headers,
+                                    json={"message": "detail"})))
+
+
+@pytest.mark.parametrize(
+    ("status", "exception"),
+    [(403, RepositoryAccessDeniedError), (404, RepositoryNotFoundError),
+     (200, RepositoryFetchError)])
+def test_generate_report_failures_are_classified(status, exception):
+    with pytest.raises(exception):
+        _fetch(_flow(generate=httpx.Response(status, json={"message": "x"})))
+
+
+@pytest.mark.parametrize("status", [301, 403, 404, 500])
+def test_download_failure_never_echoes_signed_url(status):
+    with pytest.raises(RepositoryFetchError) as caught:
+        _fetch(_flow(_ready(), download=httpx.Response(
+            status, headers={"location": "https://evil.test/"},
+            text="<Error>sig=SIGNED-SECRET</Error>")))
+    assert "SIGNED-SECRET" not in str(caught.value)
+    assert str(status) in str(caught.value)
+
+
+def test_poll_deadline_stops_a_report_that_never_finishes():
+    clock = _Clock()
+    polls = [httpx.Response(202, headers={"retry-after": "5"})
+             for _ in range(30)]
+    with pytest.raises(RepositoryFetchError, match="still generating"):
+        _fetch(_flow(*polls), clock, poll_deadline=12)
+    assert clock.now <= 12
+
+
+def test_poll_attempts_are_capped_even_with_time_remaining():
+    clock = _Clock()
+    polls = [httpx.Response(202, headers={"retry-after": "1"})
+             for _ in range(40)]
+    with pytest.raises(RepositoryFetchError, match="still generating"):
+        _fetch(_flow(*polls), clock, poll_deadline=10_000)
+    assert len(clock.sleeps) == 19
+
+
+def test_retry_after_past_the_deadline_fails_without_waiting():
+    clock = _Clock()
+    with pytest.raises(RepositoryFetchError, match="still generating"):
+        _fetch(_flow(httpx.Response(202, headers={"retry-after": "3600"})),
+               clock, poll_deadline=30)
+    assert clock.sleeps == []
+
+
+@pytest.mark.parametrize("value", ["soon", "-5", "nan", "inf"])
+def test_unusable_retry_after_falls_back_to_backoff(value):
+    clock = _Clock()
+    _fetch(_flow(httpx.Response(202, headers={"retry-after": value}), _ready()),
+           clock)
+    assert clock.sleeps == [1.0]
+
+
+@pytest.mark.parametrize(
+    "link",
+    ["https://evil.test/repos/acme/widget/dependency-graph/sbom/fetch-report/a1",
+     "http://api.github.com/repos/acme/widget/dependency-graph/sbom/fetch-report/a1",
+     "https://api.github.com/repos/other/repo/dependency-graph/sbom/fetch-report/a1",
+     "https://api.github.com/repos/acme/widget/dependency-graph/sbom/fetch-report/a/../../x",
+     "https://api.github.com/repos/acme/widget/dependency-graph/sbom/fetch-report/a1?x=1",
+     "https://user:pw@api.github.com/repos/acme/widget/dependency-graph/sbom/fetch-report/a1",
+     "https://api.github.com:444/repos/acme/widget/dependency-graph/sbom/fetch-report/a1",
+     "", None, 7])
+def test_report_link_outside_this_repository_is_not_requested(link):
+    seen = []
+    with pytest.raises(RepositoryResponseError, match="report link"):
+        _fetch(_flow(generate=httpx.Response(201, json={"sbom_url": link}),
+                     seen=seen))
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("content", [b"not json", b"\xff"])
+def test_malformed_generate_response_is_rejected(content):
+    with pytest.raises(RepositoryResponseError):
+        _fetch(_flow(generate=httpx.Response(201, content=content)))
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["https://evil.test/x", f"http://{BLOB_HOST}/x",
+     f"https://{BLOB_HOST}.evil.test/x",
+     "https://attacker.blob.core.windows.net/x",
+     f"https://user:pw@{BLOB_HOST}/x",
+     f"https://{BLOB_HOST}:8443/x", "/relative", None])
+def test_download_redirect_to_unapproved_location_is_not_requested(location):
+    seen = []
+    headers = {"location": location} if location else {}
+    with pytest.raises(RepositoryResponseError, match="unapproved"):
+        _fetch(_flow(httpx.Response(302, headers=headers), seen=seen))
+    assert all(r.url.host == "api.github.com" for r in seen)
+
+
+def test_oversized_download_is_stopped_by_streamed_limit():
+    with pytest.raises(RepositoryTooLargeError):
+        _fetch(_flow(_ready(), download=httpx.Response(
+            200, content=b"x" * 5000)), max_bytes=100)
+
+
+@pytest.mark.parametrize("content", [b'{"spdxVersion": "SPDX-2.3"', b"{}"])
+def test_broken_download_payload_is_rejected(content):
+    with pytest.raises(RepositoryResponseError):
+        _fetch(_flow(_ready(), download=httpx.Response(200, content=content)))
+
+
+def test_poll_deadline_must_be_positive():
+    with pytest.raises(ValueError, match="poll_deadline"):
+        fetch_github_sbom("https://github.com/acme/widget", poll_deadline=0)
+
+
+def test_import_adapters_use_the_export_flow(monkeypatch):
+    """The adapter behind GUI/CLI imports and fleet's default fetcher avoid
+    the retired endpoint; the flow fails if it is called."""
+    from patchtriage import fleet, repository
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        repository.httpx, "Client",
+        lambda: real_client(transport=httpx.MockTransport(_flow(_ready()))))
+
+    assert inspect.signature(fleet.import_fleet).parameters[
+        "fetch_fn"].default is fetch_github_sbom
+    evidence = acquire_repository_evidence(
+        "https://github.com/acme/widget", github_token="",
+        max_bytes=1024 * 1024, allow_generic=False)
+    assert evidence.format == "spdx"
+    assert evidence.provenance["api_url"] == GENERATE_URL
+
+
+def test_anonymous_export_sends_no_authorization(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    seen = []
+    _fetch(_flow(_ready(), seen=seen))
+    assert seen[0].headers["accept"] == "application/vnd.github+json"
+    assert all("authorization" not in r.headers for r in seen)
+
+
+@pytest.mark.parametrize("failure", [
+    httpx.Response(503),
+    httpx.ConnectError("boom"),
+])
+def test_transient_poll_failure_is_retried_within_budget(failure):
+    polls = [failure, _ready()]
+    flow = _flow(*polls)
+
+    def handler(request):
+        if isinstance(polls[0], Exception) and str(request.url) == REPORT_URL:
+            raise polls.pop(0)
+        return flow(request)
+
+    if isinstance(failure, Exception):
+        flow = _flow(_ready())
+    clock = _Clock()
+    result = _fetch(handler, clock)
+    assert clock.sleeps == [1.0]
+    assert result.provenance.component_count == 2
+
+
+def test_repeated_transient_poll_failures_surface():
+    with pytest.raises(RepositoryFetchError, match="HTTP 503"):
+        _fetch(_flow(*[httpx.Response(503) for _ in range(3)]))
+
+
+def test_permanent_poll_failure_is_not_retried():
+    clock = _Clock()
+    with pytest.raises(RepositoryNotFoundError):
+        _fetch(_flow(httpx.Response(404)), clock)
+    assert clock.sleeps == []
+
+
+def test_slow_download_is_stopped_by_total_deadline():
+    clock = _Clock()
+
+    def chunks():
+        while True:
+            clock.now += 50
+            yield b"x"
+
+    with pytest.raises(RepositoryFetchError, match="timed out"):
+        _fetch(_flow(_ready(), download=httpx.Response(200, content=chunks())),
+               clock)
+
+
+def test_location_httpx_cannot_parse_fails_as_a_repository_error():
+    """httpx rejects it while reading the 302, before any download."""
+    location = f"https://{BLOB_HOST}/" + "x" * 70_000
+    seen = []
+    with pytest.raises(RepositoryFetchError):
+        _fetch(_flow(*[httpx.Response(302, headers={"location": location})
+                       for _ in range(3)], seen=seen))
+    assert all(r.url.host == "api.github.com" for r in seen)
+
+
+def test_temporary_failure_at_the_deadline_is_not_called_generating():
+    with pytest.raises(RepositoryFetchError, match="temporary"):
+        _fetch(_flow(httpx.Response(503, headers={"retry-after": "3600"})),
+               poll_deadline=30)
+
+
+def test_secondary_rate_limit_403_is_a_rate_limit():
+    with pytest.raises(RepositoryRateLimitError) as caught:
+        _fetch(_flow(generate=httpx.Response(
+            403, headers={"retry-after": "60",
+                          "x-ratelimit-remaining": "12"},
+            json={"message": "secondary rate limit"})))
+    assert caught.value.retry_after == "60"
+
+
+def test_oversized_report_link_is_not_called_an_oversized_sbom():
+    with pytest.raises(RepositoryResponseError) as caught:
+        _fetch(_flow(generate=httpx.Response(201, content=b"x" * 70_000)))
+    assert not isinstance(caught.value, RepositoryTooLargeError)
+
+
+def test_signed_url_is_not_logged(caplog):
+    with caplog.at_level(logging.DEBUG):
+        _fetch(_flow(_ready()))
+    assert "SIGNED-SECRET" not in caplog.text
+    assert "generate-report" in caplog.text
