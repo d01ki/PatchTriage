@@ -96,7 +96,7 @@ def _generic_repository_enabled() -> bool:
     return generic_repository_enabled()
 
 
-def _github_import_token() -> str | None:
+def _github_import_token() -> str:
     """Keep the anonymous hosted importer strictly public-only.
 
     A token configured for advisory enrichment can also grant access to private
@@ -107,7 +107,7 @@ def _github_import_token() -> str | None:
     """
     mode = os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower()
     if mode == "public":
-        return None
+        return ""  # None would make the fetchers use their own default.
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
