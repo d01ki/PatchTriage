@@ -9,6 +9,7 @@ from patchtriage import assess as assessmod
 from patchtriage import cli
 from patchtriage import targets as tstore
 from patchtriage.ingest.parsers import LoadResult
+from patchtriage.models import Asset, Package, RawFinding, Severity
 from patchtriage.webapp.runner import run_target
 
 FIX = Path(__file__).parent / "fixtures"
@@ -155,3 +156,43 @@ def test_cli_progress_output_survives_a_real_sbom_load(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     data = json.loads(report.read_text(encoding="utf-8"))
     assert data["coverage"]["queried_components"] == 2
+
+
+def _assess_raw(monkeypatch, tmp_path, raw, overrides):
+    _offline(monkeypatch)
+    monkeypatch.setattr(
+        assessmod, "load_file_with_metadata",
+        lambda path, fmt=None, asset=None, progress=None: LoadResult(raw, {
+            "source_type": "scanner:osv", "complete": True}))
+    scan = tmp_path / "scan.json"
+    scan.write_text("{}", encoding="utf-8")
+    return assessmod.assess([scan], ssvc_overrides=overrides).findings
+
+
+def _raw(name, ecosystem):
+    return RawFinding(
+        vuln_id="CVE-2024-1111", source_scanner="test",
+        package=Package(name=name, version="1.0.0", ecosystem=ecosystem),
+        asset=Asset(identifier="repo"), severity=Severity.HIGH)
+
+
+OVERRIDE = {"automatable": "yes"}
+
+
+def test_override_under_legacy_key_migrates_when_unique(monkeypatch, tmp_path):
+    findings = _assess_raw(
+        monkeypatch, tmp_path, [_raw("python-dateutil", "pypi")],
+        {"CVE-2024-1111|pypi||pythondateutil|1.0.0|repo": OVERRIDE})
+    assert findings[0].key == "CVE-2024-1111|pypi||python-dateutil|1.0.0|repo"
+    assert findings[0].ssvc_inputs == OVERRIDE
+
+
+def test_ambiguous_legacy_override_is_not_applied(monkeypatch, tmp_path):
+    findings = _assess_raw(
+        monkeypatch, tmp_path, [_raw("foo-bar", "npm"), _raw("foobar", "npm")],
+        {"CVE-2024-1111|npm||foobar|1.0.0|repo": OVERRIDE})
+    by_name = {f.package.name: f.ssvc_inputs for f in findings}
+    # "foobar" still matches its own unchanged key exactly; "foo-bar" must not
+    # inherit an override that could have belonged to either package.
+    assert by_name["foobar"] == OVERRIDE
+    assert not by_name["foo-bar"]

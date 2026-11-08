@@ -137,7 +137,7 @@ def _update_package_json(path: Path, package: str,
         if not isinstance(dependencies, dict):
             continue
         for name in list(dependencies):
-            if _normalized_package(name) != _normalized_package(package):
+            if name != package:  # npm names are exact strings
                 continue
             value = dependencies[name]
             if not isinstance(value, str):

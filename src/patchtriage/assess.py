@@ -7,13 +7,14 @@ so the same evidence and context always reach the same decisions.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from .bod2604 import apply_policy as apply_response_policy
 from .context import apply_context, load_inventory
-from .dedup import dedup
+from .dedup import legacy_finding_key, dedup
 from .enrich.clients import enrich, enrich_from_snapshot
 from .evalcmp import evaluate
 from .ingest.parsers import load_file_with_metadata
@@ -225,8 +226,15 @@ def assess(
 
     findings = dedup(raw)
     progress(f"{len(raw)} raw -> {len(findings)} deduplicated findings")
+    legacy_matches = Counter(legacy_finding_key(f.key) for f in findings)
     for finding in findings:
         values = (ssvc_overrides or {}).get(finding.key)
+        if values is None:
+            # An override saved under the older key applies only when that
+            # key still identifies exactly one finding.
+            legacy = legacy_finding_key(finding.key)
+            if legacy_matches[legacy] == 1:
+                values = (ssvc_overrides or {}).get(legacy)
         if isinstance(values, dict):
             finding.ssvc_inputs = {
                 key: str(value) for key, value in values.items()

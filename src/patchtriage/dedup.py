@@ -34,8 +34,32 @@ _PKG_NORM = re.compile(r"[^a-z0-9]+")
 
 
 def _norm_pkg(name: str) -> str:
-    """python_dateutil / python-dateutil / Python.Dateutil -> pythondateutil"""
+    """The pre-identity-rule spelling, retained only to read old keys."""
     return _PKG_NORM.sub("", name.lower())
+
+
+def _identity_part(ecosystem: str, value: str) -> str:
+    """Normalize a name or namespace by its ecosystem's own equality rule.
+
+    PyPI treats runs of ``-``, ``_`` and ``.`` as equal (PEP 503). npm names
+    are distinct strings, so ``foo-bar``, ``foobar`` and ``foo_bar`` stay
+    apart. Elsewhere only case is folded, because scanners disagree on it.
+    """
+    value = value.strip()
+    if ecosystem == "npm":
+        return value
+    if ecosystem == "pypi":
+        return re.sub(r"[-_.]+", "-", value).lower()
+    return value.lower()
+
+
+def legacy_finding_key(key: str) -> str:
+    """The key an older release produced for this finding."""
+    parts = key.split("|", 5)
+    if len(parts) != 6:
+        return key
+    parts[2], parts[3] = _norm_pkg(parts[2]), _norm_pkg(parts[3])
+    return "|".join(parts)
 
 
 def package_identity(package: Package) -> tuple[str, str, str, str]:
@@ -61,8 +85,8 @@ def package_identity(package: Package) -> tuple[str, str, str, str]:
 
     return (
         ecosystem,
-        _norm_pkg(namespace),
-        _norm_pkg(name),
+        _identity_part(ecosystem, namespace),
+        _identity_part(ecosystem, name),
         package.version.strip(),
     )
 
@@ -100,7 +124,10 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
         vid = _canonical_id(r, alias_map)
         canonical_ids.append(vid)
         ecosystem, namespace, package_name, version = identity
-        base_groups[(vid, package_name, version, r.asset.identifier)].append(index)
+        # Loose name so a finding without an ecosystem can still find its
+        # peers; identities stay separate unless the name then really matches.
+        base_groups[(vid, _norm_pkg(package_name), version,
+                     r.asset.identifier)].append(index)
 
     resolved = list(identities)
     for indexes in base_groups.values():
@@ -109,7 +136,8 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
             ecosystem, namespace, name, version = resolved[index]
             if not ecosystem and len(ecosystems) == 1:
                 ecosystem = next(iter(ecosystems))
-            resolved[index] = (ecosystem, namespace, name, version)
+            resolved[index] = (ecosystem, namespace,
+                               _identity_part(ecosystem, name), version)
 
         by_ecosystem: dict[str, list[int]] = defaultdict(list)
         for index in indexes:

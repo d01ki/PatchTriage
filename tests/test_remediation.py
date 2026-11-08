@@ -441,3 +441,17 @@ def test_start_offers_guided_remediation_after_report(tmp_path, monkeypatch):
     assert captured["report"] == Path("report.json")
     assert captured["repository"] is None
     assert captured["checks"] is None
+
+
+def test_npm_upgrade_does_not_rewrite_a_similarly_named_package(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = workspace / "package.json"
+    manifest.write_text(json.dumps({"dependencies": {
+        "foo-bar": "1.0.0", "foo_bar": "1.0.0", "foobar": "1.0.0"}}),
+        encoding="utf-8")
+    action = _action(package="foo-bar", installed_version="1.0.0",
+                     target_version="2.0.0")
+    update_dependency_manifests(workspace, action)
+    assert json.loads(manifest.read_text(encoding="utf-8"))["dependencies"] == {
+        "foo-bar": "2.0.0", "foo_bar": "1.0.0", "foobar": "1.0.0"}
