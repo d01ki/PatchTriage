@@ -23,7 +23,8 @@ from urllib.parse import urlsplit
 from .. import fleet as fleetmod
 from .. import targets as tstore
 from ..ingest.sbom import is_sbom
-from ..ingest.parsers import sniff_format
+from ..ingest.parsers import (ScannerFormatError, sniff_format,
+                              validate_scanner_document)
 from ..repository import (
     RepositoryAccessDeniedError,
     RepositoryError,
@@ -740,6 +741,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(
                     {"error": "unrecognized file — expected Trivy/Grype/OSV "
                               "JSON or a CycloneDX/SPDX SBOM"}, 400)
+            try:
+                validate_scanner_document(fmt, json.loads(content))
+            except ScannerFormatError as exc:
+                return self._send_json(
+                    {"error": f"invalid {fmt} report: {exc}"}, 400)
             filename = str(body.get("filename") or "evidence.json")[:255]
             try:
                 tstore.save_source(

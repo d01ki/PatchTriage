@@ -355,6 +355,8 @@ def parse_osv(data: dict, default_asset: Asset | None = None) -> Iterator[RawFin
                 )
 
 
+MAX_REPORTED_ROW_ERRORS = 20
+
 PARSERS: dict[str, Callable[..., Iterator[RawFinding]]] = {
     "trivy": parse_trivy,
     "grype": parse_grype,
@@ -362,19 +364,127 @@ PARSERS: dict[str, Callable[..., Iterator[RawFinding]]] = {
 }
 
 
-def sniff_format(data: dict) -> str | None:
+def sniff_format(data: Any) -> str | None:
     """Best-effort detection of which scanner produced this JSON."""
-    if "Results" in data and ("ArtifactName" in data or "SchemaVersion" in data):
+    if not isinstance(data, dict):
+        return None
+    if (isinstance(data.get("Results"), list)
+            and ("ArtifactName" in data or "SchemaVersion" in data)):
         return "trivy"
-    if "matches" in data and "descriptor" in data:
+    if isinstance(data.get("matches"), list) and "descriptor" in data:
         return "grype"
     osv_results = data.get("results")
     if isinstance(osv_results, list) and (
             not osv_results
-            or all(isinstance(row, dict) and "packages" in row
+            or any(isinstance(row, dict) and "packages" in row
                    for row in osv_results)):
         return "osv"
     return None
+
+
+class ScannerFormatError(ValueError):
+    """The file does not have the structure of the selected scanner format."""
+
+
+def _list_or_empty(value: Any) -> list | None:
+    """A JSON array; null counts as empty; anything else is None."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else None
+
+
+def _trivy_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+    if not {"Results", "SchemaVersion", "ArtifactName"} & data.keys():
+        raise ScannerFormatError(
+            "Trivy JSON needs Results, SchemaVersion, or ArtifactName")
+    # Trivy omits Results entirely when a scan has nothing to report.
+    results = _list_or_empty(data.get("Results"))
+    if results is None:
+        raise ScannerFormatError("Trivy Results must be an array")
+    for index, result in enumerate(results):
+        vulns = (_list_or_empty(result.get("Vulnerabilities"))
+                 if isinstance(result, dict) else None)
+        if vulns is None:
+            errors.append(f"Results[{index}] is malformed")
+            continue
+        for row, vuln in enumerate(vulns):
+            yield {**data, "Results": [{**result, "Vulnerabilities": [vuln]}]}, (
+                f"Results[{index}].Vulnerabilities[{row}]")
+
+
+def _grype_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+    if not isinstance(data.get("matches"), list):
+        raise ScannerFormatError("Grype JSON needs a matches array")
+    for index, match in enumerate(data["matches"]):
+        if (not isinstance(match, dict)
+                or not isinstance(match.get("vulnerability"), dict)
+                or not isinstance(match.get("artifact"), dict)):
+            errors.append(f"matches[{index}] is malformed")
+            continue
+        yield {**data, "matches": [match]}, f"matches[{index}]"
+
+
+def _osv_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+    if not isinstance(data.get("results"), list):
+        raise ScannerFormatError("OSV-Scanner JSON needs a results array")
+    for index, result in enumerate(data["results"]):
+        packages = (result.get("packages")
+                    if isinstance(result, dict) else None)
+        if not isinstance(packages, list):
+            errors.append(f"results[{index}] is malformed")
+            continue
+        for p_index, package in enumerate(packages):
+            label = f"results[{index}].packages[{p_index}]"
+            vulns = (_list_or_empty(package.get("vulnerabilities"))
+                     if isinstance(package, dict)
+                     and isinstance(package.get("package"), dict) else None)
+            if vulns is None:
+                errors.append(f"{label} is malformed")
+                continue
+            for row, vuln in enumerate(vulns):
+                yield {**data, "results": [{**result, "packages": [
+                    {**package, "vulnerabilities": [vuln]}]}]}, (
+                    f"{label}.vulnerabilities[{row}]")
+
+
+_ROW_READERS = {"trivy": _trivy_rows, "grype": _grype_rows, "osv": _osv_rows}
+
+
+def _parse_scanner(fmt: str, data: Any,
+                   asset: Asset | None) -> tuple[list[RawFinding], list[str]]:
+    """Validate a scanner document and parse each row independently.
+
+    Raises :class:`ScannerFormatError` when the document as a whole is not
+    usable; a bad row is reported and does not discard its valid neighbours.
+    """
+    if not isinstance(data, dict):
+        raise ScannerFormatError(f"{fmt} JSON must be an object")
+    errors: list[str] = []
+    findings: list[RawFinding] = []
+    for row, label in _ROW_READERS[fmt](data, errors):
+        try:
+            parsed = list(PARSERS[fmt](row, asset))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            errors.append(f"{label} is malformed")
+            continue
+        if not parsed or any(not f.vuln_id or not f.package.name
+                             for f in parsed):
+            errors.append(f"{label} lacks a vulnerability id or package name")
+            continue
+        findings.extend(parsed)
+    if errors and not findings:
+        raise ScannerFormatError(
+            f"no usable {fmt} rows; first problem: {errors[0]}")
+    return findings, errors
+
+
+def validate_scanner_document(fmt: str, data: Any) -> None:
+    """Raise :class:`ScannerFormatError` if a scanner document is unusable.
+
+    SBOM formats are validated by their own loader, so they pass through.
+    """
+    if fmt in PARSERS:
+        _parse_scanner(fmt, data, None)
 
 
 def load_file_with_metadata(path: str | Path, fmt: str | None = None,
@@ -403,12 +513,16 @@ def load_file_with_metadata(path: str | Path, fmt: str | None = None,
             f"Unrecognized format for {path}. Expected Trivy/Grype/OSV "
             f"scanner JSON (one of {sorted(PARSERS)}) or a CycloneDX/SPDX "
             f"SBOM. Pass fmt= to force a scanner format.")
-    findings = list(PARSERS[fmt](data, asset))
+    findings, errors = _parse_scanner(fmt, data, asset)
+    shown = errors[:MAX_REPORTED_ROW_ERRORS]
+    if len(errors) > len(shown):
+        shown.append(f"{len(errors) - len(shown)} more malformed rows")
     return LoadResult(findings, {
         "source_type": f"scanner:{fmt}",
-        "complete": True,
+        "complete": not errors,
         "records": len(findings),
-        "errors": [],
+        "malformed_rows": len(errors),
+        "errors": shown,
     })
 
 
@@ -429,5 +543,9 @@ def load_file(path: str | Path, fmt: str | None = None,
     if sbom_kind:
         from .sbom import load_sbom
         return load_sbom(path, asset=asset, progress=progress)
-    return load_file_with_metadata(
-        path, fmt=fmt, asset=asset, progress=progress).findings
+    loaded = load_file_with_metadata(
+        path, fmt=fmt, asset=asset, progress=progress)
+    if not loaded.coverage["complete"]:
+        raise ScannerFormatError(
+            f"{path} has malformed rows: {loaded.coverage['errors'][0]}")
+    return loaded.findings

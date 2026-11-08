@@ -543,3 +543,28 @@ def test_full_run_over_sbom(server):
         html = r.read().decode()
     assert "<!doctype html>" in html
     assert "1E3A31" not in html  # no green in the redesigned palette
+
+
+@pytest.mark.parametrize(
+    "document",
+    [[], {"results": ["x"]}, {"results": [{"packages": "x"}]},
+     {"descriptor": {}, "matches": ["x"]}],
+)
+def test_structurally_invalid_scanner_upload_is_a_400(server, document):
+    _, target = _req("POST", server + "/api/targets", {"name": "bad-scan"})
+    status, payload = _req(
+        "POST", server + f"/api/targets/{target['id']}/source",
+        {"content": json.dumps(document), "filename": "scan.json"})
+    assert status == 400
+    assert payload["error"]
+
+
+def test_partially_broken_scanner_upload_is_accepted(server):
+    document = {"descriptor": {}, "matches": ["bad", {
+        "vulnerability": {"id": "CVE-2024-0002"},
+        "artifact": {"name": "lodash", "version": "4.0.0"}}]}
+    _, target = _req("POST", server + "/api/targets", {"name": "partial-scan"})
+    status, _ = _req(
+        "POST", server + f"/api/targets/{target['id']}/source",
+        {"content": json.dumps(document), "filename": "scan.json"})
+    assert status == 200
