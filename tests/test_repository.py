@@ -781,6 +781,27 @@ def test_oversized_report_link_is_not_called_an_oversized_sbom():
     assert not isinstance(caught.value, RepositoryTooLargeError)
 
 
+def test_signed_location_is_dropped_from_httpcore_debug_logs(caplog):
+    with caplog.at_level(logging.DEBUG, logger="httpcore.http11"):
+        logging.getLogger("httpcore.http11").debug(
+            "receive_response_headers.complete return_value=%r",
+            [(b"Location", DOWNLOAD_URL.encode())])
+    assert "SIGNED-SECRET" not in caplog.text
+
+
+def test_operator_can_approve_a_new_download_host(monkeypatch):
+    host = "dgpother.blob.core.windows.net"
+    monkeypatch.setenv("PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS", f" {host} ,")
+
+    def handler(request):
+        if request.url.host == host:
+            return httpx.Response(200, json=_bare())
+        return _flow(httpx.Response(
+            302, headers={"location": f"https://{host}/r?sig=x"}))(request)
+
+    assert _fetch(handler).provenance.component_count == 2
+
+
 def test_signed_url_is_not_logged(caplog):
     with caplog.at_level(logging.DEBUG):
         _fetch(_flow(_ready()))

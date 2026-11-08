@@ -39,7 +39,8 @@ GITHUB_USER_AGENT = "patchtriage/0.6"
 # GitHub does not document this origin; it was observed on the 302 from
 # fetch-report on 2026-11-08. *.blob.core.windows.net is multi-tenant, so only
 # the exact host is allowed. If GitHub moves exports, imports fail closed with
-# an "unapproved location" error and this set needs updating.
+# an "unapproved location" error until an operator adds the new host through
+# PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS.
 GITHUB_SBOM_DOWNLOAD_HOSTS = frozenset({"dgpproduction.blob.core.windows.net"})
 SBOM_POLL_DEADLINE_SECONDS = 60.0
 SBOM_POLL_MAX_ATTEMPTS = 20
@@ -61,15 +62,25 @@ _SEGMENT_SAFE = "-._~!$&'()*+,;=:@"
 _REPORT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}$")
 
 
+def _sbom_download_hosts() -> frozenset[str]:
+    extra = os.environ.get("PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS", "")
+    return GITHUB_SBOM_DOWNLOAD_HOSTS | {
+        host.strip().lower() for host in extra.split(",") if host.strip()}
+
+
 class _SignedDownloadLogFilter(logging.Filter):
     """Keep httpx's request log line from recording a signed download URL."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         text = f"{record.msg} {record.args}"
-        return not any(host in text for host in GITHUB_SBOM_DOWNLOAD_HOSTS)
+        return not any(host in text for host in _sbom_download_hosts())
 
 
-logging.getLogger("httpx").addFilter(_SignedDownloadLogFilter())
+# httpcore's DEBUG trace includes the response headers, so the 302 Location
+# reaches its loggers as well as httpx's request line.
+for _logger_name in ("httpx", "httpcore.connection", "httpcore.http11",
+                     "httpcore.http2", "httpcore.proxy"):
+    logging.getLogger(_logger_name).addFilter(_SignedDownloadLogFilter())
 
 
 class RepositoryError(Exception):
@@ -556,7 +567,7 @@ def _check_download_url(value: str | None) -> str:
     except ValueError as exc:
         raise invalid from exc
     if (parts.scheme != "https"
-            or parts.hostname not in GITHUB_SBOM_DOWNLOAD_HOSTS
+            or parts.hostname not in _sbom_download_hosts()
             or parts.username is not None or parts.password is not None
             or port not in (None, 443)):
         raise invalid

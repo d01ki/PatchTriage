@@ -60,8 +60,9 @@ GitHub SBOM imports use the asynchronous export API: `generate-report`, then
 `fetch-report` until it redirects to a temporary download. Restricted networks
 must allow `api.github.com` and `dgpproduction.blob.core.windows.net`. GitHub
 does not document the download host (it was observed on 2026-11-08). If GitHub
-changes it, imports stop with an "unapproved location" error until
-`GITHUB_SBOM_DOWNLOAD_HOSTS` is updated. A report that is not ready within 60
+changes it, imports stop with an "unapproved location" error until an operator
+adds the new host to `PATCHTRIAGE_GITHUB_SBOM_DOWNLOAD_HOSTS` (comma-separated,
+exact host names). A report that is not ready within 60
 seconds fails, and each retry requests a new report.
 
 ## Coverage states
