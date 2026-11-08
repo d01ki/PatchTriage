@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -116,6 +117,36 @@ def _iter_files(root: Path, names: Iterable[str],
             lowered = filename.casefold()
             if lowered in exact or lowered.startswith(lowered_prefixes):
                 yield base / filename
+
+
+def _is_link(info: os.stat_result) -> bool:
+    """A symlink, or on Windows any reparse point such as a junction."""
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def _require_regular_file_inside(path: Path, root: Path) -> None:
+    """Refuse a manifest reached through a link or leaving the clone.
+
+    Repository content is untrusted: a committed link named ``package.json``
+    would otherwise be read and rewritten at its destination.
+    """
+    relative = path.relative_to(root)
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if _is_link(os.lstat(current)):
+            raise RemediationError(
+                f"{relative.as_posix()}: refusing to follow a symbolic link "
+                "or junction in the repository"
+            )
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        raise RemediationError(f"{relative.as_posix()}: not a regular file")
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise RemediationError(
+            f"{relative.as_posix()}: resolves outside the repository clone"
+        )
 
 
 def _write_if_changed(path: Path, before: str, after: str) -> bool:
@@ -294,27 +325,30 @@ def update_dependency_manifests(workspace: Path, action: Action) -> list[Path]:
     if action.kind != "upgrade" or not action.target_version:
         raise RemediationError("the selected action has no confirmed upgrade")
     ecosystem = action.ecosystem.casefold()
-    changed: list[Path] = []
+    updates: list[tuple[Path, Callable[[Path, str, str], bool]]] = []
     if ecosystem in {"npm", "node", "javascript"}:
-        for path in _iter_files(workspace, {"package.json"}):
-            if _update_package_json(path, action.package, action.target_version):
-                changed.append(path)
+        updates += [(path, _update_package_json)
+                    for path in _iter_files(workspace, {"package.json"})]
     elif ecosystem in {"pypi", "python", "pip"}:
-        for path in _iter_files(workspace, {"pyproject.toml"}):
-            if _update_pyproject(path, action.package, action.target_version):
-                changed.append(path)
-        for path in _iter_files(
+        updates += [(path, _update_pyproject)
+                    for path in _iter_files(workspace, {"pyproject.toml"})]
+        updates += [(path, _update_requirements) for path in _iter_files(
             workspace,
             {"requirements.txt"},
             prefixes=("requirements-", "requirements."),
-        ):
-            if _update_requirements(path, action.package, action.target_version):
-                changed.append(path)
+        )]
     else:
         raise RemediationError(
             f"automatic remediation is not supported for ecosystem "
             f"{action.ecosystem!r}"
         )
+    # Check every file first so one unsafe entry leaves nothing half-updated.
+    for path, _update in updates:
+        _require_regular_file_inside(path, workspace)
+    changed = [
+        path for path, update in updates
+        if update(path, action.package, action.target_version)
+    ]
     if not changed:
         raise RemediationError(
             f"no supported direct declaration of {action.package!r} was found"

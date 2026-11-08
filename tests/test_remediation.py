@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from patchtriage.cli import app
 from patchtriage.plan import Action
 from patchtriage.remediation import (
     RemediationError,
+    _require_regular_file_inside,
     execute_remediation,
     load_upgrade_actions,
     lockfile_commands,
@@ -455,3 +457,83 @@ def test_npm_upgrade_does_not_rewrite_a_similarly_named_package(tmp_path):
     update_dependency_manifests(workspace, action)
     assert json.loads(manifest.read_text(encoding="utf-8"))["dependencies"] == {
         "foo-bar": "2.0.0", "foo_bar": "1.0.0", "foobar": "1.0.0"}
+
+
+MANIFEST = '{"dependencies":{"lodash":"4.17.20"}}\n'
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
+def _link_workspace(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sentinel = tmp_path / "outside.json"
+    sentinel.write_text(MANIFEST, encoding="utf-8")
+    return workspace, sentinel
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_manifest_symlink_outside_clone_is_refused(tmp_path, relative):
+    workspace, sentinel = _link_workspace(tmp_path)
+    _symlink_or_skip(workspace / "package.json",
+                     Path("../outside.json") if relative else sentinel)
+    with pytest.raises(RemediationError, match="package.json.*link"):
+        update_dependency_manifests(workspace, _action())
+    assert sentinel.read_text(encoding="utf-8") == MANIFEST
+
+
+def test_unsafe_entry_prevents_any_partial_update(tmp_path):
+    workspace, sentinel = _link_workspace(tmp_path)
+    regular = workspace / "package.json"
+    regular.write_text(MANIFEST, encoding="utf-8")
+    (workspace / "z").mkdir()
+    _symlink_or_skip(workspace / "z" / "package.json", sentinel)
+    with pytest.raises(RemediationError, match="link"):
+        update_dependency_manifests(workspace, _action())
+    assert regular.read_text(encoding="utf-8") == MANIFEST
+    assert sentinel.read_text(encoding="utf-8") == MANIFEST
+
+
+def test_symlink_ancestor_is_refused(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    real = workspace / "real"
+    real.mkdir()
+    manifest = real / "package.json"
+    manifest.write_text(MANIFEST, encoding="utf-8")
+    alias = workspace / "alias"
+    _symlink_or_skip(alias, real)
+    with pytest.raises(RemediationError, match="link"):
+        _require_regular_file_inside(alias / "package.json", workspace)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions")
+def test_windows_junction_cannot_reach_outside_the_clone(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "package.json"
+    sentinel.write_text(MANIFEST, encoding="utf-8")
+    junction = workspace / "linked"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+                   check=True, capture_output=True)
+    with pytest.raises(RemediationError):
+        update_dependency_manifests(workspace, _action())
+    with pytest.raises(RemediationError, match="link"):
+        _require_regular_file_inside(junction / "package.json", workspace)
+    assert sentinel.read_text(encoding="utf-8") == MANIFEST
+
+
+def test_regular_manifest_inside_clone_still_updates(tmp_path):
+    workspace = tmp_path / "workspace"
+    (workspace / "app").mkdir(parents=True)
+    manifest = workspace / "app" / "package.json"
+    manifest.write_text(MANIFEST, encoding="utf-8")
+    assert update_dependency_manifests(workspace, _action()) == [manifest]
+    assert "4.17.21" in manifest.read_text(encoding="utf-8")
