@@ -164,7 +164,8 @@ def targets_dir(workspace_id: str | None = None) -> Path:
     workspace_id = _clean_workspace_id(workspace_id)
     d = (cfgmod.config_dir() / "targets" if workspace_id is None else
          cfgmod.config_dir() / "sessions" / workspace_id / "targets")
-    d.mkdir(parents=True, exist_ok=True)
+    cfgmod.config_dir().mkdir(mode=0o700, parents=True, exist_ok=True)
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
     return d
 
 
@@ -174,11 +175,23 @@ def touch_workspace(workspace_id: str) -> None:
     if workspace_id is None:
         return
     directory = cfgmod.config_dir() / "sessions" / workspace_id
-    directory.mkdir(parents=True, exist_ok=True)
+    # A browser that has stored nothing must not cost a directory.
     try:
-        directory.touch()
+        if directory.is_dir():
+            directory.touch()
     except OSError:
         pass
+
+
+def workspace_exists(workspace_id: str) -> bool:
+    workspace_id = _clean_workspace_id(workspace_id)
+    return bool(workspace_id) and (
+        cfgmod.config_dir() / "sessions" / workspace_id).is_dir()
+
+
+def workspace_count() -> int:
+    root = cfgmod.config_dir() / "sessions"
+    return sum(1 for _ in root.iterdir()) if root.is_dir() else 0
 
 
 def _registry_path(workspace_id: str | None = None) -> Path:
@@ -186,6 +199,8 @@ def _registry_path(workspace_id: str | None = None) -> Path:
 
 
 def load_targets(workspace_id: str | None = None) -> list[dict]:
+    if workspace_id is not None and not workspace_exists(workspace_id):
+        return []
     with _LOCK:
         p = _registry_path(workspace_id)
         if p.exists():
@@ -583,8 +598,10 @@ def load_summary(target_id: str, workspace_id: str | None = None) -> dict | None
     target_id = _validate_target_id(target_id)
     with _LOCK:
         target = get_target(target_id, workspace_id)
+        if target is None:
+            return None
         path = summary_path(target_id, workspace_id)
-        if target is None or not path.exists():
+        if not path.exists():
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))

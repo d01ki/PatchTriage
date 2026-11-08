@@ -5,7 +5,8 @@ It operates only on a repository path explicitly supplied by the operator,
 clones the current committed revision into an isolated workspace, updates
 supported dependency manifests, refreshes supported lockfiles with lifecycle
 scripts disabled, runs explicitly requested checks, and optionally rescans the
-workspace with OSV-Scanner.
+workspace with OSV-Scanner. Lockfile refresh is skipped for a project whose
+own configuration or build backend a package manager would execute.
 
 The source checkout is never modified and this module never pushes, merges, or
 deploys a change.
@@ -18,15 +19,18 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Iterable
 
 from pydantic import BaseModel, Field
 
-from .ingest.parsers import load_file
-from .plan import Action
+from .ingest.parsers import load_file_with_metadata
+from .plan import Action, compare_versions, versions_comparable
+from .repository_local import osv_source_scan_command
 
 
 DEFAULT_COMMAND_TIMEOUT = 10 * 60
@@ -53,6 +57,23 @@ _QUOTED_DEPENDENCY = re.compile(
     r"(?P<spec>(?:(?:===|==|~=|!=|<=|>=|<|>)[^'\"]*)?)"
     r"(?P=quote)"
 )
+_NON_REGISTRY_PREFIXES = (
+    "file:", "git:", "git+", "github:", "http:", "https:", "link:", "npm:",
+    "portal:", "ssh:", "workspace:",
+)
+_PACKAGE_MANAGER_ENV = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+    "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA", "TEMP", "TMP",
+    "TMPDIR", "LANG", "LC_ALL", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
+}
+_PACKAGE_MANAGER_FLAGS = {
+    "CI": "true",
+    "NPM_CONFIG_AUDIT": "false",
+    "NPM_CONFIG_FUND": "false",
+    "NPM_CONFIG_IGNORE_SCRIPTS": "true",
+    "npm_config_ignore_scripts": "true",
+}
 _POETRY_DEPENDENCY = re.compile(
     r"^(?P<indent>\s*)(?P<name>[A-Za-z0-9_.-]+)\s*=\s*"
     r"(?P<value>.+?)(?P<comment>\s+#.*)?$"
@@ -76,6 +97,8 @@ class ScanRecord(BaseModel):
     scanner: str = ""
     output: str = ""
     remaining_cves: list[str] = Field(default_factory=list)
+    other_package_cves: list[str] = Field(default_factory=list)
+    reason: str = ""
 
 
 class RemediationResult(BaseModel):
@@ -115,6 +138,36 @@ def _iter_files(root: Path, names: Iterable[str],
                 yield base / filename
 
 
+def _is_link(info: os.stat_result) -> bool:
+    """A symlink, or on Windows any reparse point such as a junction."""
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def _require_regular_file_inside(path: Path, root: Path) -> None:
+    """Refuse a manifest reached through a link or leaving the clone.
+
+    Repository content is untrusted: a committed link named ``package.json``
+    would otherwise be read and rewritten at its destination.
+    """
+    relative = path.relative_to(root)
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if _is_link(os.lstat(current)):
+            raise RemediationError(
+                f"{relative.as_posix()}: refusing to follow a symbolic link "
+                "or junction in the repository"
+            )
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        raise RemediationError(f"{relative.as_posix()}: not a regular file")
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise RemediationError(
+            f"{relative.as_posix()}: resolves outside the repository clone"
+        )
+
+
 def _write_if_changed(path: Path, before: str, after: str) -> bool:
     if after == before:
         return False
@@ -122,8 +175,26 @@ def _write_if_changed(path: Path, before: str, after: str) -> bool:
     return True
 
 
-def _update_package_json(path: Path, package: str,
-                         target_version: str) -> bool:
+def _require_current_pin(path: Path, name: str, pinned: str, installed: str,
+                         target_version: str) -> None:
+    """An exact pin to some other version means the report does not match."""
+    if installed and pinned not in (installed, target_version):
+        raise RemediationError(
+            f"{path}: {name} is pinned to {pinned}, but the report observed "
+            f"{installed}; regenerate the report for this checkout"
+        )
+
+
+def _require_python_pin(path: Path, name: str, spec: str, installed: str,
+                        target_version: str) -> None:
+    pinned = re.fullmatch(r"\s*==\s*([^,*\s]+)\s*", spec or "")
+    if pinned:
+        _require_current_pin(
+            path, name, pinned.group(1), installed, target_version)
+
+
+def _update_package_json(path: Path, package: str, target_version: str,
+                         installed: str = "") -> bool:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -134,19 +205,21 @@ def _update_package_json(path: Path, package: str,
         if not isinstance(dependencies, dict):
             continue
         for name in list(dependencies):
-            if _normalized_package(name) != _normalized_package(package):
+            if name != package:  # npm names are exact strings
                 continue
             value = dependencies[name]
             if not isinstance(value, str):
                 raise RemediationError(
                     f"{path}: dependency {name} is not a string"
                 )
-            if value.startswith((
-                "file:", "git+", "http:", "https:", "workspace:",
-            )):
+            if value.startswith(_NON_REGISTRY_PREFIXES) or "/" in value:
                 raise RemediationError(
                     f"{path}: dependency {name} uses a non-registry source"
                 )
+            pinned = re.fullmatch(r"=?v?(\d\S*)", value.strip())
+            if pinned:
+                _require_current_pin(
+                    path, name, pinned.group(1), installed, target_version)
             if value != target_version:
                 dependencies[name] = target_version
                 changed = True
@@ -160,8 +233,8 @@ def _update_package_json(path: Path, package: str,
     return True
 
 
-def _update_requirements(path: Path, package: str,
-                         target_version: str) -> bool:
+def _update_requirements(path: Path, package: str, target_version: str,
+                         installed: str = "") -> bool:
     before = path.read_text(encoding="utf-8")
     output: list[str] = []
     changed = False
@@ -173,6 +246,8 @@ def _update_requirements(path: Path, package: str,
                 != _normalized_package(package)):
             output.append(line)
             continue
+        _require_python_pin(path, match.group("name"), match.group("spec"),
+                            installed, target_version)
         replacement = (
             f"{match.group('indent')}{match.group('name')}"
             f"{match.group('extras') or ''}=={target_version}"
@@ -184,8 +259,8 @@ def _update_requirements(path: Path, package: str,
     return _write_if_changed(path, before, "".join(output)) if changed else False
 
 
-def _replace_quoted_dependency(line: str, package: str,
-                               target_version: str) -> tuple[str, bool]:
+def _replace_quoted_dependency(line: str, package: str, target_version: str,
+                               path: Path, installed: str) -> tuple[str, bool]:
     changed = False
 
     def replace(match: re.Match) -> str:
@@ -193,6 +268,8 @@ def _replace_quoted_dependency(line: str, package: str,
         if (_normalized_package(match.group("name"))
                 != _normalized_package(package)):
             return match.group(0)
+        _require_python_pin(path, match.group("name"), match.group("spec"),
+                            installed, target_version)
         changed = True
         return (
             f"{match.group('quote')}{match.group('name')}"
@@ -237,8 +314,8 @@ def _replace_poetry_dependency(line: str, package: str,
     )
 
 
-def _update_pyproject(path: Path, package: str,
-                      target_version: str) -> bool:
+def _update_pyproject(path: Path, package: str, target_version: str,
+                      installed: str = "") -> bool:
     before = path.read_text(encoding="utf-8")
     section = ""
     output: list[str] = []
@@ -265,7 +342,7 @@ def _update_pyproject(path: Path, package: str,
             process_array = True
         if process_array:
             line, line_changed = _replace_quoted_dependency(
-                line, package, target_version
+                line, package, target_version, path, installed
             )
             if section == "project" and "]" in line:
                 in_project_dependencies = False
@@ -286,31 +363,57 @@ def _update_pyproject(path: Path, package: str,
     return _write_if_changed(path, before, "".join(output)) if changed else False
 
 
-def update_dependency_manifests(workspace: Path, action: Action) -> list[Path]:
-    """Update supported direct dependency declarations for one action."""
+def update_dependency_manifests(workspace: Path, action: Action,
+                                manifest: str | None = None) -> list[Path]:
+    """Update supported direct dependency declarations for one action.
+
+    A report does not say which workspace of a monorepo it scanned, so a
+    package declared in several directories needs ``manifest`` to choose one.
+    """
     if action.kind != "upgrade" or not action.target_version:
         raise RemediationError("the selected action has no confirmed upgrade")
     ecosystem = action.ecosystem.casefold()
-    changed: list[Path] = []
+    updates: list[tuple[Path, Callable[..., bool]]] = []
     if ecosystem in {"npm", "node", "javascript"}:
-        for path in _iter_files(workspace, {"package.json"}):
-            if _update_package_json(path, action.package, action.target_version):
-                changed.append(path)
+        updates += [(path, _update_package_json)
+                    for path in _iter_files(workspace, {"package.json"})]
     elif ecosystem in {"pypi", "python", "pip"}:
-        for path in _iter_files(workspace, {"pyproject.toml"}):
-            if _update_pyproject(path, action.package, action.target_version):
-                changed.append(path)
-        for path in _iter_files(
+        updates += [(path, _update_pyproject)
+                    for path in _iter_files(workspace, {"pyproject.toml"})]
+        updates += [(path, _update_requirements) for path in _iter_files(
             workspace,
             {"requirements.txt"},
             prefixes=("requirements-", "requirements."),
-        ):
-            if _update_requirements(path, action.package, action.target_version):
-                changed.append(path)
+        )]
     else:
         raise RemediationError(
             f"automatic remediation is not supported for ecosystem "
             f"{action.ecosystem!r}"
+        )
+    # Check every file first so one unsafe entry leaves nothing half-updated.
+    for path, _update in updates:
+        _require_regular_file_inside(path, workspace)
+    if manifest:
+        chosen = (workspace / manifest).parent
+        updates = [item for item in updates if item[0].parent == chosen]
+        if not any(item[0] == workspace / manifest for item in updates):
+            raise RemediationError(
+                f"{manifest} is not a supported manifest in this repository"
+            )
+    originals = {path: path.read_bytes() for path, _update in updates}
+    changed = [
+        path for path, update in updates
+        if update(path, action.package, action.target_version,
+                  action.installed_version)
+    ]
+    directories = sorted({path.parent.relative_to(workspace).as_posix()
+                          for path in changed})
+    if len(directories) > 1:
+        for path in changed:
+            path.write_bytes(originals[path])
+        raise RemediationError(
+            f"{action.package} is declared in several directories "
+            f"({', '.join(directories)}); choose one with --manifest"
         )
     if not changed:
         raise RemediationError(
@@ -344,7 +447,8 @@ def lockfile_commands(workspace: Path, action: Action,
                 continue
             root, name = lock
             command = (
-                ["pnpm", "install", "--lockfile-only", "--ignore-scripts"]
+                ["pnpm", "install", "--lockfile-only", "--ignore-scripts",
+                 "--ignore-pnpmfile"]
                 if name == "pnpm-lock.yaml"
                 else [
                     "npm", "install", "--package-lock-only", "--ignore-scripts",
@@ -357,13 +461,48 @@ def lockfile_commands(workspace: Path, action: Action,
                 continue
             root, _name = lock
             command = [
-                "uv", "lock", "--upgrade-package",
+                "uv", "lock", "--no-build", "--no-config", "--upgrade-package",
                 f"{action.package}=={action.target_version}",
             ]
         else:
             continue
         commands[(str(root), command[0])] = (command, root)
     return list(commands.values())
+
+
+def _lockfile_refresh_hazard(command: list[str], cwd: Path) -> str:
+    """Why this refresh would run repository-controlled code, if it would.
+
+    ``--ignore-scripts`` does not cover an .npmrc naming its own ``git``
+    program, and ``uv --no-build`` still builds the root project when its
+    metadata is dynamic, so these cases are detected rather than flagged off.
+    """
+    if command[0] in {"npm", "pnpm"}:
+        for name in (".npmrc", ".pnpmfile.cjs"):
+            if (cwd / name).exists():
+                return f"the repository has its own {name}"
+        return ""
+    if command[0] == "uv":
+        try:
+            text = (cwd / "pyproject.toml").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return "its pyproject.toml could not be read"
+        if not re.search(r"^\s*\[project\]", text, re.M):
+            return "its pyproject.toml has no static [project] metadata"
+        if re.search(r"^\s*dynamic\s*=", text, re.M):
+            return "its project metadata is dynamic and would need a build"
+        if "backend-path" in text or "[tool.uv" in text:
+            return "its pyproject.toml configures a local build or uv source"
+    return ""
+
+
+def _find_tool(name: str) -> str | None:
+    """shutil.which, minus Windows' implicit search of the current folder."""
+    found = shutil.which(name)
+    if found and sys.platform == "win32" and (
+            Path(found).resolve().parent == Path.cwd().resolve()):
+        return None
+    return found
 
 
 def parse_check_command(value: str) -> list[str]:
@@ -385,7 +524,7 @@ def _run_command(
     command: list[str], *, cwd: Path, kind: str, runner: Runner,
     timeout: int, environment: dict[str, str],
 ) -> CommandRecord:
-    executable = shutil.which(command[0])
+    executable = _find_tool(command[0])
     if not executable:
         raise RemediationError(
             f"required executable {command[0]!r} was not found"
@@ -432,6 +571,11 @@ def _git(git: str, args: list[str], *, cwd: Path | None = None,
         check=False,
     )
     if completed.returncode:
+        if "dubious ownership" in str(completed.stderr or ""):
+            raise RemediationError(
+                "git does not trust this repository's owner; if you trust it, "
+                "add it with: git config --global --add safe.directory <path>"
+            )
         raise RemediationError(
             f"git command failed with exit code {completed.returncode}"
         )
@@ -441,6 +585,76 @@ def _git(git: str, args: list[str], *, cwd: Path | None = None,
 def _safe_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9._-]+", "-", value.casefold()).strip("-._")
     return (slug or "dependency")[:48]
+
+
+def _report_repository(report_path: Path) -> str:
+    """The owner/name a report's evidence was imported from, when known."""
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        return str((report.get("coverage") or {}).get("repository") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _require_matching_origin(expected: str, git: str, repository: Path,
+                             runner: Runner) -> str | None:
+    """Reject a checkout of another repository; returns a warning if unknown."""
+    if not expected:
+        return None
+    completed = runner(
+        [git, "remote", "get-url", "origin"],
+        cwd=repository, capture_output=True, text=True,
+        timeout=DEFAULT_COMMAND_TIMEOUT, check=False)
+    origin = completed.stdout.strip() if completed.returncode == 0 else ""
+    if not origin:
+        return (f"the report describes {expected}, but this checkout has no "
+                "origin remote to compare it with")
+    normalized = re.sub(r"\.git/?$", "", origin).rstrip("/").casefold()
+    wanted = re.sub(r"\.git/?$", "", expected).casefold()
+    if not re.search(rf"[/:]{re.escape(wanted)}$", normalized):
+        raise RemediationError(
+            f"the report describes {expected}, which does not match this "
+            "checkout's origin remote"
+        )
+    return None
+
+
+def package_manager_environment(home: Path) -> dict[str, str]:
+    """A minimal environment for tools that process repository content.
+
+    Tokens and user-level registry configuration stay out. An operator who
+    needs a private registry names those variables explicitly in
+    PATCHTRIAGE_REMEDIATION_PASS_ENV.
+    """
+    allowed = set(_PACKAGE_MANAGER_ENV) | {
+        name.strip().upper() for name in
+        os.environ.get("PATCHTRIAGE_REMEDIATION_PASS_ENV", "").split(",")
+        if name.strip()}
+    environment = {key: value for key, value in os.environ.items()
+                   if key.upper() in allowed}
+    home.mkdir(parents=True, exist_ok=True)
+    for name in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+                 "XDG_CONFIG_HOME"):
+        if name not in environment:
+            environment[name] = str(home)
+    environment.setdefault("NPM_CONFIG_USERCONFIG", str(home / ".npmrc"))
+    if not any(key.upper() == "NPM_CONFIG_REGISTRY" for key in environment):
+        # Outranks a repository .npmrc, which could name its own registry.
+        environment["NPM_CONFIG_REGISTRY"] = "https://registry.npmjs.org/"
+    environment.update(_PACKAGE_MANAGER_FLAGS)
+    return environment
+
+
+def _is_real_upgrade(action: Action) -> bool:
+    """Older reports may name a target that is not an upgrade at all."""
+    return bool(
+        action.installed_version
+        and versions_comparable(
+            action.target_version, action.installed_version, action.ecosystem)
+        and compare_versions(
+            action.target_version, action.installed_version,
+            action.ecosystem) > 0
+    )
 
 
 def load_upgrade_actions(report_path: Path) -> list[Action]:
@@ -463,6 +677,7 @@ def load_upgrade_actions(report_path: Path) -> list[Action]:
     return [
         action for action in actions
         if action.kind == "upgrade" and action.target_version
+        and _is_real_upgrade(action)
     ]
 
 
@@ -477,20 +692,84 @@ def _select_action(actions: list[Action], action_id: str | None) -> Action:
     return actions[0]
 
 
-def _scan_remaining_cves(scan_path: Path, expected: Iterable[str]) -> list[str]:
-    expected_ids = {value.upper() for value in expected}
+def _ecosystem_family(value: str) -> str:
+    normalized = str(value or "").casefold()
+    if normalized in {"npm", "node", "javascript"}:
+        return "npm"
+    if normalized in {"pypi", "python", "pip"}:
+        return "pypi"
+    return normalized
+
+
+def _is_action_package(observed: dict, action: Action) -> bool:
+    family = _ecosystem_family(action.ecosystem)
+    if _ecosystem_family(observed.get("ecosystem", "")) != family:
+        return False
+    name = str(observed.get("name") or "")
+    if family == "pypi":
+        return _normalized_package(name) == _normalized_package(action.package)
+    return name == action.package
+
+
+def _evaluate_rescan(scan_path: Path, action: Action) -> ScanRecord:
+    """Judge a rescan by what it observed about the upgraded package.
+
+    A CVE's absence only counts when the scan saw the package at the target
+    version and no older copy of it; an empty scan observed nothing.
+    """
     try:
-        findings = load_file(scan_path, fmt="osv")
+        loaded = load_file_with_metadata(scan_path, fmt="osv")
+        data = json.loads(scan_path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise RemediationError(
             "OSV-Scanner output could not be parsed"
         ) from exc
-    observed = {
-        identifier.upper()
-        for finding in findings
-        for identifier in (finding.vuln_id, *finding.aliases)
-    }
-    return sorted(expected_ids & observed)
+    expected = {value.upper() for value in action.cves}
+    versions: set[str] = set()
+    remaining: set[str] = set()
+    other_packages: set[str] = set()
+    for result in data["results"]:
+        packages = result.get("packages") if isinstance(result, dict) else None
+        for entry in packages if isinstance(packages, list) else []:
+            package = entry.get("package") if isinstance(entry, dict) else None
+            if not isinstance(package, dict):
+                continue
+            hits = expected & {
+                str(identifier).upper()
+                for vulnerability in entry.get("vulnerabilities") or []
+                if isinstance(vulnerability, dict)
+                for identifier in (vulnerability.get("id", ""),
+                                   *(vulnerability.get("aliases") or []))
+            }
+            if _is_action_package(package, action):
+                versions.add(str(package.get("version") or ""))
+                remaining |= hits
+            else:
+                other_packages |= hits
+
+    def record(status: str, reason: str) -> ScanRecord:
+        return ScanRecord(
+            status=status, scanner="osv-scanner", output=str(scan_path),
+            remaining_cves=sorted(remaining),
+            other_package_cves=sorted(other_packages), reason=reason)
+
+    compare = lambda version: compare_versions(
+        version, action.target_version, action.ecosystem)
+    if remaining:
+        return record("failed", f"{action.package} is still reported as "
+                                "affected by the target CVEs")
+    if not loaded.coverage["complete"]:
+        return record("unverified", "the scan output has malformed rows")
+    if not versions:
+        return record("unverified", f"the scan did not observe {action.package}")
+    if not any(compare(version) == 0 for version in versions):
+        return record("unverified", f"the scan did not observe {action.package} "
+                                    f"at {action.target_version}")
+    older = sorted(version for version in versions if compare(version) < 0)
+    if older:
+        return record("unverified", f"older {action.package} versions remain: "
+                                    + ", ".join(older))
+    return record("cleared", "")
 
 
 def execute_remediation(
@@ -499,6 +778,7 @@ def execute_remediation(
     output_dir: Path,
     *,
     action_id: str | None = None,
+    manifest: str | None = None,
     checks: Iterable[str] = (),
     refresh_lockfiles: bool = True,
     rescan: bool = True,
@@ -528,13 +808,17 @@ def execute_remediation(
 
     action = _select_action(load_upgrade_actions(report_path), action_id)
 
-    git = shutil.which("git")
+    git = _find_tool("git")
     if not git:
         raise RemediationError("git is required for remediation")
     warnings: list[str] = []
+    origin_warning = _require_matching_origin(
+        _report_repository(report_path), git, repository, runner)
+    if origin_warning:
+        warnings.append(origin_warning)
     source_status = _git(
         git,
-        ["-c", f"safe.directory={repository}", "status", "--porcelain"],
+        ["status", "--porcelain"],
         cwd=repository,
         runner=runner,
     ).stdout.strip()
@@ -546,8 +830,7 @@ def execute_remediation(
     workspace = output_dir / "workspace"
     _git(
         git,
-        ["-c", f"safe.directory={repository}",
-         "clone", "--quiet", "--local", "--no-hardlinks",
+        ["clone", "--quiet", "--local", "--no-hardlinks",
          str(repository), str(workspace)],
         runner=runner,
     )
@@ -560,15 +843,12 @@ def execute_remediation(
     )
     _git(git, ["switch", "-c", branch], cwd=workspace, runner=runner)
 
-    changed_manifests = update_dependency_manifests(workspace, action)
-    environment = os.environ.copy()
-    environment.update({
-        "CI": "true",
-        "NPM_CONFIG_AUDIT": "false",
-        "NPM_CONFIG_FUND": "false",
-        "NPM_CONFIG_IGNORE_SCRIPTS": "true",
-        "npm_config_ignore_scripts": "true",
-    })
+    changed_manifests = update_dependency_manifests(
+        workspace, action, manifest)
+    environment = package_manager_environment(output_dir / "tool-home")
+    # Checks are the operator's own commands, so they keep the operator's
+    # environment; package managers and the scanner above do not.
+    check_environment = {**os.environ, **_PACKAGE_MANAGER_FLAGS}
     command_records: list[CommandRecord] = []
 
     lock_commands = lockfile_commands(workspace, action, changed_manifests)
@@ -588,6 +868,13 @@ def execute_remediation(
             )
     if refresh_lockfiles:
         for command, cwd in lock_commands:
+            hazard = _lockfile_refresh_hazard(command, cwd)
+            if hazard:
+                warnings.append(
+                    f"{command[0]} lockfile was not refreshed because {hazard}; "
+                    "review the project and refresh it yourself"
+                )
+                continue
             command_records.append(_run_command(
                 command,
                 cwd=cwd,
@@ -607,55 +894,51 @@ def execute_remediation(
             kind="check",
             runner=runner,
             timeout=timeout,
-            environment=environment,
+            environment=check_environment,
         ))
 
     scan = ScanRecord()
     if rescan:
-        scanner = scanner_binary or shutil.which("osv-scanner")
+        scanner = scanner_binary or _find_tool("osv-scanner")
         if scanner:
             scan_path = output_dir / "osv-remediation.json"
             scanner_config = output_dir / "trusted-osv-scanner.toml"
             scanner_config.write_text("", encoding="utf-8")
-            command = [
-                scanner, "--config", str(scanner_config),
-                "scan", "source", "--format", "json",
-                "--output", str(scan_path), "--no-resolve", "--all-packages",
-                str(workspace),
-            ]
+            command = osv_source_scan_command(
+                scanner, scan_path, scanner_config, workspace)
             started = time.perf_counter()
-            completed = runner(
-                command,
-                cwd=workspace,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-            command_records.append(CommandRecord(
-                command=["osv-scanner", *command[1:]],
-                cwd=str(workspace),
-                exit_code=completed.returncode,
-                duration_seconds=round(time.perf_counter() - started, 3),
-                kind="rescan",
-            ))
-            if completed.returncode not in (0, 1):
-                raise RemediationError(
-                    "OSV-Scanner remediation scan failed with exit code "
-                    f"{completed.returncode}"
+            try:
+                completed = runner(
+                    command,
+                    cwd=workspace,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
                 )
-            if not scan_path.exists():
-                raise RemediationError(
-                    "OSV-Scanner did not produce remediation output"
-                )
-            remaining = _scan_remaining_cves(scan_path, action.cves)
-            scan = ScanRecord(
-                status="failed" if remaining else "cleared",
-                scanner="osv-scanner",
-                output=str(scan_path),
-                remaining_cves=remaining,
-            )
+            except subprocess.TimeoutExpired:
+                scan = ScanRecord(
+                    status="unverified", scanner="osv-scanner",
+                    reason=f"the rescan timed out after {timeout} seconds")
+            else:
+                command_records.append(CommandRecord(
+                    command=["osv-scanner", *command[1:]],
+                    cwd=str(workspace),
+                    exit_code=completed.returncode,
+                    duration_seconds=round(time.perf_counter() - started, 3),
+                    kind="rescan",
+                ))
+                if completed.returncode not in (0, 1):
+                    raise RemediationError(
+                        "OSV-Scanner remediation scan failed with exit code "
+                        f"{completed.returncode}"
+                    )
+                if not scan_path.exists():
+                    raise RemediationError(
+                        "OSV-Scanner did not produce remediation output"
+                    )
+                scan = _evaluate_rescan(scan_path, action)
         else:
             warnings.append("OSV-Scanner was not found; rescan skipped")
 
@@ -680,7 +963,8 @@ def execute_remediation(
     )
     if scan.status == "failed":
         status = "verification_failed"
-    elif scan.status == "cleared" or checks_requested:
+    elif scan.status == "cleared" or (
+            checks_requested and scan.status != "unverified"):
         status = "verified"
     else:
         status = "patched_unverified"

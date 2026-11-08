@@ -435,15 +435,6 @@ def _infer_automatable(finding: Finding) -> DecisionPoint:
             [f"Automatable confirmed as {_LABELS[value.value]}"],
             inferred=False,
         )
-    asset_value = str(getattr(finding.asset, "automatable", "unknown") or "unknown")
-    if asset_value in (Automatable.YES.value, Automatable.NO.value):
-        value = Automatable(asset_value)
-        return _point(
-            "A", "2.0.0", value, Confidence.HIGH,
-            "asset inventory", [f"Automatable confirmed as {_LABELS[value.value]}"],
-            inferred=False,
-        )
-
     enrichment = finding.enrichment
     published = _VULNRICHMENT_AUTOMATABLE.get(
         str(enrichment.ssvc_automatable or "").casefold())
@@ -468,6 +459,18 @@ def _infer_automatable(finding: Finding) -> DecisionPoint:
             "A", "2.0.0", value, Confidence.HIGH,
             "CVSS v4 Automatable", [f"CVSS vector contains AU:{metrics['AU']}"],
             inferred=True,
+        )
+    # Automatable is a property of the vulnerability. A target-wide inventory
+    # value is only used when nothing specific exists, and needs confirming.
+    asset_value = str(getattr(finding.asset, "automatable", "unknown") or "unknown")
+    if asset_value in (Automatable.YES.value, Automatable.NO.value):
+        value = Automatable(asset_value)
+        return _point(
+            "A", "2.0.0", value, Confidence.LOW,
+            "asset inventory (target-wide assumption)",
+            [f"Inventory assumes Automatable is {_LABELS[value.value]} for "
+             "every vulnerability on this asset"],
+            needs_confirmation=True,
         )
     return _point(
         "A", "2.0.0", Automatable.YES, Confidence.LOW,

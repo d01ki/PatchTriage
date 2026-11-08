@@ -67,22 +67,25 @@ Invoke-Item .\out\demo_report.html   # C: demo
 
 ### B. Guided terminal run
 
-The wizard asks, in order (if it first asks **Run setup first?**, answer `n`;
-keys come from the [optional settings](#optional-settings) below — see
-[#22](https://github.com/d01ki/PatchTriage/issues/22)):
+To save API keys once for later runs, use `docker compose run --rm setup`
+(optional; environment variables below take precedence). If the wizard asks
+**Run setup first?** and you have no keys to save, answer `n`.
 
-1. **Input** — a scan or SBOM path. The PatchTriage folder is visible to the
-   container, so copy the file there first and enter its name:
-   `Copy-Item C:\path\to\sbom.json .` → `sbom.json`
-2. **Target context** — SSVC System Exposure, Mission Impact, Safety Impact
-   (press Enter for `unknown`).
+The wizard asks, in order:
+
+1. **Input** — a GitHub repository URL, or a scan or SBOM path. The PatchTriage
+   folder is visible to the container, so copy a file there first and enter its
+   name: `Copy-Item C:\path\to\sbom.json .` → `sbom.json`
+2. **Target context** — SSVC System Exposure, Mission Impact, Safety Impact,
+   and the separate CISA BOD 26-04 inputs (press Enter for `unknown`).
 3. **Backend** — `rules` (deterministic) unless an AI provider is configured.
 4. **Report** — written to `.\out\report.html` and `.\out\report.json`.
 5. **Local patch** (optional) — prepare a dependency upgrade in an isolated
    clone.
 
-Repository URLs are currently GUI-only in Docker (tracked in
-[#19](https://github.com/d01ki/PatchTriage/issues/19)).
+`github.com` URLs work by default. Other HTTPS Git hosts need
+`$env:PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES = "true"` and are not available in
+a public deployment.
 
 ### Optional settings
 
@@ -99,7 +102,8 @@ optional.
 ### Inputs
 
 Trivy, Grype, or osv-scanner JSON; CycloneDX or SPDX JSON SBOMs (resolved
-online through [OSV.dev](https://osv.dev)); GitHub repository URLs (GUI).
+online through [OSV.dev](https://osv.dev)); GitHub repository URLs (GUI and
+guided terminal run).
 A result marked **coverage incomplete** names what could not be checked — an
 empty result is never proof of safety.
 

@@ -259,6 +259,7 @@ def declared_constraints(manifests: dict[str, str]
     """
     found: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
     warnings: list[str] = []
+    differing: set[tuple[str, str]] = set()
     for path in sorted(manifests, key=lambda p: (p.count("/"), p)):
         text, base = manifests[path], path.rsplit("/", 1)[-1]
         try:
@@ -280,9 +281,16 @@ def declared_constraints(manifests: dict[str, str]
             constraints, paths = found.setdefault(key, ([], []))
             if path not in paths:
                 paths.append(path)
+            if spec and constraints and spec not in constraints:
+                differing.add(key)
             if spec and spec not in constraints and (
                     ecosystem == "PyPI" or not constraints):
                 constraints.append(spec)
+    for ecosystem, name in sorted(differing):
+        warnings.append(
+            f"{ecosystem} package {name} has different version constraints in "
+            f"{', '.join(found[(ecosystem, name)][1])}; the combined result "
+            "may not describe any one of those workspaces.")
     return ({key: (",".join(c), paths) for key, (c, paths) in found.items()},
             warnings)
 

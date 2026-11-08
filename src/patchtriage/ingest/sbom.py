@@ -129,6 +129,8 @@ def get_last_source_coverage() -> dict[str, Any] | None:
 # --------------------------------------------------------------- SBOM parsing
 def is_sbom(data: dict) -> str | None:
     """Return 'cyclonedx' | 'spdx' if data looks like an SBOM, else None."""
+    if not isinstance(data, dict):
+        return None
     if data.get("bomFormat") == "CycloneDX" or "components" in data and \
             data.get("specVersion"):
         return "cyclonedx"

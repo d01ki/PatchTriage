@@ -217,7 +217,7 @@ def run(
     output: Optional[Path] = typer.Option(None, "-o", help="Write full JSON report"),
     html: Optional[Path] = typer.Option(None, help="Write self-contained HTML dashboard"),
     limit: Optional[int] = typer.Option(
-        None, help="Report top-N after deterministic SSVC screening"),
+        None, min=1, help="Report top-N after deterministic SSVC screening"),
 ):
     """Ingest -> dedup -> context -> enrich -> triage -> plan -> report."""
     triage = triage or cfgmod.load().get("default_backend") or "rules"
@@ -382,6 +382,16 @@ def _print_remediation_result(result) -> None:
             "[red]remaining target CVEs:[/red] "
             + ", ".join(result.scan.remaining_cves)
         )
+    if result.scan.other_package_cves:
+        console.print(
+            "[yellow]same CVEs on other packages (not part of this "
+            "upgrade):[/yellow] " + ", ".join(result.scan.other_package_cves)
+        )
+    if result.scan.reason:
+        console.print(
+            f"[yellow]rescan {result.scan.status}:[/yellow] "
+            f"{result.scan.reason}"
+        )
     console.print("\n[bold]Local review commands[/bold]")
     commands = [
         f'git -C "{result.workspace}" diff --check',
@@ -405,6 +415,7 @@ def _execute_remediation_cli(
     rescan: bool,
     scanner: Optional[str],
     timeout: int,
+    manifest: Optional[str] = None,
 ):
     from .remediation import RemediationError, execute_remediation
 
@@ -419,6 +430,7 @@ def _execute_remediation_cli(
             rescan=rescan,
             scanner_binary=scanner,
             timeout=timeout,
+            manifest=manifest,
         )
     except RemediationError as exc:
         console.print(f"[red]remediation failed:[/red] {exc}")
@@ -440,6 +452,7 @@ def _guided_remediation(
     no_scan: bool,
     scanner: Optional[str],
     timeout: int,
+    manifest: Optional[str] = None,
 ):
     """Collect missing local remediation inputs and execute the patch."""
     from .remediation import RemediationError
@@ -519,6 +532,7 @@ def _guided_remediation(
         rescan=rescan,
         scanner=scanner,
         timeout=timeout,
+        manifest=manifest,
     )
 
 
@@ -557,6 +571,11 @@ def remediate(
     timeout: int = typer.Option(
         600, min=1, help="Per-command timeout in seconds",
     ),
+    manifest: Optional[str] = typer.Option(
+        None, "--manifest",
+        help="Manifest to patch when the package is declared in several "
+             "directories (path relative to the repository)",
+    ),
 ):
     """Create and verify one dependency patch in an isolated local clone.
 
@@ -579,6 +598,7 @@ def remediate(
             no_scan=no_scan,
             scanner=scanner,
             timeout=timeout,
+            manifest=manifest,
         )
     except (RemediationError, ValueError, OSError) as exc:
         console.print(f"[red]remediation failed:[/red] {exc}")
@@ -849,17 +869,28 @@ def start():
             "SSVC Safety Impact",
             ("catastrophic", "critical", "marginal", "negligible", "unknown"),
         )
+        applicability = ask_ssvc(
+            "CISA BOD 26-04 applicability",
+            ("required", "voluntary", "not_applicable", "unknown"),
+        )
+        publicly_exposed = ask_ssvc(
+            "BOD 26-04 Publicly Exposed (not the same as SSVC System Exposure)",
+            ("yes", "no", "unknown"),
+        )
         reachable = typer.confirm(
             "Is the vulnerable path confirmed reachable?", default=False)
         runtime_observed = typer.confirm(
             "Was the component/path observed at runtime?", default=False)
         if (any(value != "unknown" for value in
-                (exposure, mission, safety))
+                (exposure, mission, safety, applicability,
+                 publicly_exposed))
                 or reachable or runtime_observed):
             override = Asset(
                 identifier="interactive", kind="host",
                 system_exposure=exposure,
                 mission_impact=mission, safety_impact=safety,
+                bod2604_applicability=applicability,
+                publicly_exposed=publicly_exposed,
                 reachable=reachable or None,
                 runtime_observed=runtime_observed or None,
             )
@@ -903,6 +934,7 @@ def start():
         override = (override or Asset(identifier=name)).model_copy(
             update={"identifier": name, "kind": "repository"})
         declared_coverage = dict(evidence.provenance.get("coverage") or {})
+        declared_coverage["repository"] = evidence.provenance.get("repository")
         provider_status = str(evidence.provenance.get("coverage_status") or "")
         warnings = list(evidence.provenance.get("warnings") or [])
         evidence_dir = Path(tempfile.mkdtemp(prefix="patchtriage-evidence-"))

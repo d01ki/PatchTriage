@@ -358,7 +358,11 @@ def test_target_quota_is_enforced(enhanced_server, monkeypatch):
     assert response == {"error": "target limit reached (1)"}
 
 
-def test_cookie_secure_flag_uses_forwarded_proto_not_host(enhanced_server):
+def test_cookie_secure_flag_uses_forwarded_proto_not_host(
+        enhanced_server, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_ALLOWED_HOSTS",
+                       "localhost,192.168.1.50,patch-triage.example")
+
     def cookie_for(headers: dict[str, str]) -> str:
         request = urllib.request.Request(enhanced_server + "/", headers=headers)
         with urllib.request.urlopen(request, timeout=15) as response:

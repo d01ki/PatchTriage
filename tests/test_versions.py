@@ -215,3 +215,12 @@ def test_manifest_ranges_are_read_without_executing_anything():
 ])
 def test_is_manifest(path, manifest):
     assert versions.is_manifest(path) is manifest
+
+
+def test_differing_constraints_across_manifests_are_called_out():
+    _, warnings = versions.declared_constraints({
+        "a/package.json": json.dumps({"dependencies": {"lodash": "^4.0.0"}}),
+        "b/package.json": json.dumps({"dependencies": {"lodash": "^3.0.0"}}),
+    })
+    assert any("lodash" in w and "a/package.json, b/package.json" in w
+               for w in warnings)

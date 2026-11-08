@@ -489,6 +489,24 @@ when their package-manager executable is installed. Unsupported lockfiles are
 left unchanged and called out in the result. The command never modifies the
 source checkout and never pushes, merges, or deploys a change.
 
+If a package is declared in several directories of a monorepo, choose one with
+`--manifest path/to/package.json`. A manifest pinned to a version other than
+the one in the report is refused, because the report does not describe that
+checkout.
+
+Package managers and the rescan run with a minimal environment and an isolated
+home directory, so tokens and your user-level registry settings are not
+available to them. To use a private registry, list the variables to forward in
+`PATCHTRIAGE_REMEDIATION_PASS_ENV` (comma-separated). `--check` commands are
+your own and keep your full environment.
+
+A lockfile is left unchanged, with a warning, when refreshing it would run code
+from the repository: a project-level `.npmrc` or `.pnpmfile.cjs`, or a
+`pyproject.toml` with dynamic metadata, a local build backend, or `tool.uv`
+settings. PatchTriage also no longer overrides Git's ownership check. If Git
+reports dubious ownership, add the repository with
+`git config --global --add safe.directory <path>` after confirming you trust it.
+
 In Docker, place (or clone) the application under the PatchTriage folder so it
 appears below `/work`:
 
@@ -637,8 +655,13 @@ Use explicit deployment settings behind TLS termination:
 PATCHTRIAGE_DEPLOYMENT_MODE=public
 PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=false
 PATCHTRIAGE_COOKIE_SECURE=true
+PATCHTRIAGE_ALLOWED_HOSTS=your.public.hostname
 PATCHTRIAGE_BUILD_SHA=<deployed-git-sha>
 ```
+
+Local mode answers only to `localhost` and loopback addresses. To reach it by a
+LAN name or IP, list those in `PATCHTRIAGE_ALLOWED_HOSTS`. A public deployment
+offers AI backends only with `PATCHTRIAGE_PUBLIC_AI=true`.
 
 `/api/config` exposes the application version, build SHA, UI schema version,
 repository capabilities, retention, and anonymous-workspace limits. Local and

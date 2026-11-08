@@ -18,6 +18,11 @@ services:
   # evidence, and reports live in the named 'config' volume for six hours.
   gui:
     build: .
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
     ports:
       - "${PATCHTRIAGE_BIND:-127.0.0.1}:${PATCHTRIAGE_PORT:-8765}:8765"
     environment:
@@ -35,6 +40,9 @@ services:
       - PATCHTRIAGE_DEPLOYMENT_MODE=${PATCHTRIAGE_DEPLOYMENT_MODE:-local}
       - PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=${PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES:-true}
       - PATCHTRIAGE_COOKIE_SECURE=${PATCHTRIAGE_COOKIE_SECURE:-auto}
+      - PATCHTRIAGE_ALLOWED_HOSTS
+      - PATCHTRIAGE_PUBLIC_AI
+      - PATCHTRIAGE_MAX_FINDINGS
       - PATCHTRIAGE_BUILD_SHA=${PATCHTRIAGE_BUILD_SHA:-development}
     volumes:
       - cache:/home/patchtriage/.cache
@@ -76,12 +84,18 @@ services:
       - GITHUB_TOKEN
       - GH_TOKEN
       - PATCHTRIAGE_IN_CONTAINER=1
+      # Bind-mounted checkouts are owned by the host user; this is the
+      # operator's explicit trust for this disposable container only.
+      - GIT_CONFIG_COUNT=1
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=*
       # Same repository import paths as the local GUI (see the gui service).
       - PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=${PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES:-true}
     volumes:
       - ./:/work
       - ./out:/out
       - cache:/home/patchtriage/.cache
+      - cli-config:/home/patchtriage/.config
     working_dir: /work
     entrypoint: ["patchtriage"]
     command: ["start"]
@@ -102,14 +116,30 @@ services:
       - GITHUB_TOKEN
       - GH_TOKEN
       - PATCHTRIAGE_IN_CONTAINER=1
+      - GIT_CONFIG_COUNT=1
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=*
     volumes:
       - ./:/work
       - ./out:/out
       - cache:/home/patchtriage/.cache
+      - cli-config:/home/patchtriage/.config
     working_dir: /work
     entrypoint: ["patchtriage"]
     command: ["--help"]
 
+  # Saves API keys for `start` and `triage`, kept apart from the GUI's volume
+  # because anonymous GUI sessions must not depend on an operator's CLI keys.
+  setup:
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - cli-config:/home/patchtriage/.config
+    entrypoint: ["patchtriage"]
+    command: ["setup"]
+
 volumes:
   cache:
   config:
+  cli-config:

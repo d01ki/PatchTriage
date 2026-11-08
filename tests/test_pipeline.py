@@ -311,3 +311,56 @@ def test_empty_sbom_reports_no_components(tmp_path):
                     encoding="utf-8")
     with pytest.raises(ValueError, match="no components"):
         load_file(spdx)
+
+
+def _identity_raw(name, ecosystem, purl="", vuln="CVE-2024-1111"):
+    from patchtriage.models import Asset, Package, RawFinding, Severity
+    return RawFinding(
+        vuln_id=vuln, source_scanner="test",
+        package=Package(name=name, version="1.0.0", ecosystem=ecosystem,
+                        purl=purl),
+        asset=Asset(identifier="repo"), severity=Severity.HIGH)
+
+
+def test_npm_names_are_exact_identities():
+    findings = dedup([_identity_raw(name, "npm") for name in
+                      ("foo-bar", "foobar", "foo_bar", "@a/foo", "@b/foo")])
+    assert len(findings) == 5
+
+
+def test_pypi_spelling_variants_are_one_project():
+    findings = dedup([_identity_raw(name, "pypi") for name in
+                      ("python-dateutil", "python_dateutil", "Python.Dateutil")])
+    assert len(findings) == 1
+
+
+def test_maven_namespace_is_preserved():
+    findings = dedup([
+        _identity_raw("a.b:core", "maven"), _identity_raw("a-b:core", "maven")])
+    assert len(findings) == 2
+
+
+def test_purl_and_plain_scoped_npm_correlate():
+    findings = dedup([
+        _identity_raw("@acme/ui", "npm"),
+        _identity_raw("@acme/ui", "npm", purl="pkg:npm/%40acme/ui@1.0.0")])
+    assert len(findings) == 1
+
+
+def test_finding_without_ecosystem_joins_pypi_peer():
+    findings = dedup([_identity_raw("python_dateutil", ""),
+                      _identity_raw("python-dateutil", "pypi")])
+    assert len(findings) == 1
+
+
+def test_legacy_key_maps_to_the_old_normalized_form():
+    from patchtriage.dedup import legacy_finding_key
+    assert legacy_finding_key(
+        "CVE-1|pypi||python-dateutil|2.0|host|a") == (
+        "CVE-1|pypi||pythondateutil|2.0|host|a")
+
+
+def test_empty_ecosystem_keeps_npm_case_when_joining_a_peer():
+    findings = dedup([_identity_raw("JSONStream", "npm"),
+                      _identity_raw("JSONStream", "")])
+    assert len(findings) == 1

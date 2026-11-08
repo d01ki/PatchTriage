@@ -51,6 +51,7 @@ def _github_payload(packages=None):
     }
 
 
+COMMIT = "a" * 40
 BLOB_HOST = "dgpproduction.blob.core.windows.net"
 GENERATE_URL = ("https://api.github.com/repos/acme/widget/dependency-graph/"
                 "sbom/generate-report")
@@ -426,12 +427,14 @@ def test_declared_ranges_dropped_by_github_are_restored_from_manifests():
                 _versionless("@acme/ui", "pkg:npm/%40acme/ui"),
                 _versionless("left-pad", "pkg:npm/left-pad"),
             ]))
-        if "/git/trees/HEAD" in request.url.path:
+        if request.url.path.endswith("/commits/HEAD"):
+            return httpx.Response(200, json={"sha": COMMIT})
+        if f"/git/trees/{COMMIT}" in request.url.path:
             return httpx.Response(200, json={"tree": [
                 {"path": path, "type": "blob"} for path in files]})
         assert request.url.host == "raw.githubusercontent.com"
         return httpx.Response(
-            200, text=files[request.url.path.split("/HEAD/", 1)[1]])
+            200, text=files[request.url.path.split(f"/{COMMIT}/", 1)[1]])
 
     with httpx.Client(transport=_via_export(handler)) as client:
         result = fetch_github_sbom("https://github.com/acme/widget",
@@ -807,3 +810,63 @@ def test_signed_url_is_not_logged(caplog):
         _fetch(_flow(_ready()))
     assert "SIGNED-SECRET" not in caplog.text
     assert "generate-report" in caplog.text
+
+
+def _versionless_export(files, *, commit=COMMIT, requested=None):
+    def handler(request):
+        if requested is not None:
+            requested.append(str(request.url))
+        if request.url.host == BLOB_HOST:
+            return httpx.Response(200, json=_bare([
+                _versionless("fastapi", "pkg:pypi/fastapi")]))
+        if request.url.path.endswith("/commits/HEAD"):
+            return httpx.Response(200, json={"sha": commit})
+        if "/git/trees/" in request.url.path:
+            return httpx.Response(200, json={"tree": [
+                {"path": path, "type": "blob"} for path in files]})
+        return httpx.Response(200, text=files["requirements.txt"])
+    return _via_export(handler)
+
+
+def test_requested_ref_does_not_mix_its_manifests_with_the_graph():
+    requested = []
+    with httpx.Client(transport=_versionless_export(
+            {"requirements.txt": "fastapi>=1.0\n"},
+            requested=requested)) as client:
+        result = fetch_github_sbom(
+            "https://github.com/acme/widget/tree/feature/x", client=client)
+    assert "versionInfo" not in json.loads(result.content)["packages"][0]
+    assert not any("raw.githubusercontent" in url or "/git/trees/" in url
+                   for url in requested)
+    provenance = result.provenance
+    assert provenance.requested_ref == "feature/x"
+    assert provenance.coverage_status == "partial"
+    assert provenance.manifest_commit == ""
+    assert any("feature/x" in w and "not combined" in w
+               for w in provenance.warnings)
+
+
+def test_default_branch_manifests_are_pinned_to_one_commit():
+    requested = []
+    with httpx.Client(transport=_versionless_export(
+            {"requirements.txt": "fastapi>=1.0\n"},
+            requested=requested)) as client:
+        result = fetch_github_sbom(
+            "https://github.com/acme/widget", client=client)
+    raw = [url for url in requested if "raw.githubusercontent" in url]
+    assert raw and all(f"/{COMMIT}/" in url for url in raw)
+    assert result.provenance.manifest_commit == COMMIT
+    assert result.provenance.evidence_scope.endswith("default_branch")
+
+
+@pytest.mark.parametrize("sha", ["../../evil", "main", "", None])
+def test_invalid_commit_response_is_not_used_in_a_url(sha):
+    requested = []
+    with httpx.Client(transport=_versionless_export(
+            {"requirements.txt": "fastapi>=1.0\n"}, commit=sha,
+            requested=requested)) as client:
+        result = fetch_github_sbom(
+            "https://github.com/acme/widget", client=client)
+    assert not any("/git/trees/" in url for url in requested)
+    assert result.provenance.manifest_commit == ""
+    assert any("file list" in w for w in result.provenance.warnings)

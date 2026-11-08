@@ -7,13 +7,14 @@ so the same evidence and context always reach the same decisions.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from .bod2604 import apply_policy as apply_response_policy
 from .context import apply_context, load_inventory
-from .dedup import dedup
+from .dedup import legacy_finding_key, dedup
 from .enrich.clients import enrich, enrich_from_snapshot
 from .evalcmp import evaluate
 from .ingest.parsers import load_file_with_metadata
@@ -119,6 +120,12 @@ def result_message(findings: list, actions: list, incomplete: bool,
                     "be built.")
         return ""
 
+    failed = (int(coverage.get("failed_components") or 0)
+              + int(coverage.get("vulnerability_details_failed") or 0))
+    if failed:
+        return (f"No conclusion can be drawn: {failed} vulnerability "
+                "lookup(s) failed, so the absence of findings does not mean "
+                "those components are unaffected. Retry the assessment.")
     if inferred and total and not skipped:
         return (f"{checked} of {total} component(s) were checked against OSV "
                 "and none had a known vulnerability." + inferred_note
@@ -188,6 +195,7 @@ def assess(
     asset: Asset | None = None,
     inventory: Path | None = None,
     ssvc_overrides: dict | None = None,
+    max_findings: int | None = None,
     declared_coverage: dict | None = None,
     provider_status: str = "",
     snapshot: dict | None = None,
@@ -225,8 +233,28 @@ def assess(
 
     findings = dedup(raw)
     progress(f"{len(raw)} raw -> {len(findings)} deduplicated findings")
+    if max_findings is not None and len(findings) > max_findings:
+        omitted = len(findings) - max_findings
+        findings = findings[:max_findings]
+        coverage["complete"] = False
+        coverage["status"] = "incomplete"
+        coverage["omitted_findings"] = omitted
+        coverage["errors"] = [
+            *(coverage.get("errors") or []),
+            f"{omitted} findings exceed this deployment's limit of "
+            f"{max_findings} and were not assessed",
+        ]
+        if on_coverage:
+            on_coverage(coverage)
+    legacy_matches = Counter(legacy_finding_key(f.key) for f in findings)
     for finding in findings:
         values = (ssvc_overrides or {}).get(finding.key)
+        if values is None:
+            # An override saved under the older key applies only when that
+            # key still identifies exactly one finding.
+            legacy = legacy_finding_key(finding.key)
+            if legacy_matches[legacy] == 1:
+                values = (ssvc_overrides or {}).get(legacy)
         if isinstance(values, dict):
             finding.ssvc_inputs = {
                 key: str(value) for key, value in values.items()
@@ -272,6 +300,12 @@ def assess(
             backend, model, escalation_model,
             provider=ai_provider, base_url=ai_base_url), jobs=workers)
 
+    coverage["findings_total"] = (
+        len(findings) + int(coverage.get("omitted_findings") or 0))
+    coverage["findings_assessed"] = len(subset)
+    if len(subset) < len(findings):
+        progress(f"--limit: showing {len(subset)} of {len(findings)} findings; "
+                 "actions and evaluation cover only those shown")
     audit = audit_all(subset)
     # Separate response policy: CISA BOD 26-04 is evaluated next to, never
     # instead of, the SSVC Deployer result.
