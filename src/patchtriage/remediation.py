@@ -25,8 +25,9 @@ from typing import Callable, Iterable
 
 from pydantic import BaseModel, Field
 
-from .ingest.parsers import load_file
-from .plan import Action
+from .ingest.parsers import load_file_with_metadata
+from .plan import Action, compare_versions
+from .repository_local import osv_source_scan_command
 
 
 DEFAULT_COMMAND_TIMEOUT = 10 * 60
@@ -76,6 +77,8 @@ class ScanRecord(BaseModel):
     scanner: str = ""
     output: str = ""
     remaining_cves: list[str] = Field(default_factory=list)
+    other_package_cves: list[str] = Field(default_factory=list)
+    reason: str = ""
 
 
 class RemediationResult(BaseModel):
@@ -477,20 +480,84 @@ def _select_action(actions: list[Action], action_id: str | None) -> Action:
     return actions[0]
 
 
-def _scan_remaining_cves(scan_path: Path, expected: Iterable[str]) -> list[str]:
-    expected_ids = {value.upper() for value in expected}
+def _ecosystem_family(value: str) -> str:
+    normalized = str(value or "").casefold()
+    if normalized in {"npm", "node", "javascript"}:
+        return "npm"
+    if normalized in {"pypi", "python", "pip"}:
+        return "pypi"
+    return normalized
+
+
+def _is_action_package(observed: dict, action: Action) -> bool:
+    family = _ecosystem_family(action.ecosystem)
+    if _ecosystem_family(observed.get("ecosystem", "")) != family:
+        return False
+    name = str(observed.get("name") or "")
+    if family == "pypi":
+        return _normalized_package(name) == _normalized_package(action.package)
+    return name == action.package
+
+
+def _evaluate_rescan(scan_path: Path, action: Action) -> ScanRecord:
+    """Judge a rescan by what it observed about the upgraded package.
+
+    A CVE's absence only counts when the scan saw the package at the target
+    version and no older copy of it; an empty scan observed nothing.
+    """
     try:
-        findings = load_file(scan_path, fmt="osv")
+        loaded = load_file_with_metadata(scan_path, fmt="osv")
+        data = json.loads(scan_path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise RemediationError(
             "OSV-Scanner output could not be parsed"
         ) from exc
-    observed = {
-        identifier.upper()
-        for finding in findings
-        for identifier in (finding.vuln_id, *finding.aliases)
-    }
-    return sorted(expected_ids & observed)
+    expected = {value.upper() for value in action.cves}
+    versions: set[str] = set()
+    remaining: set[str] = set()
+    other_packages: set[str] = set()
+    for result in data["results"]:
+        packages = result.get("packages") if isinstance(result, dict) else None
+        for entry in packages if isinstance(packages, list) else []:
+            package = entry.get("package") if isinstance(entry, dict) else None
+            if not isinstance(package, dict):
+                continue
+            hits = expected & {
+                str(identifier).upper()
+                for vulnerability in entry.get("vulnerabilities") or []
+                if isinstance(vulnerability, dict)
+                for identifier in (vulnerability.get("id", ""),
+                                   *(vulnerability.get("aliases") or []))
+            }
+            if _is_action_package(package, action):
+                versions.add(str(package.get("version") or ""))
+                remaining |= hits
+            else:
+                other_packages |= hits
+
+    def record(status: str, reason: str) -> ScanRecord:
+        return ScanRecord(
+            status=status, scanner="osv-scanner", output=str(scan_path),
+            remaining_cves=sorted(remaining),
+            other_package_cves=sorted(other_packages), reason=reason)
+
+    compare = lambda version: compare_versions(
+        version, action.target_version, action.ecosystem)
+    if remaining:
+        return record("failed", f"{action.package} is still reported as "
+                                "affected by the target CVEs")
+    if not loaded.coverage["complete"]:
+        return record("unverified", "the scan output has malformed rows")
+    if not versions:
+        return record("unverified", f"the scan did not observe {action.package}")
+    if not any(compare(version) == 0 for version in versions):
+        return record("unverified", f"the scan did not observe {action.package} "
+                                    f"at {action.target_version}")
+    older = sorted(version for version in versions if compare(version) < 0)
+    if older:
+        return record("unverified", f"older {action.package} versions remain: "
+                                    + ", ".join(older))
+    return record("cleared", "")
 
 
 def execute_remediation(
@@ -617,45 +684,41 @@ def execute_remediation(
             scan_path = output_dir / "osv-remediation.json"
             scanner_config = output_dir / "trusted-osv-scanner.toml"
             scanner_config.write_text("", encoding="utf-8")
-            command = [
-                scanner, "--config", str(scanner_config),
-                "scan", "source", "--format", "json",
-                "--output", str(scan_path), "--no-resolve", "--all-packages",
-                str(workspace),
-            ]
+            command = osv_source_scan_command(
+                scanner, scan_path, scanner_config, workspace)
             started = time.perf_counter()
-            completed = runner(
-                command,
-                cwd=workspace,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-            command_records.append(CommandRecord(
-                command=["osv-scanner", *command[1:]],
-                cwd=str(workspace),
-                exit_code=completed.returncode,
-                duration_seconds=round(time.perf_counter() - started, 3),
-                kind="rescan",
-            ))
-            if completed.returncode not in (0, 1):
-                raise RemediationError(
-                    "OSV-Scanner remediation scan failed with exit code "
-                    f"{completed.returncode}"
+            try:
+                completed = runner(
+                    command,
+                    cwd=workspace,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
                 )
-            if not scan_path.exists():
-                raise RemediationError(
-                    "OSV-Scanner did not produce remediation output"
-                )
-            remaining = _scan_remaining_cves(scan_path, action.cves)
-            scan = ScanRecord(
-                status="failed" if remaining else "cleared",
-                scanner="osv-scanner",
-                output=str(scan_path),
-                remaining_cves=remaining,
-            )
+            except subprocess.TimeoutExpired:
+                scan = ScanRecord(
+                    status="unverified", scanner="osv-scanner",
+                    reason=f"the rescan timed out after {timeout} seconds")
+            else:
+                command_records.append(CommandRecord(
+                    command=["osv-scanner", *command[1:]],
+                    cwd=str(workspace),
+                    exit_code=completed.returncode,
+                    duration_seconds=round(time.perf_counter() - started, 3),
+                    kind="rescan",
+                ))
+                if completed.returncode not in (0, 1):
+                    raise RemediationError(
+                        "OSV-Scanner remediation scan failed with exit code "
+                        f"{completed.returncode}"
+                    )
+                if not scan_path.exists():
+                    raise RemediationError(
+                        "OSV-Scanner did not produce remediation output"
+                    )
+                scan = _evaluate_rescan(scan_path, action)
         else:
             warnings.append("OSV-Scanner was not found; rescan skipped")
 
@@ -680,7 +743,8 @@ def execute_remediation(
     )
     if scan.status == "failed":
         status = "verification_failed"
-    elif scan.status == "cleared" or checks_requested:
+    elif scan.status == "cleared" or (
+            checks_requested and scan.status != "unverified"):
         status = "verified"
     else:
         status = "patched_unverified"

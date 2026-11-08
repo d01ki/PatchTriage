@@ -46,6 +46,17 @@ _MANIFEST_NAMES = {
 }
 
 
+def osv_source_scan_command(scanner: str, output: Path, config: Path,
+                            target: Path) -> list[str]:
+    """OSV-Scanner 2.x source scan; nested lockfiles need ``--recursive``."""
+    return [
+        scanner, "scan", "source", "--format", "json",
+        "--output-file", str(output), "--config", str(config),
+        "--all-packages", "--no-resolve",
+        "--recursive", str(target),
+    ]
+
+
 @dataclass(frozen=True)
 class LocalRepositoryEvidence:
     content: str
@@ -330,12 +341,8 @@ def scan_public_repository(
 
         file_count, repository_bytes, manifests = _repository_inventory(
             checkout, max_bytes, max_files)
-        command = [
-            scanner, "scan", "source", "--format", "json",
-            "--output-file", str(output), "--config", str(scanner_config),
-            "--all-packages", "--no-resolve",
-            "--recursive", str(checkout),
-        ]
+        command = osv_source_scan_command(
+            scanner, output, scanner_config, checkout)
         try:
             completed = _run_monitored(
                 command, env=environment, timeout=scan_timeout,

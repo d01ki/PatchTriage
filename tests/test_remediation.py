@@ -149,7 +149,8 @@ requests = { version = "^2.28", extras = ["socks"] }
     assert 'requests = { version = "2.32.4", extras = ["socks"] }' in pyproject
 
 
-def test_successful_rescan_marks_patch_verified(tmp_path):
+def _rescan(tmp_path, document, checks=()):
+    """Run remediation with a fake scanner that writes ``document``."""
     repository = _repository(
         tmp_path,
         {"package.json": '{"dependencies":{"lodash":"4.17.20"}}\n'},
@@ -159,12 +160,16 @@ def test_successful_rescan_marks_patch_verified(tmp_path):
         json.dumps({"actions": [_action().model_dump(mode="json")]}),
         encoding="utf-8",
     )
+    commands = []
 
     def runner(command, **kwargs):
         if command[0] == "fake-osv-scanner":
-            output = Path(command[command.index("--output") + 1])
-            output.write_text('{"results":[]}', encoding="utf-8")
-            return subprocess.CompletedProcess(command, 0, "", "")
+            commands.append(command)
+            if isinstance(document, Exception):
+                raise document
+            output = Path(command[command.index("--output-file") + 1])
+            output.write_text(json.dumps(document), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1, "", "")
         return subprocess.run(command, **kwargs)
 
     result = execute_remediation(
@@ -173,12 +178,86 @@ def test_successful_rescan_marks_patch_verified(tmp_path):
         tmp_path / "result",
         scanner_binary="fake-osv-scanner",
         runner=runner,
+        checks=checks,
     )
+    return result, commands
 
+
+def _package(name, version, *cves, ecosystem="npm"):
+    return {"package": {"name": name, "version": version,
+                        "ecosystem": ecosystem},
+            "vulnerabilities": [{"id": cve} for cve in cves]}
+
+
+def _scan(*packages):
+    return {"results": [{"source": {"path": "package-lock.json"},
+                         "packages": list(packages)}]}
+
+
+CVE = "CVE-2021-23337"
+
+
+def test_rescan_clears_only_when_target_version_was_observed(tmp_path):
+    result, commands = _rescan(tmp_path, _scan(_package("lodash", "4.17.21")))
     assert result.status == "verified"
     assert result.scan.status == "cleared"
     assert result.scan.remaining_cves == []
     assert any(record.kind == "rescan" for record in result.commands)
+    assert "--recursive" in commands[0]
+
+
+@pytest.mark.parametrize(
+    ("document", "reason"),
+    [({"results": []}, "did not observe lodash"),
+     (_scan(_package("other", "1.0.0")), "did not observe lodash"),
+     (_scan(_package("lodash", "4.17.22")), "at 4.17.21"),
+     (_scan(_package("lodash", "4.17.21"), _package("lodash", "4.17.20")),
+      "older lodash versions remain: 4.17.20"),
+     ({"results": [
+         {"source": {"path": "package-lock.json"},
+          "packages": [_package("lodash", "4.17.21")]},
+         {"source": {"path": "nested/package-lock.json"},
+          "packages": [_package("lodash", "4.17.20")]}]},
+      "older lodash versions remain"),
+     (_scan(_package("lodash", "4.17.21"), "broken"), "malformed")])
+def test_rescan_without_sufficient_observation_is_unverified(
+        tmp_path, document, reason):
+    result, _ = _rescan(tmp_path, document)
+    assert result.scan.status == "unverified"
+    assert reason in result.scan.reason
+    assert result.status == "patched_unverified"
+
+
+def test_unverified_rescan_is_not_upgraded_by_passing_checks(tmp_path):
+    result, _ = _rescan(tmp_path, {"results": []}, checks=["git status"])
+    assert result.status == "patched_unverified"
+
+
+def test_old_version_still_affected_fails_verification(tmp_path):
+    result, _ = _rescan(tmp_path, _scan(_package("lodash", "4.17.20", CVE)))
+    assert result.status == "verification_failed"
+    assert result.scan.remaining_cves == [CVE]
+
+
+def test_same_cve_on_another_package_is_reported_separately(tmp_path):
+    result, _ = _rescan(tmp_path, _scan(
+        _package("lodash", "4.17.21"), _package("lodash-es", "4.17.20", CVE)))
+    assert result.scan.status == "cleared"
+    assert result.scan.remaining_cves == []
+    assert result.scan.other_package_cves == [CVE]
+
+
+def test_rescan_timeout_is_unverified(tmp_path):
+    result, _ = _rescan(
+        tmp_path, subprocess.TimeoutExpired("fake-osv-scanner", 1))
+    assert result.status == "patched_unverified"
+    assert result.scan.status == "unverified"
+    assert "timed out" in result.scan.reason
+
+
+def test_structurally_invalid_rescan_is_an_error(tmp_path):
+    with pytest.raises(RemediationError, match="could not be parsed"):
+        _rescan(tmp_path, {})
 
 
 def test_lockfile_commands_cover_npm_pnpm_and_uv(tmp_path):

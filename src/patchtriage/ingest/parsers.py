@@ -393,7 +393,7 @@ def _list_or_empty(value: Any) -> list | None:
     return value if isinstance(value, list) else None
 
 
-def _trivy_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+def _trivy_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
     if not {"Results", "SchemaVersion", "ArtifactName"} & data.keys():
         raise ScannerFormatError(
             "Trivy JSON needs Results, SchemaVersion, or ArtifactName")
@@ -407,12 +407,14 @@ def _trivy_rows(data: dict, errors: list[str]) -> Iterator[dict]:
         if vulns is None:
             errors.append(f"Results[{index}] is malformed")
             continue
+        if not vulns:
+            yield None, f"Results[{index}]"
         for row, vuln in enumerate(vulns):
             yield {**data, "Results": [{**result, "Vulnerabilities": [vuln]}]}, (
                 f"Results[{index}].Vulnerabilities[{row}]")
 
 
-def _grype_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+def _grype_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
     if not isinstance(data.get("matches"), list):
         raise ScannerFormatError("Grype JSON needs a matches array")
     for index, match in enumerate(data["matches"]):
@@ -424,7 +426,7 @@ def _grype_rows(data: dict, errors: list[str]) -> Iterator[dict]:
         yield {**data, "matches": [match]}, f"matches[{index}]"
 
 
-def _osv_rows(data: dict, errors: list[str]) -> Iterator[dict]:
+def _osv_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
     if not isinstance(data.get("results"), list):
         raise ScannerFormatError("OSV-Scanner JSON needs a results array")
     for index, result in enumerate(data["results"]):
@@ -441,6 +443,8 @@ def _osv_rows(data: dict, errors: list[str]) -> Iterator[dict]:
             if vulns is None:
                 errors.append(f"{label} is malformed")
                 continue
+            if not vulns:
+                yield None, label
             for row, vuln in enumerate(vulns):
                 yield {**data, "results": [{**result, "packages": [
                     {**package, "vulnerabilities": [vuln]}]}]}, (
@@ -461,7 +465,11 @@ def _parse_scanner(fmt: str, data: Any,
         raise ScannerFormatError(f"{fmt} JSON must be an object")
     errors: list[str] = []
     findings: list[RawFinding] = []
+    clean_rows = 0
     for row, label in _ROW_READERS[fmt](data, errors):
+        if row is None:  # a well-formed row reporting no vulnerabilities
+            clean_rows += 1
+            continue
         try:
             parsed = list(PARSERS[fmt](row, asset))
         except (AttributeError, KeyError, TypeError, ValueError):
@@ -472,7 +480,7 @@ def _parse_scanner(fmt: str, data: Any,
             errors.append(f"{label} lacks a vulnerability id or package name")
             continue
         findings.extend(parsed)
-    if errors and not findings:
+    if errors and not findings and not clean_rows:
         raise ScannerFormatError(
             f"no usable {fmt} rows; first problem: {errors[0]}")
     return findings, errors

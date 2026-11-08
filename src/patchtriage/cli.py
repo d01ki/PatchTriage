@@ -382,6 +382,16 @@ def _print_remediation_result(result) -> None:
             "[red]remaining target CVEs:[/red] "
             + ", ".join(result.scan.remaining_cves)
         )
+    if result.scan.other_package_cves:
+        console.print(
+            "[yellow]same CVEs on other packages (not part of this "
+            "upgrade):[/yellow] " + ", ".join(result.scan.other_package_cves)
+        )
+    if result.scan.reason:
+        console.print(
+            f"[yellow]rescan {result.scan.status}:[/yellow] "
+            f"{result.scan.reason}"
+        )
     console.print("\n[bold]Local review commands[/bold]")
     commands = [
         f'git -C "{result.workspace}" diff --check',
