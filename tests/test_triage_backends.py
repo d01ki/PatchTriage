@@ -5,6 +5,7 @@ These use injected fake backends — no API key, no network.
 
 from pathlib import Path
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from patchtriage.dedup import dedup
 from patchtriage.ingest.parsers import load_file
@@ -16,6 +17,7 @@ from patchtriage.triage.engine import (
     TRIAGE_SYSTEM_PROMPT,
     TRIAGE_TOOL,
     run_triage,
+    run_triage_batch,
 )
 from patchtriage.triage.providers import OpenAICompatibleProvider
 
@@ -242,3 +244,145 @@ def test_invalid_provider_output_falls_back_to_rules():
     )
     assert finding.triage["backend"] == "rules_fallback"
     assert "invalid action" in finding.triage["error"]
+
+
+# ------------------------------------------------------------------ batch
+def _valid_recommendation(**overrides):
+    out = {
+        "action": "patch_scheduled",
+        "rationale": "Patch in the next cycle.",
+        "remediation_steps": ["Upgrade the package"],
+        "uncertainties": [],
+    }
+    out.update(overrides)
+    return out
+
+
+def _entry(custom_id, kind="succeeded", payload=None):
+    message = SimpleNamespace(content=[SimpleNamespace(
+        type="tool_use", name="triage", input=payload)])
+    return SimpleNamespace(custom_id=custom_id, result=SimpleNamespace(
+        type=kind, message=message if kind == "succeeded" else None))
+
+
+class FakeBatches:
+    """Message Batches stand-in: scripted statuses, then scripted results."""
+
+    def __init__(self, statuses=("ended",), entries=(), create_error=None,
+                 retrieve_errors=0, results_error=None):
+        self.statuses = list(statuses)
+        self.entries = list(entries)
+        self.create_error = create_error
+        self.retrieve_errors = retrieve_errors
+        self.results_error = results_error
+        self.cancelled = []
+        self.requests = None
+
+    def create(self, requests):
+        if self.create_error:
+            raise self.create_error
+        self.requests = requests
+        return SimpleNamespace(id="batch-1", processing_status="in_progress")
+
+    def retrieve(self, batch_id):
+        if self.retrieve_errors:
+            self.retrieve_errors -= 1
+            raise RuntimeError("temporary API failure")
+        status = self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
+        return SimpleNamespace(
+            id=batch_id, processing_status=status,
+            request_counts=SimpleNamespace(processing=1))
+
+    def cancel(self, batch_id):
+        self.cancelled.append(batch_id)
+
+    def results(self, batch_id):
+        yield from self.entries
+        if self.results_error:
+            raise self.results_error
+
+
+def _batch_client(batches):
+    return SimpleNamespace(messages=SimpleNamespace(batches=batches))
+
+
+def _run_batch(findings, batches, **kwargs):
+    kwargs.setdefault("poll_seconds", 0)
+    return run_triage_batch(findings, "example-model", provider="anthropic",
+                            client=_batch_client(batches), **kwargs)
+
+
+def _assert_rules_baseline(finding):
+    baseline = RulesBackend().triage(finding)
+    assert finding.triage["backend"] == "rules_fallback"
+    assert finding.triage["ssvc"] == baseline["ssvc"]
+    assert finding.triage["priority"] == baseline["priority"]
+
+
+def test_batch_keeps_valid_entries_when_one_entry_is_malformed():
+    good, bad, errored = _kev_finding(), _quiet_finding(), _quiet_finding()
+    batches = FakeBatches(entries=[
+        _entry("finding-0", payload=_valid_recommendation()),
+        _entry("finding-1", payload=_valid_recommendation(action="invent")),
+        _entry("finding-2", kind="errored"),
+    ])
+    _run_batch([good, bad, errored], batches)
+    assert good.triage["backend"] == "anthropic:example-model (batch)"
+    assert good.triage["ssvc"] == RulesBackend().triage(good)["ssvc"]
+    _assert_rules_baseline(bad)
+    assert "invalid action" in bad.triage["error"]
+    _assert_rules_baseline(errored)
+    assert "errored" in errored.triage["error"]
+
+
+def test_batch_non_object_tool_input_falls_back_for_that_entry():
+    finding = _quiet_finding()
+    _run_batch([finding], FakeBatches(entries=[
+        _entry("finding-0", payload=["not", "an", "object"])]))
+    _assert_rules_baseline(finding)
+    assert "non-object" in finding.triage["error"]
+
+
+def test_batch_deadline_cancels_and_keeps_deterministic_results():
+    findings = [_kev_finding(), _quiet_finding()]
+    batches = FakeBatches(statuses=["in_progress"])
+    _run_batch(findings, batches, deadline_seconds=0.05, poll_seconds=0.01)
+    assert batches.cancelled == ["batch-1"]
+    for finding in findings:
+        _assert_rules_baseline(finding)
+        assert "deadline" in finding.triage["error"]
+
+
+def test_batch_submission_failure_keeps_deterministic_results():
+    finding = _quiet_finding()
+    _run_batch([finding], FakeBatches(create_error=RuntimeError("HTTP 529")))
+    _assert_rules_baseline(finding)
+    assert "HTTP 529" in finding.triage["error"]
+
+
+def test_batch_retries_transient_status_errors():
+    finding = _quiet_finding()
+    batches = FakeBatches(retrieve_errors=2, entries=[
+        _entry("finding-0", payload=_valid_recommendation())])
+    _run_batch([finding], batches)
+    assert finding.triage["backend"] == "anthropic:example-model (batch)"
+
+
+def test_batch_persistent_status_errors_stop_polling():
+    finding = _quiet_finding()
+    batches = FakeBatches(retrieve_errors=99)
+    _run_batch([finding], batches)
+    _assert_rules_baseline(finding)
+    assert "temporary API failure" in finding.triage["error"]
+    assert batches.cancelled == ["batch-1"]
+
+
+def test_batch_results_stream_failure_keeps_entries_already_read():
+    first, second = _kev_finding(), _quiet_finding()
+    batches = FakeBatches(
+        entries=[_entry("finding-0", payload=_valid_recommendation())],
+        results_error=RuntimeError("connection reset"))
+    _run_batch([first, second], batches)
+    assert first.triage["backend"] == "anthropic:example-model (batch)"
+    _assert_rules_baseline(second)
+    assert "connection reset" in second.triage["error"]
