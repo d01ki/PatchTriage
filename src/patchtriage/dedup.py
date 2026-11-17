@@ -8,6 +8,8 @@ severities and package spellings. We merge on a stable key:
 
 Canonical vuln id prefers CVE over GHSA/DSA/... using the alias graph, so a
 Trivy "CVE-2023-1234" and a Grype "GHSA-xxxx (related: CVE-2023-1234)" merge.
+An advisory listing several CVEs is split into one finding per CVE, and an id
+linked to several CVEs stays separate; such links are kept as related_ids.
 
 Merge policy: keep the MAX severity / CVSS across scanners (conservative),
 union references and reported_by, keep earliest detection time.
@@ -93,38 +95,103 @@ def package_identity(package: Package) -> tuple[str, str, str, str]:
     )
 
 
-def _canonical_id(raw: RawFinding, alias_map: dict[str, str]) -> str:
-    ids = [raw.vuln_id, *raw.aliases]
-    for i in ids:
-        if i.upper().startswith("CVE-"):
-            return i.upper()
-    # non-CVE: check whether any alias was already linked to a CVE elsewhere
-    for i in ids:
-        if i in alias_map:
-            return alias_map[i]
-    return raw.vuln_id
+def _is_cve(value: str) -> bool:
+    return value.upper().startswith("CVE-")
+
+
+def _split_multi_cve(raw_findings: list[RawFinding]
+                     ) -> list[tuple[RawFinding, set[str]]]:
+    """Give each CVE of a multi-CVE advisory its own raw finding.
+
+    Distinct CVEs are distinct vulnerabilities with their own KEV, EPSS
+    and SSVC evidence, so a GHSA listing two of them must not hide one
+    behind the other. The other CVEs are kept as related ids.
+    """
+    out: list[tuple[RawFinding, set[str]]] = []
+    for r in raw_findings:
+        ids = [r.vuln_id, *r.aliases]
+        cves = sorted({i.upper() for i in ids if _is_cve(i)})
+        if len(cves) <= 1:
+            out.append((r, set()))
+            continue
+        others = sorted({i for i in ids if not _is_cve(i)})
+        for cve in cves:
+            out.append((r.model_copy(update={"vuln_id": cve,
+                                              "aliases": others}),
+                        set(cves) - {cve}))
+    return out
+
+
+class _AliasGraph:
+    """Connect non-CVE ids reported together, then find each group's CVEs.
+
+    Following the links transitively resolves two-step chains such as
+    GHSA -> PYSEC -> CVE. A group linked to several CVEs is ambiguous: its
+    ids stay their own finding instead of joining whichever CVE came last.
+    """
+
+    def __init__(self, raws: list[RawFinding]):
+        self._parent: dict[str, str] = {}
+        for r in raws:
+            others = [i.upper() for i in [r.vuln_id, *r.aliases]
+                      if not _is_cve(i)]
+            for i in others:
+                self._parent.setdefault(i, i)
+            for a, b in zip(others, others[1:]):
+                self._union(a, b)
+        self._cves: dict[str, set[str]] = defaultdict(set)
+        for r in raws:
+            ids = [r.vuln_id, *r.aliases]
+            cves = {i.upper() for i in ids if _is_cve(i)}
+            for i in ids:
+                if not _is_cve(i):
+                    self._cves[self._find(i.upper())] |= cves
+
+    def _find(self, value: str) -> str:
+        while self._parent[value] != value:
+            self._parent[value] = self._parent[self._parent[value]]
+            value = self._parent[value]
+        return value
+
+    def _union(self, a: str, b: str) -> None:
+        ra, rb = self._find(a), self._find(b)
+        if ra != rb:
+            self._parent[max(ra, rb)] = min(ra, rb)
+
+    def canonical(self, raw: RawFinding) -> tuple[str, set[str]]:
+        """Return the canonical id and any related-but-distinct CVEs."""
+        ids = [raw.vuln_id, *raw.aliases]
+        cves = sorted({i.upper() for i in ids if _is_cve(i)})
+        if cves:  # more than one was split off beforehand
+            return cves[0], set()
+        linked: set[str] = set()
+        for i in ids:
+            linked |= self._cves.get(self._find(i.upper()), set())
+        if len(linked) == 1:
+            return next(iter(linked)), set()
+        return raw.vuln_id, linked
 
 
 def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
-    # Pass 1: build alias -> CVE map across ALL findings (cross-scanner linking)
-    alias_map: dict[str, str] = {}
-    for r in raw_findings:
-        ids = [r.vuln_id, *r.aliases]
-        cves = [i.upper() for i in ids if i.upper().startswith("CVE-")]
-        if cves:
-            canonical = sorted(cves)[0]
-            for i in ids:
-                alias_map[i] = canonical
+    # Pass 1: separate multi-CVE advisories, then link aliases across ALL
+    # findings (cross-scanner, transitive) to a CVE only when unambiguous.
+    expanded = _split_multi_cve(raw_findings)
+    raw_findings = [r for r, _ in expanded]
+    graph = _AliasGraph(raw_findings)
+    related_by_index: list[set[str]] = []
+    canonical_ids: list[str] = []
+    for r, related in expanded:
+        vid, ambiguous = graph.canonical(r)
+        canonical_ids.append(vid)
+        related_by_index.append(related | ambiguous)
 
     # Pass 2: resolve missing ecosystem/namespace only when the compatible
     # value is unambiguous. An empty field must never bridge two distinct
     # packages that happen to share a name and version.
     identities = [package_identity(r.package) for r in raw_findings]
     base_groups: dict[tuple[str, str, str, str], list[int]] = defaultdict(list)
-    canonical_ids: list[str] = []
     for index, (r, identity) in enumerate(zip(raw_findings, identities)):
-        vid = _canonical_id(r, alias_map)
-        canonical_ids.append(vid)
+        vid = canonical_ids[index]
         ecosystem, namespace, package_name, version = identity
         # Loose name so a finding without an ecosystem can still find its
         # peers; identities stay separate unless the name then really matches.
@@ -156,23 +223,30 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
 
     # Pass 3: bucket by the complete component identity.
     buckets: dict[str, list[RawFinding]] = defaultdict(list)
-    for r, vid, identity in zip(raw_findings, canonical_ids, resolved):
+    bucket_ids: dict[str, str] = {}
+    bucket_related: dict[str, set[str]] = defaultdict(set)
+    for r, vid, identity, related in zip(raw_findings, canonical_ids, resolved,
+                                         related_by_index):
         ecosystem, namespace, package_name, version = identity
         key = "|".join((
             vid, ecosystem, namespace, package_name, version,
             r.asset.identifier,
         ))
         buckets[key].append(r)
+        bucket_ids[key] = vid
+        bucket_related[key] |= related
 
     # Pass 4: merge each bucket
     findings: list[Finding] = []
     for key, group in buckets.items():
         group.sort(key=lambda r: _SEV_ORDER[r.severity], reverse=True)
         head = group[0]
-        vid = _canonical_id(head, alias_map)
+        vid = bucket_ids[key]
 
         aliases = sorted({a for r in group for a in [r.vuln_id, *r.aliases]
-                          if a.upper() != vid})
+                          if a.upper() != vid.upper()})
+        related_ids = sorted(bucket_related[key] - {vid.upper()}
+                             - {a.upper() for a in aliases})
         refs = sorted({ref for r in group for ref in r.references if ref})[:20]
         cvss = [r.cvss_score for r in group if r.cvss_score is not None]
         fixed_candidates = sorted({
@@ -205,6 +279,7 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
             key=key,
             vuln_id=vid,
             aliases=aliases,
+            related_ids=related_ids,
             package=pkg,
             asset=head.asset,
             severity=head.severity,

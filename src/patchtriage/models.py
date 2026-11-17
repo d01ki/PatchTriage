@@ -258,6 +258,9 @@ class Finding(BaseModel):
     key: str                                  # stable dedup key
     vuln_id: str
     aliases: list[str] = Field(default_factory=list)
+    # Ids linked to this one by a shared advisory but not equivalent to it,
+    # e.g. the other CVEs of a GHSA that lists several. Never merged.
+    related_ids: list[str] = Field(default_factory=list)
     package: Package
     asset: Asset
     severity: Severity = Severity.UNKNOWN     # max severity across scanners
