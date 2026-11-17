@@ -9,7 +9,7 @@
 
 # Base images are pinned by digest for reproducible builds; Dependabot
 # (.github/dependabot.yml) proposes digest and tag updates weekly.
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS build
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src ./src
@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir --prefix=/install ".[ai]"
 # scanner's remediation command or a package manager on untrusted content.
 FROM ghcr.io/google/osv-scanner:v2.3.8@sha256:64e86bec6df2466feea5137fc7c78fb3b7c21ec077f014d7130f64810e50676b AS osv-scanner
 
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 LABEL org.opencontainers.image.title="PatchTriage" \
       org.opencontainers.image.description="Evidence-driven patch triage with deterministic SSVC decisions and audited AI explanations" \
       org.opencontainers.image.source="https://github.com/d01ki/PatchTriage" \
