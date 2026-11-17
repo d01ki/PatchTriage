@@ -677,3 +677,23 @@ def test_withdrawn_osv_records_are_not_findings(monkeypatch, tmp_path):
         "package": {"name": "x", "version": "1", "ecosystem": "npm"},
         "vulnerabilities": [retracted, live]}]}]}
     assert [r.source_id for r in parse_osv(scanner)] == ["GHSA-IN"]
+
+
+def test_withdrawn_osv_scanner_records_are_counted_and_explained(tmp_path):
+    from patchtriage.assess import result_message
+    from patchtriage.ingest.parsers import load_file_with_metadata
+
+    scan = tmp_path / "osv.json"
+    scan.write_text(json.dumps({"results": [{"source": {"path": "lock"},
+        "packages": [{"package": {"name": "x", "version": "1",
+                                  "ecosystem": "npm"},
+                      "vulnerabilities": [
+                          {"id": "GHSA-WD", "withdrawn": "2026-01-01T00:00:00Z"},
+                          {"id": "GHSA-WD", "withdrawn": "2026-01-01T00:00:00Z"}]
+                      }]}]}), encoding="utf-8")
+    result = load_file_with_metadata(scan)
+    assert result.findings == []
+    assert result.coverage["withdrawn_skipped"] == 1
+    message = result_message([], [], False, "provider_reported",
+                             result.coverage)
+    assert "1 matching advisory record(s) had been withdrawn" in message

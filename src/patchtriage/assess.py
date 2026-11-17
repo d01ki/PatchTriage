@@ -86,6 +86,19 @@ def merge_file_coverage(coverages: list[dict]) -> dict:
 
 def result_message(findings: list, actions: list, incomplete: bool,
                    coverage_status: str, coverage: dict) -> str:
+    """The run's result message, naming records excluded as withdrawn."""
+    message = _checked_scope_message(
+        findings, actions, incomplete, coverage_status, coverage)
+    withdrawn = int(coverage.get("withdrawn_skipped") or 0)
+    if withdrawn and not findings:
+        message = (f"{message} {withdrawn} matching advisory record(s) had "
+                   "been withdrawn by their publisher and were excluded."
+                   ).strip()
+    return message
+
+
+def _checked_scope_message(findings: list, actions: list, incomplete: bool,
+                           coverage_status: str, coverage: dict) -> str:
     """Say what was actually checked, not just that coverage was bounded.
 
     "No findings" is the most dangerous result a scanner can show, because it
