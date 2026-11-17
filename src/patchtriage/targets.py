@@ -31,9 +31,9 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from . import config as cfgmod
+from .models import web_url_problem
 
 _LOCK = threading.RLock()
 _TARGET_ID = re.compile(r"^[0-9a-f]{12}$")
@@ -91,13 +91,9 @@ def _clean_url(value: str) -> str:
     url = str(value or "").strip()
     if not url:
         return ""
-    if len(url) > 2048:
-        raise ValueError("url is too long")
-    parsed = urlsplit(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("url must be an absolute http:// or https:// URL")
-    if parsed.username is not None or parsed.password is not None:
-        raise ValueError("url must not contain embedded credentials")
+    problem = web_url_problem(url)
+    if problem:
+        raise ValueError(problem)
     return url
 
 

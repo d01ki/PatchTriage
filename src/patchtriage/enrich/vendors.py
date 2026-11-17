@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from ..models import Finding, VendorAdvisory
+from ..models import Finding, VendorAdvisory, safe_web_url
 from .clients import (_cache_mtime, _load_cache, _load_entry_cache,
                       _merge_entry_cache, _save_cache)
 
@@ -119,6 +119,9 @@ def parse_usn(payload: dict, cve: str) -> list[dict]:
                 if event.get("fixed"):
                     fixed.append(f"{package} {event['fixed']}".strip())
     advisory_ids = related or [f"UBUNTU-{cve}"]
+    # Choose among safe links only, so an unsafe reference cannot displace
+    # the built-in notice URL.
+    advisory_urls = [url for url in advisory_urls if safe_web_url(url)]
     out = []
     for index, advisory_id in enumerate(advisory_ids):
         url = next((u for u in advisory_urls
@@ -169,8 +172,8 @@ def parse_ghsa(payload: list | dict, cve: str) -> list[dict]:
     rows = payload if isinstance(payload, list) else []
     out = []
     for row in rows:
-        if not isinstance(row, dict):
-            continue
+        if not isinstance(row, dict) or row.get("withdrawn_at"):
+            continue  # a withdrawn advisory is retracted, not evidence
         vulnerabilities = row.get("vulnerabilities") or []
         products, fixed, functions = [], [], []
         for vuln in vulnerabilities:

@@ -628,3 +628,72 @@ def test_osv_details_are_fetched_concurrently_once_per_id(
     assert coverage["vulnerability_details_failed"] == 2
     assert sum("OSV-DOWN" in e for e in coverage["errors"]) == 1
     assert len(result.findings) == 14
+
+
+def test_withdrawn_osv_records_are_not_findings(monkeypatch, tmp_path):
+    import patchtriage.ingest.sbom as sbom
+    from patchtriage.ingest.parsers import parse_osv
+
+    live = _action_advisory("GHSA-IN", [{"introduced": "0"}, {"fixed": "46.0.1"}])
+    retracted = dict(_action_advisory(
+        "GHSA-WD", [{"introduced": "0"}, {"fixed": "46.0.1"}]),
+        withdrawn="2026-01-01T00:00:00Z")
+    records = {"GHSA-IN": live, "GHSA-WD": retracted}
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, url, json=None, **kwargs):
+            return _BatchResponse({"results": [
+                {"vulns": [{"id": "GHSA-IN"}, {"id": "GHSA-WD"}]}]})
+
+        def get(self, url, **kwargs):
+            return _BatchResponse(records[url.rsplit("/", 1)[1]])
+
+    sbom_path = tmp_path / "actions.spdx.json"
+    sbom_path.write_text(json.dumps({
+        "spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT",
+        "packages": [{
+            "name": "tj-actions/changed-files", "SPDXID": "SPDXRef-a",
+            "versionInfo": "45.0.9",
+            "externalRefs": [{
+                "referenceCategory": "PACKAGE-MANAGER",
+                "referenceType": "purl",
+                "referenceLocator":
+                    "pkg:githubactions/tj-actions/changed-files@45.0.9"}],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(sbom.httpx, "Client", lambda **kwargs: Client())
+    result = load_file_with_metadata(sbom_path)
+    assert [f.vuln_id for f in result.findings] == ["GHSA-IN"]
+    assert result.coverage["withdrawn_skipped"] == 1
+
+    scanner = {"results": [{"source": {"path": "lock"}, "packages": [{
+        "package": {"name": "x", "version": "1", "ecosystem": "npm"},
+        "vulnerabilities": [retracted, live]}]}]}
+    assert [r.source_id for r in parse_osv(scanner)] == ["GHSA-IN"]
+
+
+def test_withdrawn_osv_scanner_records_are_counted_and_explained(tmp_path):
+    from patchtriage.assess import result_message
+    from patchtriage.ingest.parsers import load_file_with_metadata
+
+    scan = tmp_path / "osv.json"
+    scan.write_text(json.dumps({"results": [{"source": {"path": "lock"},
+        "packages": [{"package": {"name": "x", "version": "1",
+                                  "ecosystem": "npm"},
+                      "vulnerabilities": [
+                          {"id": "GHSA-WD", "withdrawn": "2026-01-01T00:00:00Z"},
+                          {"id": "GHSA-WD", "withdrawn": "2026-01-01T00:00:00Z"}]
+                      }]}]}), encoding="utf-8")
+    result = load_file_with_metadata(scan)
+    assert result.findings == []
+    assert result.coverage["withdrawn_skipped"] == 1
+    message = result_message([], [], False, "provider_reported",
+                             result.coverage)
+    assert "1 matching advisory record(s) had been withdrawn" in message

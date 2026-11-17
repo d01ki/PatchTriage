@@ -334,6 +334,8 @@ def parse_osv(data: dict, default_asset: Asset | None = None) -> Iterator[RawFin
         for p in res.get("packages", []) or []:
             pkg = p.get("package") or {}
             for v in p.get("vulnerabilities", []) or []:
+                if not isinstance(v, dict) or v.get("withdrawn"):
+                    continue  # malformed (validated earlier) or retracted
                 vuln_id, aliases = _prefer_cve(v.get("id", ""), v.get("aliases") or [])
                 sev_score = None
                 for s in v.get("severity") or []:
@@ -462,6 +464,11 @@ def _osv_rows(data: dict, errors: list[str]) -> Iterator[tuple]:
             if not vulns:
                 yield None, label
             for row, vuln in enumerate(vulns):
+                if isinstance(vuln, dict) and vuln.get("withdrawn"):
+                    # Well-formed but retracted: nothing to report, not an
+                    # error, and counted as withdrawn_skipped.
+                    yield None, f"{label}.vulnerabilities[{row}]"
+                    continue
                 yield {**data, "results": [{**result, "packages": [
                     {**package, "vulnerabilities": [vuln]}]}]}, (
                     f"{label}.vulnerabilities[{row}]")
@@ -538,6 +545,7 @@ def load_file_with_metadata(path: str | Path, fmt: str | None = None,
             f"scanner JSON (one of {sorted(PARSERS)}) or a CycloneDX/SPDX "
             f"SBOM. Pass fmt= to force a scanner format.")
     findings, errors = _parse_scanner(fmt, data, asset)
+    withdrawn = _withdrawn_osv_ids(data) if fmt == "osv" else set()
     shown = errors[:MAX_REPORTED_ROW_ERRORS]
     if len(errors) > len(shown):
         shown.append(f"{len(errors) - len(shown)} more malformed rows")
@@ -547,7 +555,23 @@ def load_file_with_metadata(path: str | Path, fmt: str | None = None,
         "records": len(findings),
         "malformed_rows": len(errors),
         "errors": shown,
+        **({"withdrawn_skipped": len(withdrawn)} if withdrawn else {}),
     })
+
+
+def _withdrawn_osv_ids(data: dict) -> set[str]:
+    """Distinct withdrawn records in osv-scanner output (excluded above)."""
+    ids: set[str] = set()
+    # Malformed rows are reported by the structural validation; skip them.
+    for res in data.get("results") or []:
+        packages = res.get("packages") if isinstance(res, dict) else None
+        for package in packages if isinstance(packages, list) else []:
+            vulns = (package.get("vulnerabilities")
+                     if isinstance(package, dict) else None)
+            for vuln in vulns if isinstance(vulns, list) else []:
+                if isinstance(vuln, dict) and vuln.get("withdrawn"):
+                    ids.add(str(vuln.get("id") or ""))
+    return ids
 
 
 def load_file(path: str | Path, fmt: str | None = None,

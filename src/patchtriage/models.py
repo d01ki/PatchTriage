@@ -15,6 +15,8 @@ from enum import Enum
 from typing import Optional
 from urllib.parse import unquote
 
+from urllib.parse import urlsplit
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -199,6 +201,28 @@ class RawFinding(BaseModel):
     raw: dict = Field(default_factory=dict, exclude=True)  # original record for audit
 
 
+def web_url_problem(value: str) -> str:
+    """Why ``value`` is not a safe absolute http(s) link, or "" if it is.
+
+    The one rule for every URL PatchTriage turns into a link or stores as a
+    target URL.
+    """
+    if len(value) > 2048:
+        return "url is too long"
+    parsed = urlsplit(value)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+        return "url must be an absolute http:// or https:// URL"
+    if parsed.username is not None or parsed.password is not None:
+        return "url must not contain embedded credentials"
+    return ""
+
+
+def safe_web_url(value: str) -> str:
+    """``value`` when it is a safe http(s) link, otherwise ""."""
+    value = str(value or "").strip()
+    return value if value and not web_url_problem(value) else ""
+
+
 class VendorAdvisory(BaseModel):
     """A normalized record from an authoritative vendor advisory feed."""
 
@@ -211,6 +235,13 @@ class VendorAdvisory(BaseModel):
     products: list[str] = Field(default_factory=list)
     fixed_versions: list[str] = Field(default_factory=list)
     vulnerable_functions: list[str] = Field(default_factory=list)
+
+    @field_validator("url")
+    @classmethod
+    def _web_url_only(cls, value: str) -> str:
+        """Feed data is untrusted: keep only absolute http(s) links, so no
+        report or GUI view can render a javascript: or data: URL."""
+        return safe_web_url(value)
 
 
 class Enrichment(BaseModel):

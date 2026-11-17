@@ -69,10 +69,10 @@ def _evidence_links(finding) -> list[dict]:
     for source in ("exploitdb", "msrc", "rhsa", "debian", "usn", "ghsa"):
         records = by_source.get(source) or []
         for index, advisory in enumerate(records[:2]):
-            url = advisory.url if advisory.url.startswith("https://") else ""
             links.append({
                 "source": _SOURCE_NAMES.get(source, source),
-                "label": advisory.advisory_id, "url": url,
+                # VendorAdvisory keeps only validated http(s) links.
+                "label": advisory.advisory_id, "url": advisory.url,
                 "more": len(records) - 2 if index == 1 and len(records) > 2
                 else 0})
     return links

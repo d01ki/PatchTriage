@@ -438,7 +438,7 @@ def render_html(findings: list[Finding], actions: list[Action],
             advisory_link = (
                 f'<a href="{_esc(advisory.url)}" target="_blank" '
                 f'rel="noopener">{_esc(label)} ↗</a>'
-                if advisory.url.startswith(("https://", "http://"))
+                if advisory.url  # already a validated http(s) link
                 else _esc(label)
             )
             products = ", ".join(advisory.products[:3])
@@ -494,7 +494,7 @@ def render_html(findings: list[Finding], actions: list[Action],
         advisory_badges = []
         for advisory in e.vendor_advisories[:4]:
             label = f"{advisory.source.upper()}:{advisory.advisory_id}"
-            if advisory.url.startswith(("https://", "http://")):
+            if advisory.url:  # already a validated http(s) link
                 advisory_badges.append(
                     f'<a href="{_esc(advisory.url)}" target="_blank" '
                     f'rel="noopener">{_esc(label)}</a>')

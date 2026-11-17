@@ -469,3 +469,41 @@ def test_legacy_vendor_cache_survives_the_first_save(tmp_path, monkeypatch):
     assert calls == []
     assert [a.advisory_id for a in findings[0].enrichment.vendor_advisories] \
         == ["OLD"]
+
+def test_advisory_links_are_limited_to_web_urls():
+    from patchtriage.models import VendorAdvisory
+
+    def url(value):
+        return VendorAdvisory(source="ghsa", advisory_id="X", url=value).url
+
+    assert url("javascript:alert(1)") == ""
+    assert url(" data:text/html,x") == ""
+    assert url("https://github.com/advisories/GHSA-x") == (
+        "https://github.com/advisories/GHSA-x")
+
+
+def test_withdrawn_github_advisory_is_not_attached():
+    rows = [{"ghsa_id": "GHSA-live", "withdrawn_at": None,
+             "html_url": "https://github.com/advisories/GHSA-live"},
+            {"ghsa_id": "GHSA-gone", "withdrawn_at": "2026-01-01T00:00:00Z",
+             "html_url": "https://github.com/advisories/GHSA-gone"}]
+    assert [r["advisory_id"] for r in parse_ghsa(rows, CVE)] == ["GHSA-live"]
+
+
+@pytest.mark.parametrize("value, kept", [
+    ("HTTPS://github.com/advisories/GHSA-x", True),
+    ("https://", False), ("http:///x", False),
+    ("https://user:pw@example.test/x", False)])
+def test_advisory_url_rule_matches_target_urls(value, kept):
+    from patchtriage.models import VendorAdvisory
+
+    url = VendorAdvisory(source="ghsa", advisory_id="X", url=value).url
+    assert (url == value) is kept and (url == "") is (not kept)
+
+
+def test_unsafe_usn_reference_falls_back_to_the_notice_url():
+    payload = {"id": f"UBUNTU-{CVE}", "related": ["USN-1234-1"],
+               "references": [{"url": "javascript:/security/notices/USN-1234-1"}],
+               "affected": []}
+    [record] = parse_usn(payload, CVE)
+    assert record["url"] == "https://ubuntu.com/security/notices/USN-1234-1"
