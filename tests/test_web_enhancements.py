@@ -676,6 +676,41 @@ def test_fleet_import_runs_as_a_background_job(enhanced_server, monkeypatch):
     assert status == 400
 
 
+def test_cancelled_fleet_import_reports_cancelled_with_what_was_kept(
+        enhanced_server, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+
+    def fake_import_fleet(owner_url, **kwargs):
+        started.set()
+        assert release.wait(10)
+        reason = kwargs["should_stop"]()
+        return {"owner": "acme", "imported": 1, "already_imported": 0,
+                "failed": 0, "not_attempted": 2, "stopped_reason": reason,
+                "results": [], "imported_target_ids": []}
+
+    monkeypatch.setattr(webserver.fleetmod, "import_fleet", fake_import_fleet)
+    opener = _opener()
+    _, job = _api(opener, "POST", enhanced_server + "/api/fleet/import",
+                  {"owner_url": "https://github.com/acme"})
+    assert started.wait(5)
+    status, _ = _api(opener, "DELETE",
+                     f"{enhanced_server}/api/imports/{job['import_id']}")
+    assert status == 202
+    release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "cancelled"
+    assert finished["result"]["imported"] == 1
+    assert finished["result"]["stopped_reason"] == "import was cancelled"
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("120", 120.0), ("0", 600.0), ("-5", 600.0), ("soon", 600.0)])
+def test_import_deadline_setting_is_bounded(monkeypatch, value, expected):
+    monkeypatch.setenv("PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", value)
+    assert webserver._env_seconds(
+        "PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", 600.0) == expected
+
+
 def test_public_deployment_never_passes_service_token_to_repository_import(
         monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")

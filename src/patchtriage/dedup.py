@@ -8,8 +8,10 @@ severities and package spellings. We merge on a stable key:
 
 Canonical vuln id prefers CVE over GHSA/DSA/... using the alias graph, so a
 Trivy "CVE-2023-1234" and a Grype "GHSA-xxxx (related: CVE-2023-1234)" merge.
-An advisory listing several CVEs is split into one finding per CVE, and an id
-linked to several CVEs stays separate; such links are kept as related_ids.
+An advisory listing several CVEs (directly or through linked advisories) is
+split into one finding per CVE; a record reported as a CVE keeps its id.
+Other CVEs are kept as related_ids. Distribution bundles (RHSA, DSA, USN...)
+never link records, because they cover many vulnerabilities.
 
 Merge policy: keep the MAX severity / CVSS across scanners (conservative),
 union references and reported_by, keep earliest detection time.
@@ -99,13 +101,36 @@ def _is_cve(value: str) -> bool:
     return value.upper().startswith("CVE-")
 
 
-def _split_multi_cve(raw_findings: list[RawFinding]
-                     ) -> list[tuple[RawFinding, set[str]]]:
-    """Give each CVE of a multi-CVE advisory its own raw finding.
+# Distribution advisories bundle many vulnerabilities, so sharing one says
+# nothing about two records being the same vulnerability. They stay as
+# aliases (provenance) but never link records together.
+_BUNDLE_ADVISORY = re.compile(
+    r"^(?:RHSA|RHBA|RHEA|DSA|DLA|DTSA|USN|ALAS\d*|ALSA|RLSA|ELSA|CESA|"
+    r"SUSE-[A-Z]{2}|OPENSUSE-[A-Z]{2}|MGASA|FEDORA|GLSA|BIT)-",
+    re.IGNORECASE)
 
-    Distinct CVEs are distinct vulnerabilities with their own KEV, EPSS
-    and SSVC evidence, so a GHSA listing two of them must not hide one
-    behind the other. The other CVEs are kept as related ids.
+
+def _links(value: str) -> bool:
+    """Whether an id names one vulnerability and may link records."""
+    return not _is_cve(value) and not _BUNDLE_ADVISORY.match(value)
+
+
+def _per_cve(r: RawFinding, cves: list[str]
+             ) -> list[tuple[RawFinding, set[str]]]:
+    """One raw finding per CVE; the others are kept as related ids."""
+    others = sorted({i for i in [r.vuln_id, *r.aliases] if not _is_cve(i)})
+    return [(r.model_copy(update={"vuln_id": cve, "aliases": others}),
+             set(cves) - {cve}) for cve in cves]
+
+
+def _normalize_cves(raw_findings: list[RawFinding]
+                    ) -> list[tuple[RawFinding, set[str]]]:
+    """Leave every raw finding with at most one CVE.
+
+    An advisory record (GHSA, OSV, ...) listing several CVEs covers distinct
+    vulnerabilities with their own KEV, EPSS and SSVC evidence, so it gets
+    one finding per CVE. A record the scanner reported *as* a CVE keeps that
+    id; other CVEs it names are related, not extra findings.
     """
     out: list[tuple[RawFinding, set[str]]] = []
     for r in raw_findings:
@@ -114,37 +139,38 @@ def _split_multi_cve(raw_findings: list[RawFinding]
         if len(cves) <= 1:
             out.append((r, set()))
             continue
-        others = sorted({i for i in ids if not _is_cve(i)})
-        for cve in cves:
-            out.append((r.model_copy(update={"vuln_id": cve,
-                                              "aliases": others}),
-                        set(cves) - {cve}))
+        primary = (r.source_id or r.vuln_id).upper()
+        if _is_cve(primary):
+            out.append((r.model_copy(update={
+                "vuln_id": primary,
+                "aliases": [i for i in r.aliases if not _is_cve(i)],
+            }), set(cves) - {primary}))
+            continue
+        out.extend(_per_cve(r, cves))
     return out
 
 
 class _AliasGraph:
-    """Connect non-CVE ids reported together, then find each group's CVEs.
+    """Connect vulnerability-level ids reported together, then their CVEs.
 
-    Following the links transitively resolves two-step chains such as
-    GHSA -> PYSEC -> CVE. A group linked to several CVEs is ambiguous: its
-    ids stay their own finding instead of joining whichever CVE came last.
+    Following the links transitively resolves chains such as
+    GHSA -> PYSEC -> CVE, independent of input order.
     """
 
     def __init__(self, raws: list[RawFinding]):
         self._parent: dict[str, str] = {}
         for r in raws:
-            others = [i.upper() for i in [r.vuln_id, *r.aliases]
-                      if not _is_cve(i)]
-            for i in others:
+            linking = [i.upper() for i in [r.vuln_id, *r.aliases] if _links(i)]
+            for i in linking:
                 self._parent.setdefault(i, i)
-            for a, b in zip(others, others[1:]):
+            for a, b in zip(linking, linking[1:]):
                 self._union(a, b)
         self._cves: dict[str, set[str]] = defaultdict(set)
         for r in raws:
             ids = [r.vuln_id, *r.aliases]
             cves = {i.upper() for i in ids if _is_cve(i)}
             for i in ids:
-                if not _is_cve(i):
+                if _links(i):
                     self._cves[self._find(i.upper())] |= cves
 
     def _find(self, value: str) -> str:
@@ -158,32 +184,48 @@ class _AliasGraph:
         if ra != rb:
             self._parent[max(ra, rb)] = min(ra, rb)
 
-    def canonical(self, raw: RawFinding) -> tuple[str, set[str]]:
-        """Return the canonical id and any related-but-distinct CVEs."""
-        ids = [raw.vuln_id, *raw.aliases]
-        cves = sorted({i.upper() for i in ids if _is_cve(i)})
-        if cves:  # more than one was split off beforehand
-            return cves[0], set()
+    def linked_cves(self, raw: RawFinding) -> list[str]:
         linked: set[str] = set()
-        for i in ids:
-            linked |= self._cves.get(self._find(i.upper()), set())
+        for i in [raw.vuln_id, *raw.aliases]:
+            if _links(i):
+                linked |= self._cves.get(self._find(i.upper()), set())
+        return sorted(linked)
+
+
+def _resolve_ids(raw_findings: list[RawFinding]
+                 ) -> list[tuple[RawFinding, str, set[str]]]:
+    """Return (raw finding, canonical id, related ids) for every record.
+
+    A record without a CVE joins the CVE its linked advisories name. When
+    they name several, it is split per CVE exactly like a multi-CVE
+    advisory, so the same advisory never also stays a CVE-less duplicate.
+    """
+    expanded = _normalize_cves(raw_findings)
+    graph = _AliasGraph([r for r, _ in expanded])
+    out: list[tuple[RawFinding, str, set[str]]] = []
+    for r, related in expanded:
+        own = [i.upper() for i in [r.vuln_id, *r.aliases] if _is_cve(i)]
+        if own:
+            out.append((r, own[0], related))
+            continue
+        linked = graph.linked_cves(r)
         if len(linked) == 1:
-            return next(iter(linked)), set()
-        return raw.vuln_id, linked
+            out.append((r, linked[0], related))
+        elif not linked:
+            out.append((r, r.vuln_id, related))
+        else:
+            out.extend((copy, copy.vuln_id, related | others)
+                       for copy, others in _per_cve(r, linked))
+    return out
 
 
 def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
-    # Pass 1: separate multi-CVE advisories, then link aliases across ALL
-    # findings (cross-scanner, transitive) to a CVE only when unambiguous.
-    expanded = _split_multi_cve(raw_findings)
-    raw_findings = [r for r, _ in expanded]
-    graph = _AliasGraph(raw_findings)
-    related_by_index: list[set[str]] = []
-    canonical_ids: list[str] = []
-    for r, related in expanded:
-        vid, ambiguous = graph.canonical(r)
-        canonical_ids.append(vid)
-        related_by_index.append(related | ambiguous)
+    # Pass 1: one CVE per record, linked across ALL findings (cross-scanner,
+    # transitive through vulnerability-level advisories).
+    resolved_ids = _resolve_ids(raw_findings)
+    raw_findings = [r for r, _, _ in resolved_ids]
+    canonical_ids = [vid for _, vid, _ in resolved_ids]
+    related_by_index = [related for _, _, related in resolved_ids]
 
     # Pass 2: resolve missing ecosystem/namespace only when the compatible
     # value is unambiguous. An empty field must never bridge two distinct

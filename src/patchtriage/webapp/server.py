@@ -64,10 +64,19 @@ _IMPORT_SLOTS = threading.BoundedSemaphore(
     max(1, int(os.environ.get("PATCHTRIAGE_MAX_CONCURRENT_IMPORTS", 2))))
 # Repository and fleet imports run as background jobs so a slow provider
 # never holds an HTTP request (and a reverse proxy's timeout) open.
-IMPORT_DEADLINE_SECONDS = float(
-    os.environ.get("PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", 600))
+def _env_seconds(name: str, default: float) -> float:
+    """A positive number of seconds from the environment, else the default."""
+    try:
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return value if value >= 1 else default
+
+
+IMPORT_DEADLINE_SECONDS = _env_seconds(
+    "PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", 600.0)
 _IMPORTS: dict[str, dict] = {}
-_ACTIVE_IMPORT_STATES = frozenset({"queued", "running"})
+_ACTIVE_STATES = frozenset({"queued", "running"})
 
 # Bundled IBM Plex Latin-1 subsets (SIL OFL 1.1, see fonts/OFL.txt) keep the GUI offline.
 _FONT_NAME = re.compile(r"[A-Za-z0-9-]+\.woff2")
@@ -198,34 +207,35 @@ def _public_job(job: dict) -> dict:
     return snapshot
 
 
-def _prune_jobs_locked() -> None:
-    """Prune terminal jobs by age/count; never orphan an active worker."""
+def _prune_terminal_locked(store: dict[str, dict],
+                           active_states: frozenset[str]) -> None:
+    """Drop finished jobs past the session TTL, then all but the newest
+    MAX_RETAINED_JOBS. Active jobs are never touched, so no worker is
+    orphaned. Callers hold _JOB_LOCK."""
     cutoff = time.time() - SESSION_TTL_SECONDS
-    terminal = [
-        (job_id, job) for job_id, job in _JOBS.items()
-        if job.get("state") in {"succeeded", "failed"}
-    ]
-    for job_id, job in terminal:
-        if job.get("finished_at", 0) < cutoff:
-            _JOBS.pop(job_id, None)
     terminal = sorted(
-        ((job_id, job) for job_id, job in _JOBS.items()
-         if job.get("state") in {"succeeded", "failed"}),
-        key=lambda item: item[1].get("finished_at", 0),
-        reverse=True,
-    )
-    for job_id, _job in terminal[max(1, MAX_RETAINED_JOBS):]:
-        _JOBS.pop(job_id, None)
+        ((job_id, job) for job_id, job in store.items()
+         if job.get("state") not in active_states),
+        key=lambda item: item[1].get("finished_at", 0), reverse=True)
+    for index, (job_id, job) in enumerate(terminal):
+        if (job.get("finished_at", 0) < cutoff
+                or index >= max(1, MAX_RETAINED_JOBS)):
+            store.pop(job_id, None)
+
+
+
+def _prune_jobs_locked() -> None:
+    _prune_terminal_locked(_JOBS, _ACTIVE_STATES)
 
 
 def _cleanup_expired_workspaces() -> int:
     with _JOB_LOCK:
         active_workspaces = {
             job["workspace"] for job in _JOBS.values()
-            if job.get("state") in {"queued", "running"}
+            if job.get("state") in _ACTIVE_STATES
         } | {
             job["workspace"] for job in _IMPORTS.values()
-            if job.get("state") in _ACTIVE_IMPORT_STATES
+            if job.get("state") in _ACTIVE_STATES
         }
     return tstore.cleanup_workspaces(
         SESSION_TTL_SECONDS, exclude_workspace_ids=active_workspaces)
@@ -295,11 +305,11 @@ def _start_job(workspace: str, target_id: str, backend: str) -> dict:
         active = next((job for job in _JOBS.values()
                        if job["workspace"] == workspace
                        and job["target_id"] == target_id
-                       and job["state"] in {"queued", "running"}), None)
+                       and job["state"] in _ACTIVE_STATES), None)
         if active:
             return active
         active_jobs = [job for job in _JOBS.values()
-                       if job["state"] in {"queued", "running"}]
+                       if job["state"] in _ACTIVE_STATES]
         if len(active_jobs) >= MAX_ACTIVE_JOBS_GLOBAL:
             raise RequestError("assessment queue is full; retry later", 429)
         if sum(job["workspace"] == workspace for job in active_jobs) >= \
@@ -340,15 +350,7 @@ def _public_import(job: dict) -> dict:
 
 
 def _prune_imports_locked() -> None:
-    cutoff = time.time() - SESSION_TTL_SECONDS
-    terminal = sorted(
-        ((import_id, job) for import_id, job in _IMPORTS.items()
-         if job["state"] not in _ACTIVE_IMPORT_STATES),
-        key=lambda item: item[1].get("finished_at", 0), reverse=True)
-    for index, (import_id, job) in enumerate(terminal):
-        if (job.get("finished_at", 0) < cutoff
-                or index >= max(1, MAX_RETAINED_JOBS)):
-            _IMPORTS.pop(import_id, None)
+    _prune_terminal_locked(_IMPORTS, _ACTIVE_STATES)
 
 
 def _import_stop(import_id: str) -> tuple[str, int]:
@@ -358,7 +360,7 @@ def _import_stop(import_id: str) -> tuple[str, int]:
         if job is None or job.get("cancel_requested"):
             return "import was cancelled", 409
         if time.monotonic() > job["deadline"]:
-            return (f"import exceeded its {IMPORT_DEADLINE_SECONDS:g}-second "
+            return (f"import exceeded its {job['deadline_seconds']:g}-second "
                     "time budget", 504)
     return "", 0
 
@@ -377,12 +379,18 @@ def _execute_import(import_id: str, work) -> None:
         with _JOB_LOCK:
             job = _IMPORTS.get(import_id)
             if job:
-                if status < 400:
+                if job.get("cancel_requested"):
+                    # A fleet import stops between repositories and still
+                    # returns what it imported; keep that as the result.
+                    job.update(state="cancelled", error="import was cancelled",
+                               error_status=409)
+                    if status < 400:
+                        job["result"] = payload
+                elif status < 400:
                     job.update(state="succeeded", result=payload)
                 else:
                     job.update(
-                        state=("cancelled" if job.get("cancel_requested")
-                               else "failed"),
+                        state="failed",
                         error=str(payload.get("error") or "import failed"),
                         error_status=status)
                 job["finished_at"] = time.time()
@@ -399,7 +407,7 @@ def _start_import(workspace: str, kind: str, target_id: str, key: str,
         for job in _IMPORTS.values():
             if (job["workspace"] == workspace and job["kind"] == kind
                     and job["target_id"] == target_id
-                    and job["state"] in _ACTIVE_IMPORT_STATES):
+                    and job["state"] in _ACTIVE_STATES):
                 if job["key"] == key:
                     return job
                 raise RequestError(
@@ -765,7 +773,7 @@ class Handler(BaseHTTPRequestHandler):
                     dict(job)
                     for job in _JOBS.values()
                     if job["workspace"] == workspace
-                    and (include_latest or job["state"] in {"queued", "running"})
+                    and (include_latest or job["state"] in _ACTIVE_STATES)
                 ]
             if include_latest:
                 # A refresh must recover a just-finished or failed run, but
@@ -795,7 +803,7 @@ class Handler(BaseHTTPRequestHandler):
                 _prune_imports_locked()
                 visible = [job for job in _IMPORTS.values()
                            if job["workspace"] == workspace
-                           and job["state"] in _ACTIVE_IMPORT_STATES]
+                           and job["state"] in _ACTIVE_STATES]
             return self._send_json([_public_import(job) for job in visible])
         m = re.fullmatch(r"/api/imports/([0-9a-f]{24})", path)
         if m:
@@ -1146,7 +1154,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = _IMPORTS.get(m.group(1))
                 if not job or job["workspace"] != workspace:
                     return self._send_json({"error": "no such import"}, 404)
-                if job["state"] in _ACTIVE_IMPORT_STATES:
+                if job["state"] in _ACTIVE_STATES:
                     job["cancel_requested"] = True
             return self._send_json(_public_import(job), 202)
         m = re.fullmatch(
@@ -1156,7 +1164,7 @@ class Handler(BaseHTTPRequestHandler):
                 active = any(
                     job["workspace"] == workspace
                     and job["target_id"] == m.group(1)
-                    and job["state"] in {"queued", "running"}
+                    and job["state"] in _ACTIVE_STATES
                     for job in _JOBS.values()
                 )
             if active:

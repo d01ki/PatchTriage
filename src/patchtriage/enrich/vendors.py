@@ -15,8 +15,8 @@ from typing import Any
 import httpx
 
 from ..models import Finding, VendorAdvisory
-from .clients import (_load_cache, _load_entry_cache, _merge_entry_cache,
-                      _save_cache)
+from .clients import (_cache_mtime, _load_cache, _load_entry_cache,
+                      _merge_entry_cache, _save_cache)
 
 MSRC_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/updates/"
 RHSA_URL = "https://access.redhat.com/hydra/rest/securitydata/csaf.json"
@@ -317,11 +317,18 @@ VENDOR_CACHE = "vendor_advisories.json"
 VENDOR_CACHE_HOURS = 24
 
 
+DEBIAN_TRACKER_CACHE = "debian_security_tracker.json"
+
+
 def _vendor_cache_key(key: str) -> bool:
-    """Keep only current per-record keys of cacheable sources."""
-    source, sep, _ = key.partition(":")
-    return bool(sep) and source in ALL_SOURCES and (
-        source not in _LIVE_ONLY_SOURCES)
+    """Keep stored records of cacheable sources.
+
+    Per-record keys are ``source:CVE``. A whole-source key from the older
+    layout is kept too, so its records stay usable until they expire with
+    their original age instead of being dropped on the first save.
+    """
+    source = key.partition(":")[0]
+    return source in ALL_SOURCES and source not in _LIVE_ONLY_SOURCES
 
 
 def _load_vendor_cache() -> dict[str, dict[str, list[dict]]]:
@@ -400,25 +407,35 @@ def enrich_vendor_advisories(
                 for cve in batch:
                     errors[("rhsa", cve)] = str(exc)
 
-        # Debian publishes one complete tracker document; fetch it once/day.
-        if source_cves["debian"]:
-            debian = _load_cache("debian_security_tracker.json", max_age_hours=24)
+        # Debian publishes one complete tracker document; fetch it once/day,
+        # and only when a requested CVE is not already cached.
+        debian_missing = sorted(
+            c for c in source_cves["debian"] if c not in cache["debian"])
+        if debian_missing:
+            debian = _load_cache(DEBIAN_TRACKER_CACHE,
+                                 max_age_hours=VENDOR_CACHE_HOURS)
             if debian is None:
                 try:
                     response = client.get(DEBIAN_URL, timeout=120)
                     response.raise_for_status()
                     debian = response.json()
-                    _save_cache("debian_security_tracker.json", debian)
+                    _save_cache(DEBIAN_TRACKER_CACHE, debian)
                 except (httpx.HTTPError, ValueError, TypeError,
                         KeyError, AttributeError) as exc:
-                    for cve in source_cves["debian"]:
+                    for cve in debian_missing:
                         errors[("debian", cve)] = str(exc)
             if debian is not None:
-                for cve in source_cves["debian"]:
-                    if cve not in cache["debian"]:
-                        cache["debian"][cve] = parse_debian(debian, cve)
-                        fetched[f"debian:{cve}"] = {
-                            "rows": cache["debian"][cve]}
+                debian_rows = {}
+                for cve in debian_missing:
+                    cache["debian"][cve] = parse_debian(debian, cve)
+                    debian_rows[f"debian:{cve}"] = {
+                        "rows": cache["debian"][cve]}
+                # A record is as old as the tracker it was read from.
+                _merge_entry_cache(
+                    VENDOR_CACHE, debian_rows,
+                    max_age_hours=VENDOR_CACHE_HOURS,
+                    keep_key=_vendor_cache_key,
+                    fetched_at=_cache_mtime(DEBIAN_TRACKER_CACHE))
 
         # Per-CVE lookups (Exploit-DB is always live; results stay in memory
         # only) run a few at a time so a large SBOM stays within request time.

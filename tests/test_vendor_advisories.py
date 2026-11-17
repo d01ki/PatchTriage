@@ -409,3 +409,63 @@ def test_legacy_vendor_cache_is_still_read(tmp_path, monkeypatch):
     assert calls == []
     assert [a.advisory_id for a in findings[0].enrichment.vendor_advisories] \
         == ["OLD"]
+
+def test_cached_debian_records_skip_the_tracker_download(tmp_path, monkeypatch):
+    import json
+    import os
+    import time
+
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    tracker = {"apache-log4j2": {CVE: {"releases": {}}}}
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        return httpx.Response(200, json=tracker)
+
+    finding = _finding("debian", "pkg:deb/debian/apache-log4j2")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        enrich_vendor_advisories([finding], sources="debian", client=client)
+    assert requests == ["/tracker/data/json"]
+    path = tmp_path / "vendor_advisories.json"
+    entry = json.loads(path.read_text(encoding="utf-8"))["entries"][
+        f"debian:{CVE}"]
+    # The record is dated by the tracker it came from, not by this save.
+    tracker_mtime = (tmp_path / "debian_security_tracker.json").stat().st_mtime
+    assert abs(entry["fetched_at"] - tracker_mtime) < 1
+
+    # The tracker is now stale, but the record is cached: no download, and
+    # an unreachable tracker must not be reported as a lookup error.
+    old = time.time() - 30 * 3600
+    os.utime(tmp_path / "debian_security_tracker.json", (old, old))
+    requests.clear()
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        return httpx.Response(503)
+
+    finding = _finding("debian", "pkg:deb/debian/apache-log4j2")
+    with httpx.Client(transport=httpx.MockTransport(unavailable)) as client:
+        summary = enrich_vendor_advisories([finding], sources="debian",
+                                           client=client)
+    assert requests == []
+    assert summary["errors"] == 0
+    assert finding.enrichment.vendor_lookup_errors == []
+
+
+def test_legacy_vendor_cache_survives_the_first_save(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    (tmp_path / "vendor_advisories.json").write_text(json.dumps({
+        "msrc": {"CVE-2020-0001": parse_msrc(
+            {"value": [{"ID": "OLD"}]}, "CVE-2020-0001")},
+    }), encoding="utf-8")
+    calls: list[str] = []
+    _run_msrc(["CVE-2020-0002"], calls)  # fetches and saves one new record
+    assert calls == ["CVE-2020-0002"]
+    calls.clear()
+    findings, _ = _run_msrc(["CVE-2020-0001"], calls)
+    assert calls == []
+    assert [a.advisory_id for a in findings[0].enrichment.vendor_advisories] \
+        == ["OLD"]

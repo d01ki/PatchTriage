@@ -1550,7 +1550,7 @@ async function handleTargetAction(button){
   if(isPending(id)&&["edit","import","repository","delete"].includes(action)){notify("Wait for this assessment to finish before changing its inputs.",true);return;}
   if(action==="edit")editContext(TARGETS.find(target=>target.id===id));
   if(action==="import"){pickTarget=id;document.getElementById("filepick").click();}
-  if(action==="repository"){repoTarget=id;document.getElementById("repo-url").value="";document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
+  if(action==="repository"){openRepositoryDialog(id);}
   if(action==="run")runTargets([id]);
   if(action==="delete"&&confirm("Delete this target and its local evidence?")){
     try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);STATUS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
@@ -1562,14 +1562,17 @@ document.getElementById("fleet-open").onclick=()=>{document.getElementById("flee
 // Repository and fleet imports run as server jobs: POST returns 202 with an
 // import id, then the page polls it, so a slow provider never hits a proxy
 // timeout. Cancel stops the job before it saves anything further.
-const IMPORTS={fleet:null,repo:null};
+// Each import is keyed by "fleet" or "repo:<target id>", so the repository
+// dialog only ever shows, cancels, or closes for the target it is open on.
+const IMPORTS=new Map();
+function importKey(kind){return kind==="fleet"?"fleet":repoTarget?`repo:${repoTarget}`:null;}
 async function waitForImport(importId,onState){
   let failures=0;
   for(let attempt=0;attempt<1800;attempt++){
     try{
       const job=await api("GET",`/api/imports/${importId}`);failures=0;
       if(job.state==="succeeded")return job.result;
-      if(job.state==="failed"||job.state==="cancelled"){const error=new Error(job.error||"Import failed");error.importState=job.state;throw error;}
+      if(job.state==="failed"||job.state==="cancelled"){const error=new Error(job.error||"Import failed");error.importState=job.state;error.result=job.result;throw error;}
       onState(job);
     }catch(error){
       if(error.importState)throw error;
@@ -1580,28 +1583,27 @@ async function waitForImport(importId,onState){
   }
   throw new Error("The import is taking longer than expected. Check the target list before retrying.");
 }
-function importProgress(kind,job){
-  const status=document.getElementById(kind+"-status"),seconds=Math.max(0,Math.round(job.elapsed_seconds||0));
+function renderImportDialog(kind){
+  const job=IMPORTS.get(importKey(kind)),busy=Boolean(job),button=document.getElementById(kind+"-import");
+  button.disabled=busy;button.setAttribute("aria-busy",String(busy));
+  document.getElementById(kind+"-cancel").textContent=busy?"Cancel import":"Cancel";
+  const status=document.getElementById(kind+"-status");
+  if(!busy){status.textContent="";return;}
+  if(job.cancelling){status.textContent="Cancelling… nothing more will be saved.";return;}
+  const seconds=Math.max(0,Math.round(job.elapsed_seconds||0));
   status.textContent=`${job.state==="queued"?"Waiting for an import slot":"Importing"}… ${seconds}s elapsed (limit ${Math.round(job.deadline_seconds)}s).`;
 }
-function setImporting(kind,job){
-  IMPORTS[kind]=job;const busy=Boolean(job);
-  document.getElementById(kind+"-import").disabled=busy;
-  document.getElementById(kind+"-import").setAttribute("aria-busy",String(busy));
-  document.getElementById(kind+"-cancel").textContent=busy?"Cancel import":"Cancel";
-  if(!busy)document.getElementById(kind+"-status").textContent="";
-}
 async function cancelImport(kind,dialog){
-  const job=IMPORTS[kind];
+  const key=importKey(kind),job=IMPORTS.get(key);
   if(!job){document.getElementById(dialog).close();return false;}
-  try{await api("DELETE",`/api/imports/${job.import_id}`);document.getElementById(kind+"-status").textContent="Cancelling… nothing more will be saved.";}
+  try{await api("DELETE",`/api/imports/${job.import_id}`);IMPORTS.set(key,{...job,cancelling:true});renderImportDialog(kind);}
   catch(error){notify("Could not cancel the import: "+error.message,true);}
   return true;
 }
-async function runImport(kind,path,body){
-  const started=await api("POST",path,body);setImporting(kind,started);importProgress(kind,started);
-  try{return await waitForImport(started.import_id,job=>importProgress(kind,job));}
-  finally{setImporting(kind,null);}
+async function runImport(kind,key,path,body){
+  const started=await api("POST",path,body);IMPORTS.set(key,started);renderImportDialog(kind);
+  try{return await waitForImport(started.import_id,job=>{if(!IMPORTS.get(key)?.cancelling)IMPORTS.set(key,job);renderImportDialog(kind);});}
+  finally{IMPORTS.delete(key);renderImportDialog(kind);}
 }
 document.getElementById("fleet-cancel").onclick=()=>cancelImport("fleet","fleetdialog");
 document.getElementById("fleet-import").onclick=async()=>{
@@ -1610,27 +1612,34 @@ document.getElementById("fleet-import").onclick=async()=>{
   const limit=parseInt(document.getElementById("fleet-limit").value,10)||10;
   try{
     document.getElementById("fleet-import").disabled=true;notify("Listing repositories and fetching SBOMs…");
-    const report=await runImport("fleet","/api/fleet/import",{owner_url:ownerUrl,limit});
+    const report=await runImport("fleet","fleet","/api/fleet/import",{owner_url:ownerUrl,limit});
     document.getElementById("fleetdialog").close();await loadTargets();renderResults();
     const failed=report.failed?`, ${report.failed} failed`:"";
     const existing=report.already_imported?`, ${report.already_imported} already imported`:"";
     notify(`Imported ${report.imported} repositories from ${report.owner}${existing}${failed}. Press "Run all" to assess the fleet.`,Boolean(report.stopped_reason));
     if(report.stopped_reason)notify(report.stopped_reason,true);
-  }catch(error){notify((error.importState==="cancelled"?"Organization import cancelled: ":"Organization import failed: ")+error.message,true);await loadTargets().catch(()=>{});renderResults();}
-  finally{document.getElementById("fleet-import").disabled=Boolean(IMPORTS.fleet);}
+  }catch(error){
+    const kept=error.result&&error.result.imported?` ${error.result.imported} repositories imported before stopping were kept.`:"";
+    notify((error.importState==="cancelled"?"Organization import cancelled.":"Organization import failed: "+error.message)+kept,true);
+    await loadTargets().catch(()=>{});renderResults();
+  }
+  finally{renderImportDialog("fleet");}
 };
+function openRepositoryDialog(id){repoTarget=id;document.getElementById("repo-url").value="";renderImportDialog("repo");document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
 document.getElementById("repo-cancel").onclick=async()=>{if(await cancelImport("repo","repodialog"))return;repoTarget=null;};
 document.getElementById("repo-import").onclick=async()=>{
   const repositoryUrl=document.getElementById("repo-url").value.trim();
   if(!repoTarget||!repositoryUrl){notify("Enter a GitHub repository URL.",true);return;}
-  const targetId=repoTarget;
+  const targetId=repoTarget,dialog=document.getElementById("repodialog");
   try{
     document.getElementById("repo-import").disabled=true;notify("Fetching GitHub Dependency Graph SBOM...");
-    const imported=await runImport("repo",`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
-    RESULTS.delete(targetId);STATUS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
+    const imported=await runImport("repo",`repo:${targetId}`,`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
+    RESULTS.delete(targetId);STATUS.delete(targetId);
+    if(repoTarget===targetId&&dialog.open){dialog.close();repoTarget=null;}
+    await loadTargets();renderResults();
     notify(`${imported.filename} imported (${imported.provenance.component_count} components).`);
   }catch(error){notify((error.importState==="cancelled"?"Repository import cancelled: ":"Repository import failed: ")+error.message,true);}
-  finally{document.getElementById("repo-import").disabled=Boolean(IMPORTS.repo);}
+  finally{renderImportDialog("repo");}
 };
 document.getElementById("filepick").onchange=async event=>{
   const file=event.target.files[0];if(!file||!pickTarget)return;

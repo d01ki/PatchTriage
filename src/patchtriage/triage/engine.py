@@ -297,6 +297,14 @@ def get_backend(name: str = "rules", model: str | None = None,
 
 
 # ------------------------------------------------------------------ runner
+def _rules_fallback(rules: "RulesBackend", f: Finding, reason: str) -> dict:
+    """The deterministic SSVC result, tagged with why AI was not used."""
+    out = rules.triage(f)
+    out["backend"] = "rules_fallback"
+    out["error"] = reason[:300]
+    return out
+
+
 def run_triage(findings: list[Finding], backend: TriageBackend,
                progress: Optional[Callable[[int, int], None]] = None,
                jobs: int = 1) -> list[Finding]:
@@ -315,10 +323,7 @@ def run_triage(findings: list[Finding], backend: TriageBackend,
         except Exception as exc:
             if is_rules:  # a bug in the baseline should never be masked
                 raise
-            out = rules.triage(f)
-            out["backend"] = "rules_fallback"
-            out["error"] = f"{type(exc).__name__}: {exc}"[:300]
-            return out
+            return _rules_fallback(rules, f, f"{type(exc).__name__}: {exc}")
 
     if jobs <= 1 or is_rules:
         for i, f in enumerate(findings):
@@ -341,13 +346,6 @@ def run_triage(findings: list[Finding], backend: TriageBackend,
 # pointless, and a caller may choose a shorter budget.
 BATCH_DEADLINE_SECONDS = 24 * 3600
 BATCH_STATUS_RETRIES = 5
-
-
-def _batch_fallback(rules: "RulesBackend", f: Finding, reason: str) -> dict:
-    out = rules.triage(f)
-    out["backend"] = "rules_fallback"
-    out["error"] = reason[:300]
-    return out
 
 
 def _batch_entry_recommendation(result) -> dict:
@@ -411,7 +409,7 @@ def run_triage_batch(findings: list[Finding], model: str | None = None,
             progress(f"batch triage stopped: {reason}; "
                      "keeping the deterministic SSVC results")
         for f in findings:
-            f.triage = _batch_fallback(rules, f, reason)
+            f.triage = _rules_fallback(rules, f, reason)
         return findings
 
     def _cancel(batch_id: str) -> None:
@@ -479,6 +477,6 @@ def run_triage_batch(findings: list[Finding], model: str | None = None,
             f.triage = _merge_ai_recommendation(
                 f, outcome, f"anthropic:{model} (batch)")
         else:
-            f.triage = _batch_fallback(
+            f.triage = _rules_fallback(
                 rules, f, outcome or stream_error or "batch entry missing")
     return findings
