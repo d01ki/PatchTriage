@@ -42,6 +42,13 @@ _PATCH_INSTRUCTION = re.compile(
     re.IGNORECASE,
 )
 
+AUDIT_LIMITATIONS = (
+    "Checks numbers tied to EPSS, CVSS, percentile, and the service target "
+    "(with its time unit), the SSVC decision, fix availability, KEV "
+    "downgrade wording, and links. It does not verify other factual claims, "
+    "reasoning quality, or advice in free text."
+)
+
 _ACTION_RANK = {
     "monitor": 0,
     "investigate": 1,
@@ -115,9 +122,56 @@ def _triage_text_fields(triage: dict) -> list[tuple[str, str]]:
     return fields
 
 
+def _renderings(values: list[float | None], *, as_percent: bool) -> set[float]:
+    out: set[float] = set()
+    for value in values:
+        if value is None:
+            continue
+        if as_percent and 0.0 <= value <= 1.0:
+            value = value * 100
+        out.update((value, round(value), round(value, 1), round(value, 2)))
+    return out
+
+
+# The claim a number makes is decided by the closest keyword, so "EPSS is
+# 7.5" is checked against EPSS only and cannot borrow the CVSS value.
+_CLAIM_KEYWORDS = re.compile(
+    r"\b(?P<kind>epss|cvss|percentile|percent(?:age)?|score|probability|"
+    r"risk\s+rating|hours?|days?|weeks?|months?|deadline|sla|target)\b",
+    re.IGNORECASE,
+)
+_CLAIM_WINDOW = 24
+# A service target is stated in days; other units are converted to days.
+_DAYS_PER_UNIT = {"hour": 1 / 24, "day": 1.0, "week": 7.0, "month": 30.0}
+_UNIT_TOLERANCE_DAYS = {"hour": 0.5 / 24, "day": 0.051, "week": 0.5,
+                        "month": 3.0}
+
+
+def _claim_kind(text: str, start: int, end: int) -> str:
+    best, best_distance = "", _CLAIM_WINDOW + 1
+    window = text[max(0, start - _CLAIM_WINDOW):end + _CLAIM_WINDOW]
+    offset = max(0, start - _CLAIM_WINDOW)
+    for match in _CLAIM_KEYWORDS.finditer(window):
+        kw_start, kw_end = match.start() + offset, match.end() + offset
+        distance = (kw_start - end) if kw_start >= end else (start - kw_end)
+        if 0 <= distance < best_distance:
+            best = re.sub(r"\s+", " ", match.group("kind").lower())
+            best_distance = distance
+    return best
+
+
 def _numeric_claim_flags(f: Finding, field: str, text: str,
                          deadline_days: int) -> list[str]:
     stripped = _strip_known_tokens(f, text)
+    e = f.enrichment
+    cvss = [e.nvd_cvss_score, f.cvss_score]
+    allowed_by_kind = {
+        "epss": (_renderings([e.epss_score], as_percent=False)
+                 | _renderings([e.epss_score], as_percent=True)),
+        "cvss": _renderings(cvss, as_percent=False),
+        "percentile": (_renderings([e.epss_percentile], as_percent=False)
+                       | _renderings([e.epss_percentile], as_percent=True)),
+    }
     signals = _signal_values(f)
     percentages = _percentage_values(f)
     flags: list[str] = []
@@ -125,39 +179,33 @@ def _numeric_claim_flags(f: Finding, field: str, text: str,
         rendered = match.group("value")
         value = float(rendered)
         is_percent = bool(match.group("percent"))
-        nearby = stripped[
-            max(0, match.start() - 18):min(len(stripped), match.end() + 18)
-        ].lower()
-        is_duration = bool(re.search(
-            r"\b(?:day|days|hour|hours|week|weeks|month|months|deadline|sla|target)\b",
-            nearby,
-        ))
-        is_percentage_context = is_percent or bool(re.search(
-            r"\b(?:percent|percentage|percentile)\b", nearby,
-        ))
-        signal_context = bool(re.search(
-            r"\b(?:epss|cvss|score|percentile|probability|risk\s+rating)\b",
-            nearby,
-        ))
+        kind = _claim_kind(stripped, match.start(), match.end())
+        if kind.endswith("s") and kind.rstrip("s") in _DAYS_PER_UNIT:
+            kind = kind.rstrip("s")
         # Ordinals, protocol versions, numbered steps, ports, and other bare
         # prose numbers are not quantitative vulnerability claims. Audit only
         # explicit signal, percentage, or service-target/duration contexts.
-        if not (is_percentage_context or is_duration or signal_context):
+        if not kind and not is_percent:
             continue
-        allowed = (
-            percentages if is_percent else
-            percentages | signals if is_percentage_context else
-            {float(deadline_days)} if is_duration else
-            signals
-        )
+        if kind in _DAYS_PER_UNIT:
+            claimed_days = value * _DAYS_PER_UNIT[kind]
+            if abs(claimed_days - deadline_days) <= _UNIT_TOLERANCE_DAYS[kind]:
+                continue
+            flags.append(f"fabricated_number:{field}:{rendered}")
+            continue
+        if kind in {"deadline", "sla", "target"}:
+            allowed = {float(deadline_days)}
+        elif kind in allowed_by_kind:
+            allowed = allowed_by_kind[kind]
+        elif is_percent or kind in {"percent", "percentage"}:
+            allowed = percentages
+        else:  # a generic "score", "probability" or "risk rating"
+            allowed = signals | percentages
         if any(abs(value - known) <= 0.051 for known in allowed):
             continue
         if is_percent:
             flags.append(f"fabricated_percentage:{field}:{rendered}%")
-            continue
-        # Large bare integers are commonly years or advisory identifiers. They
-        # become auditable claims when paired with a duration/SLA unit.
-        if is_duration or signal_context or is_percentage_context:
+        else:
             flags.append(f"fabricated_number:{field}:{rendered}")
     return flags
 
@@ -262,6 +310,7 @@ def audit_finding(f: Finding, rules: RulesBackend) -> dict:
         "checks": ["fabricated_numbers", "ssvc_consistency",
                    "fix_consistency", "evidence_completeness",
                    "ai_recommendation_consistency"],
+        "limitations": AUDIT_LIMITATIONS,
     }
 
 

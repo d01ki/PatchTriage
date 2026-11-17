@@ -12,6 +12,7 @@ from ..assess import result_message as _result_message
 from ..models import Asset
 from ..bod2604 import summarize as summarize_response_policy
 from ..presentation import (
+    ai_explanation,
     decision_quality,
     evaluation_outcome,
     priority_basis,
@@ -278,6 +279,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "basis": priority_basis(top_finding),
             "checks": priority_evidence(top_finding),
             "rationale": (top_finding.triage or {}).get("rationale", ""),
+            "ai_explanation": ai_explanation(top_finding.triage or {}),
             "ssvc": ssvc,
             "bod2604": (top_finding.triage or {}).get("bod2604"),
             "effective": (top_finding.triage or {}).get("effective"),

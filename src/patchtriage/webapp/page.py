@@ -475,6 +475,7 @@ _TEMPLATE = r"""<!doctype html>
   .evidencelinks a,.advisoryline a{color:var(--acc)}
 
   .privacy,.confirmbar,.resultnotice,.fieldnow.fallback,.patchtriagenote,.basis,.decisionnote{background:var(--s2);border-color:var(--line2);color:var(--mut);border-radius:6px}
+  .aiexplain{margin-top:9px;border:1px solid var(--line2);background:var(--s2);color:var(--mut);border-radius:6px;padding:10px 11px;font-size:13px}.aiexplain>b{color:var(--ink)}.aiexplain .aistatus{display:block;margin:3px 0 5px;font-size:12px}.aiexplain .aistatus.flagged{color:var(--amber);font-weight:600}.aiexplain ul{margin:6px 0 0;padding-left:18px}
 
   .patchtriagenote{color:var(--mut)!important}
   .patchtriagenote b,.fieldnow.fallback b{color:var(--ink)}
@@ -1017,7 +1018,16 @@ function explainBlock(summary){
     ${bodBlock(x)}
     ${(x.needs_confirmation||[]).length?`<div class="confirmbar">Confirm inferred inputs: ${esc(x.needs_confirmation.map(v=>String(v).replaceAll("_"," ")).join(", "))}. Conservative defaults remain active until reviewed.</div>`:""}
     ${checks?`<ul class="evidence" aria-label="Decision evidence checklist">${checks}</ul>`:""}
+    ${aiExplanationBlock(x.ai_explanation)}
     ${advisories?`<div class="advisoryline">${advisories}</div>`:""}`;
+}
+function aiExplanationBlock(ai){
+  // AI text is supporting prose only; the outcome above never comes from it.
+  if(!ai||!(ai.text||(ai.remediation_steps||[]).length))return "";
+  const flagged=ai.verified===false;
+  const status=flagged?`⚑ Flagged by the audit: ${(ai.flags||[]).join(", ")}. Rely on the decision path above.`:ai.verified?"✓ Numbers and actions checked against the evidence.":"Not audited.";
+  const steps=(ai.remediation_steps||[]).map(step=>`<li>${esc(step)}</li>`).join("");
+  return `<div class="aiexplain" role="note"><b>AI explanation</b> <span>· not used for the decision</span><span class="aistatus${flagged?" flagged":""}">${esc(status)}</span>${ai.text?`<div>${esc(ai.text)}</div>`:""}${steps?`<ul aria-label="AI-suggested remediation steps">${steps}</ul>`:""}</div>`;
 }
 function ssvcInputSelect(field,item){
   const point=item[field]||{},override=(item.override||{})[field]||"auto";

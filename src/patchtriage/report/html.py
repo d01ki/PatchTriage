@@ -17,6 +17,7 @@ from ..models import Finding
 from ..plan import Action
 from ..presentation import (
     PRIORITY_DEFINITIONS,
+    ai_explanation,
     decision_quality,
     evaluation_outcome,
     priority_basis,
@@ -40,6 +41,22 @@ def _audit_badge(t: dict) -> str:
         return '<span title="verified against signals" style="color:#2563EB;font-weight:700">✓ </span>'
     flags = _esc(", ".join(a.get("flags", [])))
     return (f'<span title="{flags}" style="color:#D97706;font-weight:700">⚑ </span>')
+
+
+def _ai_explanation_cell(t: dict) -> str:
+    """AI text under the decision rationale, labelled and never merged."""
+    ai = ai_explanation(t)
+    if ai is None or not ai["text"]:
+        return ""
+    if ai["verified"] is False:
+        status = "flagged by the audit: " + ", ".join(ai["flags"])
+    elif ai["verified"]:
+        status = "checked against the signals"
+    else:
+        status = "not audited"
+    return (f'<div class="small" style="margin-top:4px">{_audit_badge(t)}'
+            f'<b>AI explanation</b> (not used for the decision; '
+            f'{_esc(status)}): {_esc(ai["text"][:240])}</div>')
 
 
 def _kev_display(finding: Finding, compact: bool = False) -> str:
@@ -479,7 +496,7 @@ def render_html(findings: list[Finding], actions: list[Action],
           <td>{_esc(t.get("action", "—"))}</td>
           <td class="mono small">{_esc(f.asset.identifier)}</td>
           <td class="small">{_bod_finding_cell(t)}</td>
-          <td class="small">{_audit_badge(t)}{_esc((t.get("rationale") or "")[:160])}</td>
+          <td class="small">{_esc((t.get("rationale") or "")[:160])}{_ai_explanation_cell(t)}</td>
         </tr>"""
 
     eval_html = ""
