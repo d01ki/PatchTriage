@@ -334,6 +334,8 @@ def parse_osv(data: dict, default_asset: Asset | None = None) -> Iterator[RawFin
         for p in res.get("packages", []) or []:
             pkg = p.get("package") or {}
             for v in p.get("vulnerabilities", []) or []:
+                if isinstance(v, dict) and v.get("withdrawn"):
+                    continue  # retracted by its publisher; not a finding
                 vuln_id, aliases = _prefer_cve(v.get("id", ""), v.get("aliases") or [])
                 sev_score = None
                 for s in v.get("severity") or []:

@@ -212,6 +212,14 @@ class VendorAdvisory(BaseModel):
     fixed_versions: list[str] = Field(default_factory=list)
     vulnerable_functions: list[str] = Field(default_factory=list)
 
+    @field_validator("url")
+    @classmethod
+    def _web_url_only(cls, value: str) -> str:
+        """Feed data is untrusted: keep only http(s) links, so no report or
+        GUI can render a javascript: or data: URL as a clickable link."""
+        value = (value or "").strip()
+        return value if value.lower().startswith(("https://", "http://")) else ""
+
 
 class Enrichment(BaseModel):
     """Authoritative, deterministic signals. Never LLM-generated."""

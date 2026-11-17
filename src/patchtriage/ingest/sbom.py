@@ -51,6 +51,8 @@ class OsvCoverage:
     failed_components: int = 0
     vulnerability_ids: int = 0
     vulnerability_details_resolved: int = 0
+    # Records OSV marks as withdrawn (retracted); never reported as findings.
+    withdrawn_skipped: int = 0
     vulnerability_details_failed: int = 0
     errors: list[str] = field(default_factory=list)
     # Which components were skipped, and which ecosystems were actually
@@ -86,6 +88,7 @@ class OsvCoverage:
             "failed_components": self.failed_components,
             "vulnerability_ids": self.vulnerability_ids,
             "vulnerability_details_resolved": self.vulnerability_details_resolved,
+            "withdrawn_skipped": self.withdrawn_skipped,
             "vulnerability_details_failed": self.vulnerability_details_failed,
             "errors": list(self.errors),
             "unqueryable_names": list(self.unqueryable_names),
@@ -500,6 +503,9 @@ def load_sbom_result(path: str | Path, asset: Asset | None = None,
                     continue
                 vuln = cache[vid]
                 coverage.vulnerability_details_resolved += 1
+                if vuln.get("withdrawn"):
+                    coverage.withdrawn_skipped += 1
+                    continue
                 if (_osv_ecosystem(pkg.ecosystem) in _LOCAL_RANGE_ECOSYSTEMS
                         and not osv_affects(vuln, pkg)):
                     continue

@@ -469,3 +469,14 @@ def test_legacy_vendor_cache_survives_the_first_save(tmp_path, monkeypatch):
     assert calls == []
     assert [a.advisory_id for a in findings[0].enrichment.vendor_advisories] \
         == ["OLD"]
+
+def test_advisory_links_are_limited_to_web_urls():
+    from patchtriage.models import VendorAdvisory
+
+    def url(value):
+        return VendorAdvisory(source="ghsa", advisory_id="X", url=value).url
+
+    assert url("javascript:alert(1)") == ""
+    assert url(" data:text/html,x") == ""
+    assert url("https://github.com/advisories/GHSA-x") == (
+        "https://github.com/advisories/GHSA-x")
