@@ -19,6 +19,7 @@ from ..presentation import (
     priority_definition,
     priority_evidence,
 )
+from ..evalcmp import evaluation_context
 from ..report.html import render_html
 from ..ssvc import human_impact_branches, ssvc_order_key
 from .. import targets as tstore
@@ -325,6 +326,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                 "ssvc": row.urgent_ssvc,
             },
             "outcome": evaluation_outcome(row, len(findings)),
+            "boundary_ties": row.boundary_ties,
+            "context": evaluation_context(result.subset),
         }
 
     advisory_keys = {

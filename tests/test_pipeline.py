@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,44 @@ def test_eval_patchtriage_beats_cvss_at_k1():
 
 def test_eval_empty_inventory_has_no_comparison_rows():
     assert evaluate([]) == []
+
+
+def test_eval_flags_a_budget_boundary_that_falls_inside_a_tie():
+    from patchtriage.models import Enrichment
+
+    findings = _triaged_findings()
+    for finding in findings:
+        finding.enrichment = Enrichment()  # identical signals everywhere
+        finding.cvss_score = 5.0
+    row = evaluate(findings, budgets=[1])[0]
+    # With every key equal, which finding is "first" is input order alone.
+    assert {"cvss", "epss", "kev"} <= set(row.boundary_ties)
+    assert evaluate(findings, budgets=[len(findings)])[0].boundary_ties == []
+
+
+def test_eval_context_records_denominators_and_missing_signals():
+    from patchtriage.evalcmp import evaluation_context
+
+    findings = _triaged_findings()
+    findings[0].enrichment.epss_score = None
+    context = evaluation_context(findings)
+    assert context["findings"] == len(findings)
+    assert context["epss_missing"] >= 1
+    assert context["kev_listed"] == sum(
+        f.enrichment.in_cisa_kev for f in findings)
+    assert "not independent" in context["urgent_label"]
+
+
+def test_ssvc_urgent_column_is_a_reference_not_a_winner():
+    findings = _triaged_findings()
+    html = render_html(findings, build_plan(findings), evaluate(findings))
+    assert "self-consistency" in html
+    # The last cell of each evaluation row is SSVC's own urgent count.
+    cells = re.findall(
+        r'<td class="([^"]*)" title="Reference: SSVC\'s own urgent '
+        r'decisions">\d+/\d+</td></tr>', html)
+    assert cells and all("win" not in classes for classes in cells)
+    assert "Urgent · SSVC (reference)" in html
 
 
 def test_priority_is_explained_in_plain_language_and_evidence():

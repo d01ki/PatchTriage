@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from ..bod2604 import OUTCOMES
 from ..bod2604 import summarize as summarize_response_policy
-from ..evalcmp import EvalRow
+from ..evalcmp import EvalRow, evaluation_context
 from ..models import Finding
 from ..plan import Action
 from ..presentation import (
@@ -504,11 +504,15 @@ def render_html(findings: list[Finding], actions: list[Action],
         body = ""
         for r in eval_rows:
             best_kev = max(r.kev_baseline, r.kev_epss, r.kev_kev, r.kev_ssvc)
-            best_urgent = max(
-                r.urgent_cvss, r.urgent_epss, r.urgent_kev, r.urgent_ssvc
-            )
+            # SSVC's own urgent count is the label, not a competitor.
+            best_urgent = max(r.urgent_cvss, r.urgent_epss, r.urgent_kev)
+            tie_mark = (
+                f' <span class="small" title="Top-{r.k} cut falls inside a '
+                f'tie for: {_esc(", ".join(r.boundary_ties))}; those counts '
+                f'depend on input order">tie*</span>'
+                if r.boundary_ties else "")
             body += f"""
-            <tr><td class="num">top {r.k}</td>
+            <tr><td class="num">top {r.k}{tie_mark}</td>
                 <td class="num {'win' if r.kev_baseline == best_kev else ''}">{r.kev_baseline}/{r.kev_total}</td>
                 <td class="num {'win' if r.kev_epss == best_kev else ''}">{r.kev_epss}/{r.kev_total}</td>
                 <td class="num {'win' if r.kev_kev == best_kev else ''}">{r.kev_kev}/{r.kev_total}</td>
@@ -516,7 +520,20 @@ def render_html(findings: list[Finding], actions: list[Action],
                 <td class="num {'win' if r.urgent_cvss == best_urgent else ''}">{r.urgent_cvss}/{r.urgent_total}</td>
                 <td class="num {'win' if r.urgent_epss == best_urgent else ''}">{r.urgent_epss}/{r.urgent_total}</td>
                 <td class="num {'win' if r.urgent_kev == best_urgent else ''}">{r.urgent_kev}/{r.urgent_total}</td>
-                <td class="num {'win' if r.urgent_ssvc == best_urgent else ''}">{r.urgent_ssvc}/{r.urgent_total}</td></tr>"""
+                <td class="num" title="Reference: SSVC's own urgent decisions">{r.urgent_ssvc}/{r.urgent_total}</td></tr>"""
+        context = evaluation_context(findings)
+        missing = []
+        if context["epss_missing"]:
+            missing.append(f"{context['epss_missing']} without EPSS")
+        if context["cvss_missing"]:
+            missing.append(f"{context['cvss_missing']} without CVSS")
+        context_note = (
+            f"Denominator: {context['findings']} findings"
+            + (f"; {', '.join(missing)} (sorted as 0)" if missing else "")
+            + ("; tie* marks a budget cut inside equal ordering keys, where "
+               "counts depend on input order" if any(
+                   r.boundary_ties for r in eval_rows) else "")
+            + ".")
         lead_eval = eval_rows[0]
         outcome = evaluation_outcome(lead_eval, total)
         coverage = (f"{outcome['kev_coverage_pct']:.1f}%"
@@ -529,17 +546,19 @@ def render_html(findings: list[Finding], actions: list[Action],
       <div class="outcomecards">
         <div class="outcard"><b>{outcome['review_reduction_pct']:.1f}%</b><span>smaller first-pass queue</span><small>{outcome['reviewed']} of {total} findings reviewed first</small></div>
         <div class="outcard"><b>{coverage}</b><span>known-exploited coverage</span><small>{lead_eval.kev_ssvc} of {lead_eval.kev_total} CISA KEV findings surfaced</small></div>
-        <div class="outcard"><b>{urgent_coverage}</b><span>context-urgent coverage</span><small>{lead_eval.urgent_ssvc} of {lead_eval.urgent_total} SSVC Immediate or Out-of-Cycle findings surfaced</small></div>
+        <div class="outcard"><b>{urgent_coverage}</b><span>urgent decisions within budget</span><small>{lead_eval.urgent_ssvc} of {lead_eval.urgent_total} SSVC Immediate or Out-of-Cycle findings fit; a self-consistency check, not an effectiveness measure</small></div>
       </div>
       <h2>What changes when environment context decides?</h2>
       <p class="lede">Same findings and fixed work budget k, compared across CVSS, EPSS,
       KEV-first, and SSVC orderings. CISA KEV is independent observed-exploitation evidence.
-      “SSVC urgent” measures coverage of this inventory's Immediate and Out-of-Cycle decisions;
-      it is a context-consistency measure, not independent ground truth. Each x/y cell means
-      x target findings surfaced in that top-k queue out of y target findings in the full result.</p>
+      “Urgent” counts this run's own SSVC Immediate and Out-of-Cycle decisions, so the SSVC
+      column is a reference that always captures them; the other columns show how far each
+      simpler ordering agrees with SSVC. It is a self-consistency check, not independent ground
+      truth or proof that SSVC reduces risk. Each x/y cell means x target findings surfaced in
+      that top-k queue out of y target findings in the full result. {_esc(context_note)}</p>
       <table>
         <thead><tr><th>Budget</th><th>KEV · CVSS</th><th>KEV · EPSS</th><th>KEV · KEV-first</th><th>KEV · SSVC</th>
-        <th>Urgent · CVSS</th><th>Urgent · EPSS</th><th>Urgent · KEV-first</th><th>Urgent · SSVC</th></tr></thead>
+        <th>Urgent · CVSS</th><th>Urgent · EPSS</th><th>Urgent · KEV-first</th><th>Urgent · SSVC (reference)</th></tr></thead>
         <tbody>{body}</tbody>
       </table>
     </section>"""
