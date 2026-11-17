@@ -34,12 +34,17 @@ RUN apt-get update \
     && mkdir -p /out /work \
        /home/patchtriage/.cache/patchtriage \
        /home/patchtriage/.config/patchtriage \
-    && chown -R patchtriage:patchtriage /out /work /home/patchtriage \
+    && chown -R patchtriage:patchtriage /out /home/patchtriage \
     && chmod 700 /home/patchtriage/.config/patchtriage
+# /work stays root-owned: the entrypoint reads its owner to find the clone's
+# user, and an unmounted /work must not look like a user's folder.
 # Pre-creating + chowning the cache/config dirs means Docker initializes the
 # named volumes mounted there with uid 1000 ownership, so the GUI (which runs
 # as this user) can persist targets, caches and reports.
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# A Windows checkout may have converted the script to CRLF, which would make
+# every CLI service fail with "no such file or directory".
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh
 ENV HOME=/home/patchtriage
 USER patchtriage
 WORKDIR /work

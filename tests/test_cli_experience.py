@@ -205,12 +205,28 @@ def test_report_error_escapes_markup_in_the_path(tmp_path, capsys):
     assert "[draft]" in capsys.readouterr().out
 
 
-def test_demo_runs_from_a_folder_it_cannot_write(tmp_path, monkeypatch):
-    # The demo's scratch files live in a private temp folder, not the cwd.
-    monkeypatch.chdir(tmp_path)
+def test_demo_writes_nothing_to_the_current_folder(tmp_path, monkeypatch):
+    # From a read-only clone or /work the demo may only write its outputs.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
     out = tmp_path / "out"
     result = CliRunner().invoke(cli.app, [
         "demo", "--html", str(out / "d.html"), "--output", str(out / "d.json")])
     assert result.exit_code == 0, result.stdout
-    assert not (tmp_path / ".patchtriage_demo").exists()
+    assert list(cwd.iterdir()) == []
     assert (out / "d.html").exists()
+
+
+def test_permission_error_in_docker_names_the_host_fix(tmp_path, monkeypatch,
+                                                      capsys):
+    import typer
+
+    def denied(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(cli, "_in_container", lambda: True)
+    monkeypatch.setattr(cli.Path, "write_text", denied)
+    with pytest.raises(typer.Exit):
+        cli._write_report(tmp_path / "r.html", "x")
+    assert "sudo chown" in capsys.readouterr().out

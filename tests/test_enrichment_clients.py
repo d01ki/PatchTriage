@@ -264,3 +264,19 @@ def test_unwritable_cache_does_not_abort_enrichment(tmp_path, monkeypatch,
     assert result["CVE-2024-0001"]["epss"] == 0.5
     clients._save_cache("kev.json", {"x": {}})
     assert "not writable" in caplog.text
+
+
+def test_unreadable_cache_directory_does_not_abort_a_merge(tmp_path,
+                                                           monkeypatch):
+    # A cache volume owned by another user: reads and writes both fail.
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+
+    def denied(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(clients.Path, "stat", denied)
+    monkeypatch.setattr(clients.Path, "exists", denied)
+    monkeypatch.setattr(clients.Path, "read_text", denied)
+    monkeypatch.setattr(clients, "_atomic_write_json", denied)
+    clients._merge_entry_cache("epss.json", {"CVE-1": {"epss": 0.1}})
+    assert clients._load_entry_cache("epss.json", 24) == {}

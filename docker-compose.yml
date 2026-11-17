@@ -82,6 +82,8 @@ services:
     <<: *cli-runtime
     volumes:
       - ./out:/out
+      # Read-only, only so the entrypoint can see who owns the clone.
+      - ./:/work:ro
 
   # Interactive guided run. `run` (not `-d`) keeps stdin/tty attached so the
   # wizard can ask its questions; the browser step is auto-skipped in the

@@ -247,8 +247,8 @@ def _merge_entry_cache(name: str, updates: dict[str, dict],
             fallback_timestamp = path.stat().st_mtime
         except OSError:
             fallback_timestamp = time.time()
-        entries = _decode_entry_cache(
-            _read_json(path) if path.exists() else {}, fallback_timestamp)
+        # _read_json returns None for a missing or unreadable file.
+        entries = _decode_entry_cache(_read_json(path), fallback_timestamp)
         now = time.time()
         stamp = now if fetched_at is None else min(float(fetched_at), now)
         if max_age_hours is not None:

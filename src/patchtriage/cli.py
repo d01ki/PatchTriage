@@ -17,6 +17,7 @@ Scriptable usage:
 
 from __future__ import annotations
 
+import errno
 import glob as globmod
 import json
 import os
@@ -89,9 +90,14 @@ def _write_report(path: Path, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     except OSError as exc:
-        hint = ("Run PatchTriage through docker compose or ./run.sh from your "
-                "clone, so it writes ./out as you." if _in_container()
-                else "Choose a folder you can write to.")
+        denied = exc.errno in (errno.EACCES, errno.EPERM)
+        if denied and _in_container():
+            hint = ("The folder belongs to another user. On the host, run: "
+                    'sudo chown -R "$(id -u):$(id -g)" out')
+        elif denied:
+            hint = "Choose a folder you can write to."
+        else:
+            hint = ""
         console.print(
             f"[red]Cannot write {escape(str(path))}: "
             f"{escape(str(exc.strerror or exc))}.[/red] {hint}")
@@ -1146,11 +1152,11 @@ def verify(
     ),
 ):
     """Verify SSVC conformance, target sensitivity, and reproducibility offline."""
-    from .validation import run_validation
+    from .validation import run_validation, validation_report_text
 
     with console.status("running offline reproducibility verification..."):
         report = run_validation(repeats=repeats)
-    _write_report(output, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    _write_report(output, validation_report_text(report))
     table = Table(title="Reviewer verification")
     table.add_column("Evidence")
     table.add_column("Cases", justify="right")
@@ -1178,36 +1184,36 @@ def demo(
     data = resources.files("patchtriage") / "data"
     # A private temp folder, so the demo also runs from a read-only folder.
     tmp = Path(tempfile.mkdtemp(prefix="patchtriage-demo-"))
-
-    # Seed the bundled snapshot into an ISOLATED cache dir, not the user's
-    # real ~/.cache/patchtriage. The demo KEV/EPSS snapshot only covers a
-    # handful of CVEs; writing it into the shared cache would silently break
-    # KEV enrichment on real scans until the 24h TTL expired.
-    demo_cache = (tmp / "cache").resolve()
-    demo_cache.mkdir(parents=True, exist_ok=True)
-    for src, dst in (("demo_epss.json", "epss.json"),
-                     ("demo_kev.json", "kev.json"),
-                     ("demo_nvd.json", "nvd.json"),
-                     ("demo_vulnrichment.json", "vulnrichment.json")):
-        (demo_cache / dst).write_text((data / src).read_text(encoding="utf-8"),
-                                      encoding="utf-8")
     previous_cache_dir = os.environ.get("PATCHTRIAGE_CACHE_DIR")
-    os.environ["PATCHTRIAGE_CACHE_DIR"] = str(demo_cache)
-    console.print("[dim]using isolated offline enrichment snapshot in "
-                  f"{demo_cache}[/dim]")
-
-    fixtures = resources.files("patchtriage") / "data" / "fixtures"
-    files = []
-    for name in ("trivy_sample.json", "grype_sample.json"):
-        p = tmp / name
-        p.write_text((fixtures / name).read_text(encoding="utf-8"),
-                     encoding="utf-8")
-        files.append(p)
-    assets_yaml = tmp / "assets.yaml"
-    assets_yaml.write_text((data / "demo_assets.yaml").read_text(encoding="utf-8"),
-                           encoding="utf-8")
-
     try:
+        # Seed the bundled snapshot into an ISOLATED cache dir, not the
+        # user's real ~/.cache/patchtriage. The demo KEV/EPSS snapshot only
+        # covers a handful of CVEs; writing it into the shared cache would
+        # silently break KEV enrichment on real scans until the TTL expired.
+        demo_cache = (tmp / "cache").resolve()
+        demo_cache.mkdir(parents=True, exist_ok=True)
+        for src, dst in (("demo_epss.json", "epss.json"),
+                         ("demo_kev.json", "kev.json"),
+                         ("demo_nvd.json", "nvd.json"),
+                         ("demo_vulnrichment.json", "vulnrichment.json")):
+            (demo_cache / dst).write_text(
+                (data / src).read_text(encoding="utf-8"), encoding="utf-8")
+        os.environ["PATCHTRIAGE_CACHE_DIR"] = str(demo_cache)
+        console.print("[dim]using isolated offline enrichment snapshot in "
+                      f"{escape(str(demo_cache))}[/dim]")
+
+        fixtures = resources.files("patchtriage") / "data" / "fixtures"
+        files = []
+        for name in ("trivy_sample.json", "grype_sample.json"):
+            p = tmp / name
+            p.write_text((fixtures / name).read_text(encoding="utf-8"),
+                         encoding="utf-8")
+            files.append(p)
+        assets_yaml = tmp / "assets.yaml"
+        assets_yaml.write_text(
+            (data / "demo_assets.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8")
+
         result = _pipeline(
             files, None, None, assets_yaml, True, None, "rules", None, None,
             vendor_sources=None,
