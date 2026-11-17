@@ -92,15 +92,16 @@ def _write_report(path: Path, text: str) -> None:
     except OSError as exc:
         denied = exc.errno in (errno.EACCES, errno.EPERM)
         if denied and _in_container():
-            hint = ("The folder belongs to another user. On the host, run: "
-                    'sudo chown -R "$(id -u):$(id -g)" out')
+            hint = ("The folder belongs to another user. On the host, run:\n"
+                    '  sudo chown -R "$(id -u):$(id -g)" out')
         elif denied:
             hint = "Choose a folder you can write to."
         else:
             hint = ""
+        # soft_wrap: never break the command in the hint across lines.
         console.print(
             f"[red]Cannot write {escape(str(path))}: "
-            f"{escape(str(exc.strerror or exc))}.[/red] {hint}")
+            f"{escape(str(exc.strerror or exc))}.[/red] {hint}", soft_wrap=True)
         raise typer.Exit(1) from None
 
 

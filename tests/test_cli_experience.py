@@ -229,4 +229,5 @@ def test_permission_error_in_docker_names_the_host_fix(tmp_path, monkeypatch,
     monkeypatch.setattr(cli.Path, "write_text", denied)
     with pytest.raises(typer.Exit):
         cli._write_report(tmp_path / "r.html", "x")
-    assert "sudo chown" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert '  sudo chown -R "$(id -u):$(id -g)" out\n' in out
