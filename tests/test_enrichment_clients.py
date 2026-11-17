@@ -248,3 +248,19 @@ def test_stale_kev_catalog_confirms_only_positive_matches(monkeypatch):
             "stale catalog" in error
             for error in finding_result.enrichment.retrieval_errors
         )
+
+
+def test_unwritable_cache_does_not_abort_enrichment(tmp_path, monkeypatch,
+                                                    caplog):
+    # A file where the cache directory should be: every write fails.
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(blocker))
+    monkeypatch.setattr(clients, "_cache_write_warned", False)
+    payload = {"data": [{"cve": "CVE-2024-0001", "epss": "0.5",
+                         "percentile": "0.9"}]}
+    result = clients.fetch_epss(["CVE-2024-0001"],
+                                FakeClient([FakeResponse(payload)]))
+    assert result["CVE-2024-0001"]["epss"] == 0.5
+    clients._save_cache("kev.json", {"x": {}})
+    assert "not writable" in caplog.text

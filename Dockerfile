@@ -1,12 +1,14 @@
 # PatchTriage — reproducible container build.
 #
 #   docker build -t patchtriage .
-#   mkdir -p out && docker run --rm -v "$PWD/out:/out" patchtriage   # offline demo
+#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" patchtriage   # offline demo
 #   docker run --rm -e PATCHTRIAGE_AI_PROVIDER -e OPENAI_API_KEY \
 #       -e PATCHTRIAGE_AI_MODEL -v "$PWD:/work" patchtriage \
 #       run /work/trivy.json --triage ai -o /work/report.json
 
-FROM python:3.12-slim AS build
+# Base images are pinned by digest for reproducible builds; Dependabot
+# (.github/dependabot.yml) proposes digest and tag updates weekly.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS build
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src ./src
@@ -15,9 +17,9 @@ RUN pip install --no-cache-dir --prefix=/install ".[ai]"
 # Pin the static repository scanner used only by the opt-in local importer.
 # Source scanning reads manifests/lockfiles; PatchTriage never invokes the
 # scanner's remediation command or a package manager on untrusted content.
-FROM ghcr.io/google/osv-scanner:v2.3.8 AS osv-scanner
+FROM ghcr.io/google/osv-scanner:v2.3.8@sha256:64e86bec6df2466feea5137fc7c78fb3b7c21ec077f014d7130f64810e50676b AS osv-scanner
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 LABEL org.opencontainers.image.title="PatchTriage" \
       org.opencontainers.image.description="Evidence-driven patch triage with deterministic SSVC decisions and audited AI explanations" \
       org.opencontainers.image.source="https://github.com/d01ki/PatchTriage" \
@@ -31,10 +33,17 @@ RUN apt-get update \
     && mkdir -p /out /work \
        /home/patchtriage/.cache/patchtriage \
        /home/patchtriage/.config/patchtriage \
-    && chown -R patchtriage:patchtriage /out /work /home/patchtriage
+    && chown -R patchtriage:patchtriage /out /work /home/patchtriage \
+    && chmod 1777 /out /work /home/patchtriage \
+       /home/patchtriage/.cache /home/patchtriage/.cache/patchtriage \
+       /home/patchtriage/.config /home/patchtriage/.config/patchtriage
 # Pre-creating + chowning the cache/config dirs means Docker initializes the
 # named volumes mounted there with uid 1000 ownership, so the GUI (which runs
-# as this user) can persist targets, caches and reports.
+# as this user) can persist targets, caches and reports. The sticky,
+# world-writable mode lets the CLI services run as the host user instead
+# (docker-compose.yml `user:`), so reports in bind-mounted ./out stay
+# writable and owned by that user on Linux; saved keys remain 0600.
+ENV HOME=/home/patchtriage
 USER patchtriage
 WORKDIR /work
 # `docker run patchtriage` runs the fully offline demo by default

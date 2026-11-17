@@ -177,3 +177,18 @@ def test_limit_must_be_positive(tmp_path, value):
     scan.write_text('{"results": []}', encoding="utf-8")
     result = CliRunner().invoke(cli.app, ["run", str(scan), "--limit", value])
     assert result.exit_code == 2
+
+
+def test_version_flag_prints_the_installed_version():
+    result = CliRunner().invoke(cli.app, ["--version"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("patchtriage ")
+
+def test_unwritable_report_path_gives_a_fix_not_a_traceback(tmp_path):
+    import typer
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(typer.Exit) as stopped:
+        cli._write_report(blocker / "report.html", "<html></html>")
+    assert stopped.value.exit_code == 1

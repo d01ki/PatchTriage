@@ -10,6 +10,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Run the CLI containers as you, so reports in ./out are yours (Linux).
+export PATCHTRIAGE_UID="${PATCHTRIAGE_UID:-$(id -u)}"
+export PATCHTRIAGE_GID="${PATCHTRIAGE_GID:-$(id -g)}"
+
 PORT="${PORT:-8765}"
 URL="http://localhost:${PORT}"
 

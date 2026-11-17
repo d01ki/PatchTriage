@@ -50,8 +50,23 @@ app = typer.Typer(
 console = Console()
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            installed = version("patchtriage")
+        except PackageNotFoundError:
+            installed = "development"
+        console.print(f"patchtriage {installed}")
+        raise typer.Exit()
+
+
 @app.callback()
-def _load_config() -> None:
+def _load_config(
+    show_version: bool = typer.Option(
+        False, "--version", callback=_print_version, is_eager=True,
+        help="Show the installed version and exit"),
+) -> None:
     """Export keys saved by `patchtriage setup` into the environment.
 
     Environment variables set by the user always take precedence.
@@ -65,6 +80,20 @@ def _load_config() -> None:
             except (OSError, ValueError):
                 pass
     cfgmod.apply_to_env()
+
+
+def _write_report(path: Path, text: str) -> None:
+    """Write a report, or stop with a short fix instead of a traceback."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        console.print(
+            f"[red]Cannot write {path}: {exc.strerror or exc}.[/red]\n"
+            "Choose a writable folder. In Docker on Linux, run\n"
+            "  export PATCHTRIAGE_UID=$(id -u) PATCHTRIAGE_GID=$(id -g)\n"
+            "once in this shell (./run.sh does this), then retry.")
+        raise typer.Exit(1) from None
 
 
 def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
@@ -122,12 +151,9 @@ def _emit(result, output, html, coverage_warnings=()):
         console.print(f"[yellow]{message}[/yellow]")
     if html:
         html_path = Path(html)
-        html_path.parent.mkdir(parents=True, exist_ok=True)
-        html_path.write_text(
-            render_html(result.subset, result.actions, result.eval_rows,
-                        coverage=coverage,
-                        coverage_warnings=list(coverage_warnings)),
-            encoding="utf-8")
+        _write_report(html_path, render_html(
+            result.subset, result.actions, result.eval_rows,
+            coverage=coverage, coverage_warnings=list(coverage_warnings)))
         console.print(f"HTML report: [bold]{_output_location(html_path)}[/bold]")
     if output:
         report = {
@@ -139,9 +165,7 @@ def _emit(result, output, html, coverage_warnings=()):
             "coverage": coverage,
         }
         output_path = Path(output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(report, indent=2, default=str),
-                               encoding="utf-8")
+        _write_report(output_path, json.dumps(report, indent=2, default=str))
         console.print(
             f"JSON report: [bold]{_output_location(output_path)}[/bold]"
         )
@@ -1346,14 +1370,12 @@ def fleet(
                 f"{entry.get('deadline_days', 90)}d")
         console.print(queue_table)
 
-    html.write_text(render_fleet_html(
-        rollup, title=f"PatchTriage - Fleet Report - {report['owner']}"),
-        encoding="utf-8")
+    _write_report(html, render_fleet_html(
+        rollup, title=f"PatchTriage - Fleet Report - {report['owner']}"))
     console.print(f"fleet HTML report: [bold]{html.resolve()}[/bold]")
     if output is not None:
-        output.write_text(
-            json.dumps({"import": report, "rollup": rollup}, indent=2),
-            encoding="utf-8")
+        _write_report(
+            output, json.dumps({"import": report, "rollup": rollup}, indent=2))
         console.print(f"fleet JSON rollup: [bold]{output.resolve()}[/bold]")
 
 

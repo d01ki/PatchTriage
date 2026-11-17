@@ -1,0 +1,17 @@
+# Update policy for pinned dependencies: Dependabot opens weekly PRs for the
+# digest-pinned base images, SHA-pinned Actions, and Python dependencies.
+# CI (including the Docker compose demo) must pass before a bump is merged.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly

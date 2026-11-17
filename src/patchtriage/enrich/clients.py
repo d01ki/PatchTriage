@@ -19,6 +19,7 @@ Design rules:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import tempfile
@@ -33,6 +34,8 @@ from urllib.parse import urlparse
 import httpx
 
 from ..models import Finding
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_DIR = Path.home() / ".cache" / "patchtriage"
 EPSS_URL = "https://api.first.org/data/v1/epss"
@@ -98,7 +101,10 @@ CACHE_DIR = _DEFAULT_CACHE_DIR
 
 def _cache_path(name: str) -> Path:
     d = cache_dir()
-    d.mkdir(parents=True, exist_ok=True)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # reads then miss and writes are skipped; see _write_cache
     return d / name
 
 
@@ -130,6 +136,26 @@ def _atomic_write_json(path: Path, data: Any) -> None:
                 pass
 
 
+_cache_write_warned = False
+
+
+def _write_cache(path: Path, data: Any) -> None:
+    """Write a cache file; an unwritable cache only costs a refetch later.
+
+    A read-only disk or a Docker volume owned by another user must not
+    abort an assessment whose evidence was fetched successfully.
+    """
+    global _cache_write_warned
+    try:
+        _atomic_write_json(path, data)
+    except OSError as exc:
+        if not _cache_write_warned:
+            _cache_write_warned = True
+            _log.warning("enrichment cache %s is not writable (%s); results "
+                         "are used but will be fetched again next time",
+                         path.parent, exc.strerror or exc)
+
+
 def _load_cache(name: str, max_age_hours: float,
                 *, allow_stale: bool = False) -> dict | None:
     p = _cache_path(name)
@@ -147,7 +173,7 @@ def _load_cache(name: str, max_age_hours: float,
 
 def _save_cache(name: str, data: dict) -> None:
     with _CACHE_LOCK:
-        _atomic_write_json(_cache_path(name), data)
+        _write_cache(_cache_path(name), data)
 
 
 def _decode_entry_cache(data: Any, fallback_timestamp: float) -> dict[str, dict]:
@@ -233,7 +259,7 @@ def _merge_entry_cache(name: str, updates: dict[str, dict],
             if isinstance(value, dict):
                 entries[str(key)] = {"value": value,
                                      "fetched_at": stamp}
-        _atomic_write_json(path, {
+        _write_cache(path, {
             "_schema": _ENTRY_CACHE_SCHEMA,
             "entries": entries,
         })
