@@ -154,7 +154,7 @@ _TEMPLATE = r"""<!doctype html>
   .running{padding:26px;border-left:4px solid #5368e8}.running strong{font-size:18px}.scanline{height:3px;background:#e1e5ed;margin-top:16px;overflow:hidden}.scanline:after{content:"";display:block;width:32%;height:100%;background:#5368e8;animation:scan 1s infinite ease-in-out}@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(410%)}}
   .toast{position:fixed;right:22px;bottom:22px;background:#151a25;color:#fff;border:1px solid #343d50;padding:11px 15px;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.28);transform:translateY(90px);opacity:0;transition:.2s;z-index:30;max-width:420px}.toast.show{transform:none;opacity:1}.toast.error{border-color:#a63d36}
   .filehidden{display:none}
-  dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}
+  dialog{border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.38);width:min(560px,calc(100% - 28px));color:var(--dark)}dialog::backdrop{background:rgba(8,11,17,.7)}.dialogbody{padding:22px;display:grid;gap:12px}.dialogbody h3{margin:0}.dialogbody p{margin:0;color:#667183;font-size:13.5px}.dialogactions{display:flex;justify-content:flex-end;gap:8px}.dialogbody p.importstatus{font-weight:600;color:inherit}.dialogbody p.importstatus:empty{display:none}
   .bodpanel{margin-top:12px;border-top:1px dashed #cfd5e2;padding-top:10px}.bodpanel .factor small+small{margin-top:4px}.bodcell.reference b{color:#687285;font-weight:650}
   :root{--c-immediate:#b8322a;--c-outofcycle:#eaa51a;--c-scheduled:#4f6be0;--c-defer:#7d8799}
   .outcomesummary{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:center;padding:16px 20px;margin-bottom:14px}
@@ -857,8 +857,8 @@ _TEMPLATE = r"""<!doctype html>
 
 
 <input type="file" id="filepick" class="filehidden" accept=".json">
-<dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Repository access follows the GitHub credentials configured for this deployment.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
-<dialog id="fleetdialog"><div class="dialogbody"><h3>Import an organization</h3><p>Every recently pushed public repository of the account becomes a target with its GitHub Dependency Graph SBOM attached — the same no-clone, no-execution path as a single repository import. Forks and archived repositories are skipped. Each target starts with the official conservative SSVC defaults; review its context before trusting the decision.</p><label class="fieldlabel">Organization or user URL<input type="text" id="fleet-url" placeholder="https://github.com/your-org"></label><label class="fieldlabel">Repository limit<input type="number" id="fleet-limit" min="1" value="10"></label><div class="dialogactions"><button class="btn" id="fleet-cancel">Cancel</button><button class="btn primary" id="fleet-import">Import repositories</button></div></div></dialog>
+<dialog id="repodialog"><div class="dialogbody"><h3 id="repo-title">Import a repository</h3><p id="repo-help">PatchTriage fetches a GitHub SPDX SBOM without cloning or executing repository code. Repository access follows the GitHub credentials configured for this deployment.</p><label class="fieldlabel">Repository URL<input type="text" id="repo-url" placeholder="https://github.com/owner/repository"></label><p class="importstatus" id="repo-status" role="status" aria-live="polite"></p><div class="dialogactions"><button class="btn" id="repo-cancel">Cancel</button><button class="btn primary" id="repo-import">Import evidence</button></div></div></dialog>
+<dialog id="fleetdialog"><div class="dialogbody"><h3>Import an organization</h3><p>Every recently pushed public repository of the account becomes a target with its GitHub Dependency Graph SBOM attached — the same no-clone, no-execution path as a single repository import. Forks and archived repositories are skipped. Each target starts with the official conservative SSVC defaults; review its context before trusting the decision.</p><label class="fieldlabel">Organization or user URL<input type="text" id="fleet-url" placeholder="https://github.com/your-org"></label><label class="fieldlabel">Repository limit<input type="number" id="fleet-limit" min="1" value="10"></label><p class="importstatus" id="fleet-status" role="status" aria-live="polite"></p><div class="dialogactions"><button class="btn" id="fleet-cancel">Cancel</button><button class="btn primary" id="fleet-import">Import repositories</button></div></div></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 const SSVC_LABELS=__SSVC_LABELS__;
@@ -1550,7 +1550,7 @@ async function handleTargetAction(button){
   if(isPending(id)&&["edit","import","repository","delete"].includes(action)){notify("Wait for this assessment to finish before changing its inputs.",true);return;}
   if(action==="edit")editContext(TARGETS.find(target=>target.id===id));
   if(action==="import"){pickTarget=id;document.getElementById("filepick").click();}
-  if(action==="repository"){repoTarget=id;document.getElementById("repo-url").value="";document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
+  if(action==="repository"){openRepositoryDialog(id);}
   if(action==="run")runTargets([id]);
   if(action==="delete"&&confirm("Delete this target and its local evidence?")){
     try{await api("DELETE","/api/targets/"+id);RESULTS.delete(id);STATUS.delete(id);await loadTargets();renderResults();notify("Target deleted.");}
@@ -1559,34 +1559,87 @@ async function handleTargetAction(button){
 }
 document.getElementById("targetlist").onclick=event=>{const button=event.target.closest("[data-action]");if(button)handleTargetAction(button);};
 document.getElementById("fleet-open").onclick=()=>{document.getElementById("fleet-url").value="";document.getElementById("fleetdialog").showModal();document.getElementById("fleet-url").focus();};
-document.getElementById("fleet-cancel").onclick=()=>document.getElementById("fleetdialog").close();
+// Repository and fleet imports run as server jobs: POST returns 202 with an
+// import id, then the page polls it, so a slow provider never hits a proxy
+// timeout. Cancel stops the job before it saves anything further.
+// Each import is keyed by "fleet" or "repo:<target id>", so the repository
+// dialog only ever shows, cancels, or closes for the target it is open on.
+const IMPORTS=new Map();
+function importKey(kind){return kind==="fleet"?"fleet":repoTarget?`repo:${repoTarget}`:null;}
+async function waitForImport(importId,onState){
+  let failures=0;
+  for(let attempt=0;attempt<1800;attempt++){
+    try{
+      const job=await api("GET",`/api/imports/${importId}`);failures=0;
+      if(job.state==="succeeded")return job.result;
+      if(job.state==="failed"||job.state==="cancelled"){const error=new Error(job.error||"Import failed");error.importState=job.state;error.result=job.result;throw error;}
+      onState(job);
+    }catch(error){
+      if(error.importState)throw error;
+      if(error.status===404){error.message="The server no longer has this import, possibly after a restart. Import again.";throw error;}
+      if(!error.retryable||++failures>=5)throw error;
+    }
+    await new Promise(resolve=>setTimeout(resolve,failures?Math.min(8000,1000*2**failures):Math.min(2000,500+attempt*50)));
+  }
+  throw new Error("The import is taking longer than expected. Check the target list before retrying.");
+}
+function renderImportDialog(kind){
+  const job=IMPORTS.get(importKey(kind)),busy=Boolean(job),button=document.getElementById(kind+"-import");
+  button.disabled=busy;button.setAttribute("aria-busy",String(busy));
+  document.getElementById(kind+"-cancel").textContent=busy?"Cancel import":"Cancel";
+  const status=document.getElementById(kind+"-status");
+  if(!busy){status.textContent="";return;}
+  if(job.cancelling){status.textContent="Cancelling… nothing more will be saved.";return;}
+  const seconds=Math.max(0,Math.round(job.elapsed_seconds||0));
+  status.textContent=`${job.state==="queued"?"Waiting for an import slot":"Importing"}… ${seconds}s elapsed (limit ${Math.round(job.deadline_seconds)}s).`;
+}
+async function cancelImport(kind,dialog){
+  const key=importKey(kind),job=IMPORTS.get(key);
+  if(!job){document.getElementById(dialog).close();return false;}
+  try{await api("DELETE",`/api/imports/${job.import_id}`);IMPORTS.set(key,{...job,cancelling:true});renderImportDialog(kind);}
+  catch(error){notify("Could not cancel the import: "+error.message,true);}
+  return true;
+}
+async function runImport(kind,key,path,body){
+  const started=await api("POST",path,body);IMPORTS.set(key,started);renderImportDialog(kind);
+  try{return await waitForImport(started.import_id,job=>{if(!IMPORTS.get(key)?.cancelling)IMPORTS.set(key,job);renderImportDialog(kind);});}
+  finally{IMPORTS.delete(key);renderImportDialog(kind);}
+}
+document.getElementById("fleet-cancel").onclick=()=>cancelImport("fleet","fleetdialog");
 document.getElementById("fleet-import").onclick=async()=>{
   const ownerUrl=document.getElementById("fleet-url").value.trim();
   if(!ownerUrl){notify("Enter a GitHub organization or user URL.",true);return;}
   const limit=parseInt(document.getElementById("fleet-limit").value,10)||10;
   try{
     document.getElementById("fleet-import").disabled=true;notify("Listing repositories and fetching SBOMs…");
-    const report=await api("POST","/api/fleet/import",{owner_url:ownerUrl,limit});
+    const report=await runImport("fleet","fleet","/api/fleet/import",{owner_url:ownerUrl,limit});
     document.getElementById("fleetdialog").close();await loadTargets();renderResults();
     const failed=report.failed?`, ${report.failed} failed`:"";
     const existing=report.already_imported?`, ${report.already_imported} already imported`:"";
     notify(`Imported ${report.imported} repositories from ${report.owner}${existing}${failed}. Press "Run all" to assess the fleet.`,Boolean(report.stopped_reason));
     if(report.stopped_reason)notify(report.stopped_reason,true);
-  }catch(error){notify("Organization import failed: "+error.message,true);}
-  finally{document.getElementById("fleet-import").disabled=false;}
+  }catch(error){
+    const kept=error.result&&error.result.imported?` ${error.result.imported} repositories imported before stopping were kept.`:"";
+    notify((error.importState==="cancelled"?"Organization import cancelled.":"Organization import failed: "+error.message)+kept,true);
+    await loadTargets().catch(()=>{});renderResults();
+  }
+  finally{renderImportDialog("fleet");}
 };
-document.getElementById("repo-cancel").onclick=()=>{repoTarget=null;document.getElementById("repodialog").close();};
+function openRepositoryDialog(id){repoTarget=id;document.getElementById("repo-url").value="";renderImportDialog("repo");document.getElementById("repodialog").showModal();document.getElementById("repo-url").focus();}
+document.getElementById("repo-cancel").onclick=async()=>{if(await cancelImport("repo","repodialog"))return;repoTarget=null;};
 document.getElementById("repo-import").onclick=async()=>{
   const repositoryUrl=document.getElementById("repo-url").value.trim();
   if(!repoTarget||!repositoryUrl){notify("Enter a GitHub repository URL.",true);return;}
-  const targetId=repoTarget;
+  const targetId=repoTarget,dialog=document.getElementById("repodialog");
   try{
     document.getElementById("repo-import").disabled=true;notify("Fetching GitHub Dependency Graph SBOM...");
-    const imported=await api("POST",`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
-    RESULTS.delete(targetId);STATUS.delete(targetId);document.getElementById("repodialog").close();repoTarget=null;await loadTargets();renderResults();
+    const imported=await runImport("repo",`repo:${targetId}`,`/api/targets/${targetId}/repository`,{repository_url:repositoryUrl});
+    RESULTS.delete(targetId);STATUS.delete(targetId);
+    if(repoTarget===targetId&&dialog.open){dialog.close();repoTarget=null;}
+    await loadTargets();renderResults();
     notify(`${imported.filename} imported (${imported.provenance.component_count} components).`);
-  }catch(error){notify("Repository import failed: "+error.message,true);}
-  finally{document.getElementById("repo-import").disabled=false;}
+  }catch(error){notify((error.importState==="cancelled"?"Repository import cancelled: ":"Repository import failed: ")+error.message,true);}
+  finally{renderImportDialog("repo");}
 };
 document.getElementById("filepick").onchange=async event=>{
   const file=event.target.files[0];if(!file||!pickTarget)return;

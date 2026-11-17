@@ -364,3 +364,104 @@ def test_empty_ecosystem_keeps_npm_case_when_joining_a_peer():
     findings = dedup([_identity_raw("JSONStream", "npm"),
                       _identity_raw("JSONStream", "")])
     assert len(findings) == 1
+
+
+def _alias_raw(vuln, aliases=(), scanner="test"):
+    raw = _identity_raw("lodash", "npm", vuln=vuln)
+    return raw.model_copy(update={"aliases": list(aliases),
+                                  "source_scanner": scanner})
+
+
+def _by_id(findings):
+    return {f.vuln_id: f for f in findings}
+
+
+def test_advisory_with_two_cves_is_split_per_cve():
+    findings = _by_id(dedup([
+        _alias_raw("GHSA-aaaa-bbbb-cccc", ["CVE-2024-2", "CVE-2024-1"])]))
+    assert set(findings) == {"CVE-2024-1", "CVE-2024-2"}
+    for cve, other in (("CVE-2024-1", "CVE-2024-2"),
+                       ("CVE-2024-2", "CVE-2024-1")):
+        assert findings[cve].aliases == ["GHSA-aaaa-bbbb-cccc"]
+        assert findings[cve].related_ids == [other]
+
+
+def test_split_advisory_merges_with_each_scanners_cve_row():
+    findings = _by_id(dedup([
+        _alias_raw("CVE-2024-1", scanner="trivy"),
+        _alias_raw("GHSA-aaaa-bbbb-cccc", ["CVE-2024-1", "CVE-2024-2"],
+                   scanner="osv"),
+        _alias_raw("CVE-2024-2", scanner="trivy"),
+    ]))
+    assert set(findings) == {"CVE-2024-1", "CVE-2024-2"}
+    assert findings["CVE-2024-1"].reported_by == ["osv", "trivy"]
+    assert findings["CVE-2024-2"].reported_by == ["osv", "trivy"]
+
+
+def test_advisory_only_row_counts_toward_each_cve_it_is_linked_to():
+    # Neither CVE absorbs the advisory-only row alone, and no CVE-less
+    # duplicate finding (which enrichment could not match) is left behind.
+    rows = [
+        _alias_raw("CVE-2024-1", ["GHSA-aaaa-bbbb-cccc"]),
+        _alias_raw("CVE-2024-2", ["GHSA-aaaa-bbbb-cccc"]),
+        _alias_raw("GHSA-aaaa-bbbb-cccc", scanner="ghsa-only"),
+    ]
+    for ordered in (rows, rows[::-1]):
+        findings = _by_id(dedup(ordered))
+        assert set(findings) == {"CVE-2024-1", "CVE-2024-2"}
+        assert findings["CVE-2024-1"].reported_by == ["ghsa-only", "test"]
+        assert findings["CVE-2024-1"].related_ids == ["CVE-2024-2"]
+
+
+def test_record_reported_as_a_cve_is_not_split_by_its_cve_aliases():
+    raw = _alias_raw("CVE-2024-1", ["CVE-2024-2"]).model_copy(
+        update={"source_id": "CVE-2024-1"})
+    findings = dedup([raw])
+    assert [f.vuln_id for f in findings] == ["CVE-2024-1"]
+    assert findings[0].related_ids == ["CVE-2024-2"]
+    assert findings[0].aliases == []
+
+
+def test_scanner_canonicalized_advisory_is_still_split():
+    # Grype/OSV parsers put a CVE in vuln_id; source_id keeps the GHSA.
+    raw = _alias_raw("CVE-2024-1", ["CVE-2024-2", "GHSA-aaaa-bbbb-cccc"]
+                     ).model_copy(update={"source_id": "GHSA-aaaa-bbbb-cccc"})
+    assert sorted(f.vuln_id for f in dedup([raw])) == [
+        "CVE-2024-1", "CVE-2024-2"]
+
+
+def test_distribution_bundle_ids_do_not_link_unrelated_advisories():
+    findings = _by_id(dedup([
+        _alias_raw("GHSA-aaaa-aaaa-aaaa", ["RHSA-2024:1", "CVE-2024-1"]),
+        _alias_raw("GHSA-bbbb-bbbb-bbbb", ["RHSA-2024:1", "CVE-2024-2"]),
+        _alias_raw("GHSA-aaaa-aaaa-aaaa", scanner="ghsa-only"),
+    ]))
+    assert set(findings) == {"CVE-2024-1", "CVE-2024-2"}
+    assert "ghsa-only" in findings["CVE-2024-1"].reported_by
+    assert "ghsa-only" not in findings["CVE-2024-2"].reported_by
+
+
+def test_two_step_alias_chain_reaches_the_cve():
+    findings = dedup([
+        _alias_raw("GHSA-aaaa-bbbb-cccc", ["PYSEC-2024-1"], scanner="a"),
+        _alias_raw("PYSEC-2024-1", ["CVE-2024-1"], scanner="b"),
+        _alias_raw("CVE-2024-1", scanner="c"),
+    ])
+    assert [f.vuln_id for f in findings] == ["CVE-2024-1"]
+    assert findings[0].reported_by == ["a", "b", "c"]
+    assert findings[0].aliases == ["GHSA-aaaa-bbbb-cccc", "PYSEC-2024-1"]
+
+
+def test_dedup_result_does_not_depend_on_input_order():
+    rows = [
+        _alias_raw("GHSA-aaaa-bbbb-cccc", ["CVE-2024-2", "CVE-2024-1"]),
+        _alias_raw("PYSEC-2024-1", ["GHSA-aaaa-bbbb-cccc"]),
+        _alias_raw("CVE-2024-1", ["GHSA-xxxx-yyyy-zzzz"]),
+        _alias_raw("GHSA-xxxx-yyyy-zzzz"),
+    ]
+
+    def snapshot(findings):
+        return sorted((f.key, tuple(f.aliases), tuple(f.related_ids),
+                       tuple(f.reported_by)) for f in findings)
+
+    assert snapshot(dedup(rows)) == snapshot(dedup(rows[::-1]))

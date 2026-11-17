@@ -225,6 +225,7 @@ def raw_from_osv_vuln(vuln: dict, pkg: Package, asset: Asset) -> RawFinding:
     return RawFinding(
         vuln_id=vuln_id,
         aliases=aliases,
+        source_id=str(vuln.get("id", "")),
         source_scanner="osv-sbom",
         package=pkg.model_copy(update={"fixed_version": fixed}),
         asset=asset,

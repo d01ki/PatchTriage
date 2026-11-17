@@ -257,6 +257,7 @@ def parse_trivy(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
             yield RawFinding(
                 vuln_id=vuln_id,
                 aliases=aliases,
+                source_id=str(v.get("VulnerabilityID", "")),
                 source_scanner="trivy",
                 package=Package(
                     name=v.get("PkgName", ""),
@@ -305,6 +306,7 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
         yield RawFinding(
             vuln_id=vuln_id,
             aliases=aliases,
+            source_id=str(vuln.get("id", "")),
             source_scanner="grype",
             package=Package(
                 name=art.get("name", ""),
@@ -342,6 +344,7 @@ def parse_osv(data: dict, default_asset: Asset | None = None) -> Iterator[RawFin
                 yield RawFinding(
                     vuln_id=vuln_id,
                     aliases=aliases,
+                    source_id=str(v.get("id", "")),
                     source_scanner="osv",
                     package=Package(
                         name=pkg.get("name", ""),

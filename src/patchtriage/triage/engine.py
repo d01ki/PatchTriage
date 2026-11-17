@@ -297,6 +297,14 @@ def get_backend(name: str = "rules", model: str | None = None,
 
 
 # ------------------------------------------------------------------ runner
+def _rules_fallback(rules: "RulesBackend", f: Finding, reason: str) -> dict:
+    """The deterministic SSVC result, tagged with why AI was not used."""
+    out = rules.triage(f)
+    out["backend"] = "rules_fallback"
+    out["error"] = reason[:300]
+    return out
+
+
 def run_triage(findings: list[Finding], backend: TriageBackend,
                progress: Optional[Callable[[int, int], None]] = None,
                jobs: int = 1) -> list[Finding]:
@@ -315,10 +323,7 @@ def run_triage(findings: list[Finding], backend: TriageBackend,
         except Exception as exc:
             if is_rules:  # a bug in the baseline should never be masked
                 raise
-            out = rules.triage(f)
-            out["backend"] = "rules_fallback"
-            out["error"] = f"{type(exc).__name__}: {exc}"[:300]
-            return out
+            return _rules_fallback(rules, f, f"{type(exc).__name__}: {exc}")
 
     if jobs <= 1 or is_rules:
         for i, f in enumerate(findings):
@@ -337,17 +342,40 @@ def run_triage(findings: list[Finding], backend: TriageBackend,
 
 
 # ------------------------------------------------------------------ batch
+# Anthropic expires unfinished batches after 24 hours; waiting longer is
+# pointless, and a caller may choose a shorter budget.
+BATCH_DEADLINE_SECONDS = 24 * 3600
+BATCH_STATUS_RETRIES = 5
+
+
+def _batch_entry_recommendation(result) -> dict:
+    """Return the validated triage tool input of one succeeded entry."""
+    for block in result.result.message.content:
+        if block.type == "tool_use" and block.name == "triage":
+            payload = block.input
+            if not isinstance(payload, dict):
+                raise RuntimeError(
+                    "AI provider returned a non-object recommendation")
+            return _validate_recommendation(dict(payload))
+    raise RuntimeError("batch entry has no triage tool call")
+
+
 def run_triage_batch(findings: list[Finding], model: str | None = None,
                      poll_seconds: float = 15.0,
                      progress: Optional[Callable[[str], None]] = None,
                      provider: str | None = None,
+                     deadline_seconds: float = BATCH_DEADLINE_SECONDS,
+                     client=None,
                      ) -> list[Finding]:
     """Triage via the Anthropic Message Batches API — 50% of standard cost.
 
     Best for large, non-interactive runs (nightly re-triage of a whole
-    estate). Most batches complete within an hour; results are keyed by
-    custom_id, never by position. Findings whose batch entry errors fall
-    back to the SSVC baseline, same as run_triage().
+    estate). Results are keyed by custom_id, never by position. Every
+    finding keeps its deterministic SSVC result: an entry that errored,
+    expired, or returned an invalid recommendation falls back to the rules
+    baseline with the reason, and so does every unread entry when the
+    submission fails, status polling keeps failing, the deadline passes
+    (the batch is then cancelled), or the results stream breaks.
     """
     provider_name = resolve_provider_name(provider)
     if provider_name != "anthropic":
@@ -356,10 +384,11 @@ def run_triage_batch(findings: list[Finding], model: str | None = None,
             "use regular parallel mode for OpenAI-compatible endpoints"
         )
     model = resolve_model(provider_name, model, tier="deep")
-    provider_client = make_provider(provider_name)
-    if not isinstance(provider_client, AnthropicProvider):
-        raise RuntimeError("Anthropic provider could not be initialized")
-    client = provider_client.client
+    if client is None:
+        provider_client = make_provider(provider_name)
+        if not isinstance(provider_client, AnthropicProvider):
+            raise RuntimeError("Anthropic provider could not be initialized")
+        client = provider_client.client
     rules = RulesBackend()
 
     requests = [{
@@ -375,36 +404,79 @@ def run_triage_batch(findings: list[Finding], model: str | None = None,
         },
     } for i, f in enumerate(findings)]
 
-    batch = client.messages.batches.create(requests=requests)
-    if progress:
-        progress(f"batch {batch.id} submitted ({len(requests)} findings)")
+    def _fail_all(reason: str) -> list[Finding]:
+        if progress:
+            progress(f"batch triage stopped: {reason}; "
+                     "keeping the deterministic SSVC results")
+        for f in findings:
+            f.triage = _rules_fallback(rules, f, reason)
+        return findings
 
+    def _cancel(batch_id: str) -> None:
+        try:
+            client.messages.batches.cancel(batch_id)
+        except Exception:  # best effort; the batch expires on its own
+            pass
+
+    try:
+        batch = client.messages.batches.create(requests=requests)
+    except Exception as exc:
+        return _fail_all(
+            f"batch submission failed: {type(exc).__name__}: {exc}")
+    batch_id = batch.id
+    if progress:
+        progress(f"batch {batch_id} submitted ({len(requests)} findings)")
+
+    started = time.monotonic()
+    status_failures = 0
     while True:
-        batch = client.messages.batches.retrieve(batch.id)
+        if time.monotonic() - started >= deadline_seconds:
+            _cancel(batch_id)
+            return _fail_all(
+                f"batch deadline exceeded after {deadline_seconds:g}s; "
+                "batch cancelled")
+        try:
+            batch = client.messages.batches.retrieve(batch_id)
+        except Exception as exc:
+            status_failures += 1
+            if status_failures > BATCH_STATUS_RETRIES:
+                _cancel(batch_id)
+                return _fail_all(
+                    "batch status unavailable: "
+                    f"{type(exc).__name__}: {exc}")
+            time.sleep(min(poll_seconds * status_failures, 300))
+            continue
+        status_failures = 0
         if batch.processing_status == "ended":
             break
         if progress:
-            progress(f"batch {batch.id}: {batch.processing_status} "
+            progress(f"batch {batch_id}: {batch.processing_status} "
                      f"({batch.request_counts.processing} processing)")
         time.sleep(poll_seconds)
 
-    by_id: dict[str, dict] = {}
-    for result in client.messages.batches.results(batch.id):
-        if result.result.type == "succeeded":
-            for block in result.result.message.content:
-                if block.type == "tool_use" and block.name == "triage":
-                    by_id[result.custom_id] = dict(block.input)
+    outcomes: dict[str, dict | str] = {}
+    stream_error = ""
+    try:
+        for result in client.messages.batches.results(batch_id):
+            kind = result.result.type
+            if kind != "succeeded":
+                outcomes[result.custom_id] = f"batch entry {kind}"
+                continue
+            try:
+                outcomes[result.custom_id] = _batch_entry_recommendation(
+                    result)
+            except Exception as exc:
+                outcomes[result.custom_id] = f"{type(exc).__name__}: {exc}"
+    except Exception as exc:
+        stream_error = (f"batch results unavailable: "
+                        f"{type(exc).__name__}: {exc}")
 
     for i, f in enumerate(findings):
-        out = by_id.get(f"finding-{i}")
-        if out is None:
-            out = rules.triage(f)
-            out["backend"] = "rules_fallback"
-            out["error"] = "batch entry errored or expired"
+        outcome = outcomes.get(f"finding-{i}")
+        if isinstance(outcome, dict):
+            f.triage = _merge_ai_recommendation(
+                f, outcome, f"anthropic:{model} (batch)")
         else:
-            out = _merge_ai_recommendation(
-                f, _validate_recommendation(out),
-                f"anthropic:{model} (batch)",
-            )
-        f.triage = out
+            f.triage = _rules_fallback(
+                rules, f, outcome or stream_error or "batch entry missing")
     return findings

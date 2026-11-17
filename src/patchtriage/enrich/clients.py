@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -191,8 +191,25 @@ def _load_entry_cache(name: str, max_age_hours: float) -> dict[str, dict]:
             if wrapped["fetched_at"] >= cutoff}
 
 
-def _merge_entry_cache(name: str, updates: dict[str, dict]) -> None:
-    """Atomically merge successful records with per-entry fetch timestamps."""
+def _cache_mtime(name: str) -> float | None:
+    """Modification time of a cache file, or None when it is missing."""
+    try:
+        return _cache_path(name).stat().st_mtime
+    except OSError:
+        return None
+
+
+def _merge_entry_cache(name: str, updates: dict[str, dict],
+                       max_age_hours: float | None = None,
+                       keep_key: Callable[[str], bool] | None = None,
+                       fetched_at: float | None = None) -> None:
+    """Atomically merge successful records with per-entry fetch timestamps.
+
+    The file is re-read under the lock, so entries another run saved in the
+    meantime survive, and untouched entries keep their original timestamp.
+    ``max_age_hours`` drops expired entries; ``keep_key`` drops others.
+    ``fetched_at`` dates records derived from an older document.
+    """
     if not updates:
         return
     path = _cache_path(name)
@@ -203,11 +220,19 @@ def _merge_entry_cache(name: str, updates: dict[str, dict]) -> None:
             fallback_timestamp = time.time()
         entries = _decode_entry_cache(
             _read_json(path) if path.exists() else {}, fallback_timestamp)
-        fetched_at = time.time()
+        now = time.time()
+        stamp = now if fetched_at is None else min(float(fetched_at), now)
+        if max_age_hours is not None:
+            cutoff = now - max_age_hours * 3600
+            entries = {key: wrapped for key, wrapped in entries.items()
+                       if wrapped["fetched_at"] >= cutoff}
+        if keep_key is not None:
+            entries = {key: wrapped for key, wrapped in entries.items()
+                       if keep_key(key)}
         for key, value in updates.items():
             if isinstance(value, dict):
                 entries[str(key)] = {"value": value,
-                                     "fetched_at": fetched_at}
+                                     "fetched_at": stamp}
         _atomic_write_json(path, {
             "_schema": _ENTRY_CACHE_SCHEMA,
             "entries": entries,

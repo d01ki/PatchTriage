@@ -184,6 +184,9 @@ class RawFinding(BaseModel):
 
     vuln_id: str                          # canonical id, prefer CVE-*
     aliases: list[str] = Field(default_factory=list)
+    # The record id exactly as the scanner reported it, before vuln_id was
+    # canonicalized to a CVE. Empty when the producer did not supply one.
+    source_id: str = ""
     source_scanner: str                   # trivy | grype | osv | nessus | ...
     package: Package
     asset: Asset
@@ -258,6 +261,9 @@ class Finding(BaseModel):
     key: str                                  # stable dedup key
     vuln_id: str
     aliases: list[str] = Field(default_factory=list)
+    # Ids linked to this one by a shared advisory but not equivalent to it,
+    # e.g. the other CVEs of a GHSA that lists several. Never merged.
+    related_ids: list[str] = Field(default_factory=list)
     package: Package
     asset: Asset
     severity: Severity = Severity.UNKNOWN     # max severity across scanners
