@@ -25,6 +25,7 @@ from ..presentation import (
     priority_evidence,
 )
 from ..ssvc import ssvc_order_key
+from ..triage.audit import is_ai_flag
 
 _PRI_COLOR = {"P1": "#DC2626", "P2": "#D97706", "P3": "#2563EB", "P4": "#6B7280"}
 
@@ -34,29 +35,38 @@ def _esc(s) -> str:
 
 
 def _audit_badge(t: dict) -> str:
+    """Audit status of the deterministic decision (AI flags are shown with
+    the AI explanation instead)."""
     a = t.get("audit")
     if not a:
         return ""
-    if a.get("verified"):
+    flags = [flag for flag in a.get("flags", []) if not is_ai_flag(flag)]
+    if not flags:
         return '<span title="verified against signals" style="color:#2563EB;font-weight:700">✓ </span>'
-    flags = _esc(", ".join(a.get("flags", [])))
-    return (f'<span title="{flags}" style="color:#D97706;font-weight:700">⚑ </span>')
+    return (f'<span title="{_esc(", ".join(flags))}" '
+            f'style="color:#D97706;font-weight:700">⚑ </span>')
 
 
 def _ai_explanation_cell(t: dict) -> str:
     """AI text under the decision rationale, labelled and never merged."""
     ai = ai_explanation(t)
-    if ai is None or not ai["text"]:
+    if ai is None:
         return ""
     if ai["verified"] is False:
-        status = "flagged by the audit: " + ", ".join(ai["flags"])
+        badge, status = "⚑ ", "flagged by the audit: " + ", ".join(ai["flags"])
     elif ai["verified"]:
-        status = "checked against the signals"
+        badge, status = "✓ ", "numbers and action checked against the signals"
     else:
-        status = "not audited"
-    return (f'<div class="small" style="margin-top:4px">{_audit_badge(t)}'
+        badge, status = "", "not audited"
+    details = "".join(
+        f"<br>{_esc(label)}: {_esc('; '.join(values)[:240])}"
+        for label, values in (("Suggested steps", ai["remediation_steps"]),
+                              ("Uncertainties", ai["uncertainties"]))
+        if values)
+    return (f'<div class="small" style="margin-top:4px" '
+            f'title="{_esc(ai["limitations"])}">{badge}'
             f'<b>AI explanation</b> (not used for the decision; '
-            f'{_esc(status)}): {_esc(ai["text"][:240])}</div>')
+            f'{_esc(status)}): {_esc(ai["text"][:240])}{details}</div>')
 
 
 def _kev_display(finding: Finding, compact: bool = False) -> str:
@@ -171,7 +181,13 @@ def render_html(findings: list[Finding], actions: list[Action],
                 eval_rows: list[EvalRow] | None = None,
                 title: str = "PatchTriage — Situation Report",
                 coverage: dict | None = None,
-                coverage_warnings: list[str] | None = None) -> str:
+                coverage_warnings: list[str] | None = None,
+                eval_context: dict | None = None) -> str:
+    """Render the self-contained report.
+
+    ``eval_context`` describes the findings the evaluation rows were built
+    from (``evalcmp.evaluation_context``); it defaults to ``findings``.
+    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
     for f in findings:
@@ -496,7 +512,7 @@ def render_html(findings: list[Finding], actions: list[Action],
           <td>{_esc(t.get("action", "—"))}</td>
           <td class="mono small">{_esc(f.asset.identifier)}</td>
           <td class="small">{_bod_finding_cell(t)}</td>
-          <td class="small">{_esc((t.get("rationale") or "")[:160])}{_ai_explanation_cell(t)}</td>
+          <td class="small">{_audit_badge(t)}{_esc((t.get("rationale") or "")[:160])}{_ai_explanation_cell(t)}</td>
         </tr>"""
 
     eval_html = ""
@@ -521,12 +537,15 @@ def render_html(findings: list[Finding], actions: list[Action],
                 <td class="num {'win' if r.urgent_epss == best_urgent else ''}">{r.urgent_epss}/{r.urgent_total}</td>
                 <td class="num {'win' if r.urgent_kev == best_urgent else ''}">{r.urgent_kev}/{r.urgent_total}</td>
                 <td class="num" title="Reference: SSVC's own urgent decisions">{r.urgent_ssvc}/{r.urgent_total}</td></tr>"""
-        context = evaluation_context(findings)
+        context = eval_context or evaluation_context(findings)
         missing = []
         if context["epss_missing"]:
             missing.append(f"{context['epss_missing']} without EPSS")
         if context["cvss_missing"]:
             missing.append(f"{context['cvss_missing']} without CVSS")
+        if context.get("kev_unknown"):
+            missing.append(f"{context['kev_unknown']} with an unresolved KEV "
+                           "lookup, counted as not listed")
         context_note = (
             f"Denominator: {context['findings']} findings"
             + (f"; {', '.join(missing)} (sorted as 0)" if missing else "")

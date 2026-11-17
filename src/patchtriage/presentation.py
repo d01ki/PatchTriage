@@ -180,14 +180,20 @@ def ai_explanation(triage: dict) -> dict | None:
     uncertainties = [str(item) for item in ai.get("uncertainties") or []]
     if not (text or steps or uncertainties):
         return None
+    from .triage.audit import AUDIT_LIMITATIONS, is_ai_flag
+
     audit = triage.get("audit") if isinstance(triage.get("audit"), dict) else {}
+    flags = [flag for flag in audit.get("flags") or [] if is_ai_flag(flag)]
     return {
         "text": text,
         "remediation_steps": steps,
         "uncertainties": uncertainties,
         "backend": str(triage.get("backend") or ""),
-        "verified": audit.get("verified") if audit else None,
-        "flags": list(audit.get("flags") or []) if audit else [],
+        # Only checks of the AI text and action count here; problems with
+        # the deterministic result are shown with the decision itself.
+        "verified": (not flags) if audit else None,
+        "flags": flags,
+        "limitations": AUDIT_LIMITATIONS,
     }
 
 

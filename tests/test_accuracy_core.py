@@ -277,6 +277,53 @@ def test_audit_checks_the_unit_of_a_service_target():
                for flag in _ai_flags(finding, f"Patch within {days} weeks."))
 
 
+@pytest.mark.parametrize("text", [
+    "EPSS score is 7.5.", "The EPSS score of 7.5 is high.", "CVSS score 0.86."])
+def test_audit_catches_swapped_signals_in_score_phrasing(text):
+    assert any(flag.startswith("fabricated_number")
+               for flag in _ai_flags(_audited_finding(), text))
+
+
+def test_audit_keeps_each_number_with_its_own_clause():
+    assert _ai_flags(_audited_finding(), "CVSS is 7.5, EPSS 0.86.") == []
+    assert _ai_flags(_audited_finding(),
+                     "EPSS 0.86 and CVSS 7.5 in this release.") == []
+
+
+def test_audit_reads_a_percentage_beside_a_time_unit_as_a_percentage():
+    flags = _ai_flags(_audited_finding(), "There is a 2% chance per day.")
+    assert flags == ["fabricated_percentage:ai_rationale:2%"]
+    assert _ai_flags(_audited_finding(), "EPSS is 85.6% per day.") == []
+
+
+def test_ai_status_ignores_flags_about_the_deterministic_result():
+    from patchtriage.presentation import ai_explanation
+
+    finding = _audited_finding()
+    finding.triage["ai_recommendation"] = {
+        "action": finding.triage["action"], "rationale": "CVSS is 7.5.",
+        "remediation_steps": [], "uncertainties": ["Exposure unconfirmed"]}
+    finding.triage["audit"] = {"verified": False,
+                               "flags": ["ssvc_evidence_missing:automatable"]}
+    explanation = ai_explanation(finding.triage)
+    assert explanation["verified"] is True
+    assert explanation["flags"] == []
+    assert explanation["uncertainties"] == ["Exposure unconfirmed"]
+    assert "not verify" in explanation["limitations"]
+
+
+def test_report_keeps_the_audit_badge_on_rows_without_ai_text():
+    from patchtriage.report.html import _audit_badge
+
+    finding = _audited_finding()
+    finding.triage["audit"] = audit_finding(finding, RulesBackend())
+    assert "✓" in _audit_badge(finding.triage)
+    finding.triage["audit"] = {"verified": False,
+                               "flags": ["ai_action_mismatch:a->b"]}
+    # An AI-only flag is shown with the AI text, not on the decision.
+    assert "✓" in _audit_badge(finding.triage)
+
+
 def test_audit_states_what_it_cannot_verify():
     result = audit_finding(_audited_finding(), RulesBackend())
     assert "limitations" in result

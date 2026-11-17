@@ -187,6 +187,33 @@ def test_eval_flags_a_budget_boundary_that_falls_inside_a_tie():
     assert evaluate(findings, budgets=[len(findings)])[0].boundary_ties == []
 
 
+def test_eval_tie_is_not_reported_when_order_cannot_change_counts():
+    from patchtriage.models import Enrichment
+
+    findings = _triaged_findings()
+    for finding in findings:
+        finding.enrichment = Enrichment()
+        finding.cvss_score = 5.0
+        finding.triage["priority"] = "P4"  # same KEV, urgency and EPSS
+    assert evaluate(findings, budgets=[1])[0].boundary_ties == []
+
+
+def test_eval_context_counts_unresolved_kev_lookups():
+    from patchtriage.evalcmp import evaluation_context
+
+    findings = _triaged_findings()
+    for finding in findings:
+        if not finding.enrichment.in_cisa_kev:
+            finding.enrichment.retrieval_status["kev"] = "failed"
+    context = evaluation_context(findings)
+    assert context["kev_unknown"] == sum(
+        not f.enrichment.in_cisa_kev for f in findings)
+    html = render_html(findings, build_plan(findings), evaluate(findings),
+                       eval_context={**context, "findings": 999})
+    assert "Denominator: 999 findings" in html
+    assert "unresolved KEV lookup" in html
+
+
 def test_eval_context_records_denominators_and_missing_signals():
     from patchtriage.evalcmp import evaluation_context
 

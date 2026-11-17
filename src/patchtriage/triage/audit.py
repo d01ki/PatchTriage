@@ -49,6 +49,16 @@ AUDIT_LIMITATIONS = (
     "reasoning quality, or advice in free text."
 )
 
+def is_ai_flag(flag: str) -> bool:
+    """Whether an audit flag is about the AI text or AI action.
+
+    The other flags concern the deterministic result itself (SSVC
+    consistency, evidence, fix availability) and must not be attributed
+    to the AI explanation.
+    """
+    return flag.startswith("ai_") or ":ai_" in flag
+
+
 _ACTION_RANK = {
     "monitor": 0,
     "investigate": 1,
@@ -66,25 +76,32 @@ _SHELL_INSTRUCTION = re.compile(
 )
 
 
+def _renderings(values: list[float | None], *, as_percent: bool = False,
+                whole: bool = False) -> set[float]:
+    """The ways a signal value is commonly written: exact, 1 and 2 decimals,
+    optionally as a percentage of a 0-1 probability and as a whole number."""
+    out: set[float] = set()
+    for value in values:
+        if value is None:
+            continue
+        if as_percent and 0.0 <= value <= 1.0:
+            value = value * 100
+        out.update((value, round(value, 1), round(value, 2)))
+        if whole:
+            out.add(round(value))
+    return out
+
+
 def _signal_values(f: Finding) -> set[float]:
     e = f.enrichment
-    vals = [v for v in (e.epss_score, e.epss_percentile,
-                        e.nvd_cvss_score, f.cvss_score) if v is not None]
-    # common renderings of the same signals
-    return set(vals + [round(v, 1) for v in vals]
-               + [round(v, 2) for v in vals])
+    return _renderings([e.epss_score, e.epss_percentile,
+                        e.nvd_cvss_score, f.cvss_score])
 
 
 def _percentage_values(f: Finding) -> set[float]:
     e = f.enrichment
-    values: set[float] = set()
-    for value in (e.epss_score, e.epss_percentile):
-        if value is None:
-            continue
-        percentage = value * 100 if 0.0 <= value <= 1.0 else value
-        values.update((percentage, round(percentage),
-                       round(percentage, 1), round(percentage, 2)))
-    return values
+    return _renderings([e.epss_score, e.epss_percentile],
+                       as_percent=True, whole=True)
 
 
 def _strip_known_tokens(f: Finding, text: str) -> str:
@@ -122,24 +139,18 @@ def _triage_text_fields(triage: dict) -> list[tuple[str, str]]:
     return fields
 
 
-def _renderings(values: list[float | None], *, as_percent: bool) -> set[float]:
-    out: set[float] = set()
-    for value in values:
-        if value is None:
-            continue
-        if as_percent and 0.0 <= value <= 1.0:
-            value = value * 100
-        out.update((value, round(value), round(value, 1), round(value, 2)))
-    return out
-
-
-# The claim a number makes is decided by the closest keyword, so "EPSS is
-# 7.5" is checked against EPSS only and cannot borrow the CVSS value.
+# A number is checked against the signal its claim names. The keyword is
+# looked for only inside the number's own clause, and a specific signal name
+# (EPSS, CVSS, percentile) wins over a generic word such as "score", so
+# "EPSS score is 7.5" cannot borrow the CVSS value and "CVSS is 7.5, EPSS
+# 0.86" checks each number against its own signal.
 _CLAIM_KEYWORDS = re.compile(
     r"\b(?P<kind>epss|cvss|percentile|percent(?:age)?|score|probability|"
     r"risk\s+rating|hours?|days?|weeks?|months?|deadline|sla|target)\b",
     re.IGNORECASE,
 )
+_SPECIFIC_KINDS = frozenset({"epss", "cvss", "percentile"})
+_CLAUSE_BREAK = re.compile(r"[,;:!?()\n]|\.(?=\s|$)")
 _CLAIM_WINDOW = 24
 # A service target is stated in days; other units are converted to days.
 _DAYS_PER_UNIT = {"hour": 1 / 24, "day": 1.0, "week": 7.0, "month": 30.0}
@@ -148,29 +159,34 @@ _UNIT_TOLERANCE_DAYS = {"hour": 0.5 / 24, "day": 0.051, "week": 0.5,
 
 
 def _claim_kind(text: str, start: int, end: int) -> str:
-    best, best_distance = "", _CLAIM_WINDOW + 1
-    window = text[max(0, start - _CLAIM_WINDOW):end + _CLAIM_WINDOW]
-    offset = max(0, start - _CLAIM_WINDOW)
-    for match in _CLAIM_KEYWORDS.finditer(window):
-        kw_start, kw_end = match.start() + offset, match.end() + offset
-        distance = (kw_start - end) if kw_start >= end else (start - kw_end)
-        if 0 <= distance < best_distance:
-            best = re.sub(r"\s+", " ", match.group("kind").lower())
-            best_distance = distance
-    return best
+    left = max((m.end() for m in _CLAUSE_BREAK.finditer(text, 0, start)),
+               default=0)
+    following = _CLAUSE_BREAK.search(text, end)
+    right = following.start() if following else len(text)
+    low, high = max(left, start - _CLAIM_WINDOW), min(right, end + _CLAIM_WINDOW)
+    found: list[tuple[int, str]] = []
+    for match in _CLAIM_KEYWORDS.finditer(text, low, high):
+        distance = (match.start() - end if match.start() >= end
+                    else start - match.end())
+        kind = re.sub(r"\s+", " ", match.group("kind").lower())
+        if kind.endswith("s") and kind[:-1] in _DAYS_PER_UNIT:
+            kind = kind[:-1]
+        found.append((distance, kind))
+    specific = [item for item in found if item[1] in _SPECIFIC_KINDS]
+    return min(specific or found, default=(0, ""))[1]
 
 
 def _numeric_claim_flags(f: Finding, field: str, text: str,
                          deadline_days: int) -> list[str]:
     stripped = _strip_known_tokens(f, text)
     e = f.enrichment
-    cvss = [e.nvd_cvss_score, f.cvss_score]
     allowed_by_kind = {
-        "epss": (_renderings([e.epss_score], as_percent=False)
-                 | _renderings([e.epss_score], as_percent=True)),
-        "cvss": _renderings(cvss, as_percent=False),
-        "percentile": (_renderings([e.epss_percentile], as_percent=False)
-                       | _renderings([e.epss_percentile], as_percent=True)),
+        "epss": (_renderings([e.epss_score])
+                 | _renderings([e.epss_score], as_percent=True, whole=True)),
+        "cvss": _renderings([e.nvd_cvss_score, f.cvss_score]),
+        "percentile": (
+            _renderings([e.epss_percentile])
+            | _renderings([e.epss_percentile], as_percent=True, whole=True)),
     }
     signals = _signal_values(f)
     percentages = _percentage_values(f)
@@ -180,32 +196,32 @@ def _numeric_claim_flags(f: Finding, field: str, text: str,
         value = float(rendered)
         is_percent = bool(match.group("percent"))
         kind = _claim_kind(stripped, match.start(), match.end())
-        if kind.endswith("s") and kind.rstrip("s") in _DAYS_PER_UNIT:
-            kind = kind.rstrip("s")
         # Ordinals, protocol versions, numbered steps, ports, and other bare
         # prose numbers are not quantitative vulnerability claims. Audit only
         # explicit signal, percentage, or service-target/duration contexts.
         if not kind and not is_percent:
             continue
+        if is_percent:
+            # A percentage is a probability claim even beside "per day".
+            allowed = (allowed_by_kind[kind] if kind in {"epss", "percentile"}
+                       else percentages)
+            if not any(abs(value - known) <= 0.051 for known in allowed):
+                flags.append(f"fabricated_percentage:{field}:{rendered}%")
+            continue
         if kind in _DAYS_PER_UNIT:
             claimed_days = value * _DAYS_PER_UNIT[kind]
-            if abs(claimed_days - deadline_days) <= _UNIT_TOLERANCE_DAYS[kind]:
-                continue
-            flags.append(f"fabricated_number:{field}:{rendered}")
+            if abs(claimed_days - deadline_days) > _UNIT_TOLERANCE_DAYS[kind]:
+                flags.append(f"fabricated_number:{field}:{rendered}")
             continue
         if kind in {"deadline", "sla", "target"}:
             allowed = {float(deadline_days)}
         elif kind in allowed_by_kind:
             allowed = allowed_by_kind[kind]
-        elif is_percent or kind in {"percent", "percentage"}:
+        elif kind in {"percent", "percentage"}:
             allowed = percentages
         else:  # a generic "score", "probability" or "risk rating"
             allowed = signals | percentages
-        if any(abs(value - known) <= 0.051 for known in allowed):
-            continue
-        if is_percent:
-            flags.append(f"fabricated_percentage:{field}:{rendered}%")
-        else:
+        if not any(abs(value - known) <= 0.051 for known in allowed):
             flags.append(f"fabricated_number:{field}:{rendered}")
     return flags
 

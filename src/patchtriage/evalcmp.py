@@ -98,12 +98,25 @@ def _order_epss(findings: list[Finding]) -> list[Finding]:
 
 def _boundary_ties(orders: dict[str, tuple[list[Finding], object]],
                    k: int) -> list[str]:
-    """Orderings whose k-th and (k+1)-th findings have equal keys."""
+    """Orderings whose top-k counts depend on input order.
+
+    That happens only when the cut splits findings with equal ordering keys
+    that differ in something the row counts (KEV, urgency, or EPSS).
+    """
     tied = []
     for name, (ordered, key) in orders.items():
-        if 0 < k < len(ordered) and key(ordered[k - 1]) == key(ordered[k]):
+        if not 0 < k < len(ordered):
+            continue
+        boundary = key(ordered[k - 1])
+        group = {(f.enrichment.in_cisa_kev, _is_urgent(f),
+                  f.enrichment.epss_score or 0.0)
+                 for f in ordered if key(f) == boundary}
+        if key(ordered[k]) == boundary and len(group) > 1:
             tied.append(name)
     return tied
+
+
+_KEV_RESOLVED = frozenset({"listed", "listed_stale", "not_listed"})
 
 
 def evaluation_context(findings: list[Finding]) -> dict:
@@ -111,6 +124,12 @@ def evaluation_context(findings: list[Finding]) -> dict:
     return {
         "findings": len(findings),
         "kev_listed": sum(1 for f in findings if f.enrichment.in_cisa_kev),
+        # A failed or stale lookup proves nothing about membership, so these
+        # findings are not known to be outside KEV even though they count as
+        # not listed in the KEV columns.
+        "kev_unknown": sum(
+            1 for f in findings if not f.enrichment.in_cisa_kev
+            and f.enrichment.retrieval_status.get("kev") not in _KEV_RESOLVED),
         "epss_missing": sum(
             1 for f in findings if f.enrichment.epss_score is None),
         "cvss_missing": sum(

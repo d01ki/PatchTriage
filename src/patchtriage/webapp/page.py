@@ -475,7 +475,7 @@ _TEMPLATE = r"""<!doctype html>
   .evidencelinks a,.advisoryline a{color:var(--acc)}
 
   .privacy,.confirmbar,.resultnotice,.fieldnow.fallback,.patchtriagenote,.basis,.decisionnote{background:var(--s2);border-color:var(--line2);color:var(--mut);border-radius:6px}
-  .aiexplain{margin-top:9px;border:1px solid var(--line2);background:var(--s2);color:var(--mut);border-radius:6px;padding:10px 11px;font-size:13px}.aiexplain>b{color:var(--ink)}.aiexplain .aistatus{display:block;margin:3px 0 5px;font-size:12px}.aiexplain .aistatus.flagged{color:var(--amber);font-weight:600}.aiexplain ul{margin:6px 0 0;padding-left:18px}
+  .aiexplain{margin-top:9px;border:1px solid var(--line2);background:var(--s2);color:var(--mut);border-radius:6px;padding:10px 11px;font-size:13px}.aiexplain>b{color:var(--ink)}.aiexplain .aistatus{display:block;margin:3px 0 5px;font-size:12px}.aiexplain .aistatus.flagged{color:var(--amber);font-weight:600}.aiexplain ul{margin:6px 0 0;padding-left:18px}.aiexplain .aisub{margin-top:6px;font-size:12px;font-weight:600;color:var(--ink)}
 
   .patchtriagenote{color:var(--mut)!important}
   .patchtriagenote b,.fieldnow.fallback b{color:var(--ink)}
@@ -1001,6 +1001,7 @@ function compareContext(c){
   if(x.findings!=null)parts.push(`${x.findings} findings compared`);
   if(x.epss_missing)parts.push(`${x.epss_missing} without EPSS (sorted as 0)`);
   if(x.cvss_missing)parts.push(`${x.cvss_missing} without CVSS (sorted as 0)`);
+  if(x.kev_unknown)parts.push(`${x.kev_unknown} with an unresolved KEV lookup, counted as not listed`);
   if((c.boundary_ties||[]).length)parts.push(`the top-${c.k} cut falls inside a tie for ${c.boundary_ties.join(", ")}, so those counts depend on input order`);
   return parts.length?` ${esc(parts.join("; "))}.`:"";
 }
@@ -1031,11 +1032,12 @@ function explainBlock(summary){
 }
 function aiExplanationBlock(ai){
   // AI text is supporting prose only; the outcome above never comes from it.
-  if(!ai||!(ai.text||(ai.remediation_steps||[]).length))return "";
+  if(!ai||!(ai.text||(ai.remediation_steps||[]).length||(ai.uncertainties||[]).length))return "";
   const flagged=ai.verified===false;
-  const status=flagged?`⚑ Flagged by the audit: ${(ai.flags||[]).join(", ")}. Rely on the decision path above.`:ai.verified?"✓ Numbers and actions checked against the evidence.":"Not audited.";
-  const steps=(ai.remediation_steps||[]).map(step=>`<li>${esc(step)}</li>`).join("");
-  return `<div class="aiexplain" role="note"><b>AI explanation</b> <span>· not used for the decision</span><span class="aistatus${flagged?" flagged":""}">${esc(status)}</span>${ai.text?`<div>${esc(ai.text)}</div>`:""}${steps?`<ul aria-label="AI-suggested remediation steps">${steps}</ul>`:""}</div>`;
+  const status=flagged?`⚑ Flagged by the audit: ${(ai.flags||[]).join(", ")}. Rely on the decision path above.`:ai.verified?"✓ Numbers and action checked against the evidence. Other statements are not verified.":"Not audited.";
+  const list=(items,label)=>(items||[]).length?`<ul aria-label="${esc(label)}">${items.map(item=>`<li>${esc(item)}</li>`).join("")}</ul>`:"";
+  const uncertain=(ai.uncertainties||[]).length?`<div class="aisub">Uncertainties</div>${list(ai.uncertainties,"AI-stated uncertainties")}`:"";
+  return `<div class="aiexplain" role="note" title="${esc(ai.limitations||"")}"><b>AI explanation</b> <span>· not used for the decision</span><span class="aistatus${flagged?" flagged":""}">${esc(status)}</span>${ai.text?`<div>${esc(ai.text)}</div>`:""}${list(ai.remediation_steps,"AI-suggested remediation steps")}${uncertain}</div>`;
 }
 function ssvcInputSelect(field,item){
   const point=item[field]||{},override=(item.override||{})[field]||"auto";

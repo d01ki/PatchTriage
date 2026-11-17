@@ -243,10 +243,12 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
     run_coverage, audit = result.coverage, result.audit
 
     title = f"PatchTriage - {target['name']}"
+    eval_context = evaluation_context(result.subset)
     html = render_html(
         findings, actions, eval_rows, title=title,
         coverage=run_coverage,
         coverage_warnings=list(source_provenance.get("warnings") or []),
+        eval_context=eval_context,
     )
     outcomes = {
         "immediate": 0, "out_of_cycle": 0, "scheduled": 0, "defer": 0,
@@ -327,7 +329,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             },
             "outcome": evaluation_outcome(row, len(findings)),
             "boundary_ties": row.boundary_ties,
-            "context": evaluation_context(result.subset),
+            "context": eval_context,
         }
 
     advisory_keys = {
