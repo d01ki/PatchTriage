@@ -302,3 +302,110 @@ def test_microsoft_without_a_record_is_not_an_error(tmp_path, monkeypatch):
                                            client=client)
     assert summary["errors"] == 0
     assert finding.enrichment.vendor_lookup_errors == []
+
+
+# ------------------------------------------------------------------ cache
+def _msrc_finding(cve):
+    finding = _finding()
+    finding.vuln_id = cve
+    return finding
+
+
+def _msrc_handler(calls, during=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        cve = request.url.path.rsplit("/", 1)[-1]
+        calls.append(cve)
+        if during is not None:
+            during(cve)
+        return httpx.Response(200, json={"value": [{
+            "ID": f"ADV-{cve}", "DocumentTitle": cve}]})
+    return handler
+
+
+def _run_msrc(cves, calls, during=None):
+    findings = [_msrc_finding(cve) for cve in cves]
+    with httpx.Client(transport=httpx.MockTransport(
+            _msrc_handler(calls, during))) as client:
+        summary = enrich_vendor_advisories(findings, sources="msrc",
+                                           client=client)
+    return findings, summary
+
+
+def test_concurrent_runs_do_not_drop_each_others_cache_entries(
+        tmp_path, monkeypatch):
+    # Run B finishes while run A is still fetching. A must not overwrite
+    # the file with the snapshot it loaded before B saved.
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    calls: list[str] = []
+    nested: list[str] = []
+
+    def run_b_during_a(cve):
+        if cve == "CVE-2020-0001" and not nested:
+            nested.append(cve)
+            _run_msrc(["CVE-2020-0002"], calls)
+
+    _run_msrc(["CVE-2020-0001"], calls, during=run_b_during_a)
+    calls.clear()
+    findings, summary = _run_msrc(["CVE-2020-0001", "CVE-2020-0002"], calls)
+    assert calls == []  # both served from cache
+    assert summary["errors"] == 0
+    assert all(f.enrichment.vendor_advisories for f in findings)
+
+
+def test_reusing_a_cached_entry_does_not_extend_its_lifetime(
+        tmp_path, monkeypatch):
+    import json
+    import time
+
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    calls: list[str] = []
+    _run_msrc(["CVE-2020-0001"], calls)
+    path = tmp_path / "vendor_advisories.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    entry = stored["entries"]["msrc:CVE-2020-0001"]
+    entry["fetched_at"] = time.time() - 23 * 3600
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    calls.clear()
+    _run_msrc(["CVE-2020-0001", "CVE-2020-0002"], calls)
+    assert calls == ["CVE-2020-0002"]
+    entries = json.loads(path.read_text(encoding="utf-8"))["entries"]
+    assert entries["msrc:CVE-2020-0001"]["fetched_at"] == entry["fetched_at"]
+
+    # Past 24 hours it is fetched again rather than served stale.
+    entries["msrc:CVE-2020-0001"]["fetched_at"] = time.time() - 25 * 3600
+    path.write_text(json.dumps({"_schema": stored["_schema"],
+                                "entries": entries}), encoding="utf-8")
+    calls.clear()
+    _run_msrc(["CVE-2020-0001"], calls)
+    assert calls == ["CVE-2020-0001"]
+
+
+def test_corrupt_vendor_cache_is_refetched_not_fatal(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    (tmp_path / "vendor_advisories.json").write_text("{not json",
+                                                     encoding="utf-8")
+    calls: list[str] = []
+    findings, summary = _run_msrc(["CVE-2020-0001"], calls)
+    assert calls == ["CVE-2020-0001"]
+    assert summary["errors"] == 0
+    assert findings[0].enrichment.vendor_advisories
+    calls.clear()
+    _run_msrc(["CVE-2020-0001"], calls)
+    assert calls == []
+
+
+def test_legacy_vendor_cache_is_still_read(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("PATCHTRIAGE_CACHE_DIR", str(tmp_path))
+    (tmp_path / "vendor_advisories.json").write_text(json.dumps({
+        "msrc": {"CVE-2020-0001": parse_msrc(
+            {"value": [{"ID": "OLD"}]}, "CVE-2020-0001")},
+        "exploitdb": {"CVE-2020-0001": [{"advisory_id": "EDB-1"}]},
+    }), encoding="utf-8")
+    calls: list[str] = []
+    findings, _ = _run_msrc(["CVE-2020-0001"], calls)
+    assert calls == []
+    assert [a.advisory_id for a in findings[0].enrichment.vendor_advisories] \
+        == ["OLD"]

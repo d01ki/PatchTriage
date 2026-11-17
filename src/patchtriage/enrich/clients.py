@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -191,8 +191,15 @@ def _load_entry_cache(name: str, max_age_hours: float) -> dict[str, dict]:
             if wrapped["fetched_at"] >= cutoff}
 
 
-def _merge_entry_cache(name: str, updates: dict[str, dict]) -> None:
-    """Atomically merge successful records with per-entry fetch timestamps."""
+def _merge_entry_cache(name: str, updates: dict[str, dict],
+                       max_age_hours: float | None = None,
+                       keep_key: Callable[[str], bool] | None = None) -> None:
+    """Atomically merge successful records with per-entry fetch timestamps.
+
+    The file is re-read under the lock, so entries another run saved in the
+    meantime survive, and untouched entries keep their original timestamp.
+    ``max_age_hours`` drops expired entries; ``keep_key`` drops others.
+    """
     if not updates:
         return
     path = _cache_path(name)
@@ -204,6 +211,13 @@ def _merge_entry_cache(name: str, updates: dict[str, dict]) -> None:
         entries = _decode_entry_cache(
             _read_json(path) if path.exists() else {}, fallback_timestamp)
         fetched_at = time.time()
+        if max_age_hours is not None:
+            cutoff = fetched_at - max_age_hours * 3600
+            entries = {key: wrapped for key, wrapped in entries.items()
+                       if wrapped["fetched_at"] >= cutoff}
+        if keep_key is not None:
+            entries = {key: wrapped for key, wrapped in entries.items()
+                       if keep_key(key)}
         for key, value in updates.items():
             if isinstance(value, dict):
                 entries[str(key)] = {"value": value,

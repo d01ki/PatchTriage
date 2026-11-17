@@ -15,7 +15,8 @@ from typing import Any
 import httpx
 
 from ..models import Finding, VendorAdvisory
-from .clients import _load_cache, _save_cache
+from .clients import (_load_cache, _load_entry_cache, _merge_entry_cache,
+                      _save_cache)
 
 MSRC_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/updates/"
 RHSA_URL = "https://access.redhat.com/hydra/rest/securitydata/csaf.json"
@@ -312,6 +313,41 @@ def _fetch_one(source: str, cve: str, client: httpx.Client,
     raise ValueError(f"{source} is not a per-CVE source")
 
 
+VENDOR_CACHE = "vendor_advisories.json"
+VENDOR_CACHE_HOURS = 24
+
+
+def _vendor_cache_key(key: str) -> bool:
+    """Keep only current per-record keys of cacheable sources."""
+    source, sep, _ = key.partition(":")
+    return bool(sep) and source in ALL_SOURCES and (
+        source not in _LIVE_ONLY_SOURCES)
+
+
+def _load_vendor_cache() -> dict[str, dict[str, list[dict]]]:
+    """Fresh vendor records by source and CVE (live-only sources excluded).
+
+    Records are keyed ``source:CVE`` with their own fetch time. A cache
+    written by an older release (``{source: {cve: rows}}``) is still read,
+    aged by the file's modification time.
+    """
+    cache: dict[str, dict[str, list[dict]]] = {s: {} for s in ALL_SOURCES}
+    for key, value in _load_entry_cache(
+            VENDOR_CACHE, max_age_hours=VENDOR_CACHE_HOURS).items():
+        source, sep, cve = key.partition(":")
+        if source not in cache or source in _LIVE_ONLY_SOURCES:
+            continue
+        if sep:
+            rows = value.get("rows")
+            if isinstance(rows, list):
+                cache[source][cve] = rows
+            continue
+        for legacy_cve, rows in value.items():
+            if isinstance(rows, list):
+                cache[source][str(legacy_cve)] = rows
+    return cache
+
+
 def enrich_vendor_advisories(
     findings: list[Finding], sources: str | Iterable[str] = "auto",
     github_token: str | None = None, client: httpx.Client | None = None,
@@ -336,11 +372,10 @@ def enrich_vendor_advisories(
         for source in effective:
             source_cves[source].add(finding.vuln_id)
 
-    cache = _load_cache("vendor_advisories.json", max_age_hours=24) or {}
-    for source in ALL_SOURCES:
-        cache.setdefault(source, {})
-    for source in _LIVE_ONLY_SOURCES:
-        cache[source] = {}  # never reuse a stored result for live sources
+    cache = _load_vendor_cache()
+    # Only records fetched by this run are written, so a reused record keeps
+    # its original age instead of being refreshed on every save.
+    fetched: dict[str, dict] = {}
     errors: dict[tuple[str, str], str] = {}
     owns_client = client is None
     client = client or httpx.Client(
@@ -359,6 +394,7 @@ def enrich_vendor_advisories(
                 payload = response.json()
                 for cve in batch:
                     cache["rhsa"][cve] = parse_rhsa(payload, cve)
+                    fetched[f"rhsa:{cve}"] = {"rows": cache["rhsa"][cve]}
             except (httpx.HTTPError, ValueError, TypeError,
                     KeyError, AttributeError) as exc:
                 for cve in batch:
@@ -379,7 +415,10 @@ def enrich_vendor_advisories(
                         errors[("debian", cve)] = str(exc)
             if debian is not None:
                 for cve in source_cves["debian"]:
-                    cache["debian"][cve] = parse_debian(debian, cve)
+                    if cve not in cache["debian"]:
+                        cache["debian"][cve] = parse_debian(debian, cve)
+                        fetched[f"debian:{cve}"] = {
+                            "rows": cache["debian"][cve]}
 
         # Per-CVE lookups (Exploit-DB is always live; results stay in memory
         # only) run a few at a time so a large SBOM stays within request time.
@@ -403,9 +442,12 @@ def enrich_vendor_advisories(
                 except (httpx.HTTPError, ValueError, TypeError,
                         KeyError, AttributeError) as exc:
                     errors[(source, cve)] = str(exc)
-        _save_cache("vendor_advisories.json", {
-            source: rows for source, rows in cache.items()
-            if source not in _LIVE_ONLY_SOURCES})
+                    continue
+                if source not in _LIVE_ONLY_SOURCES:
+                    fetched[f"{source}:{cve}"] = {"rows": cache[source][cve]}
+        _merge_entry_cache(VENDOR_CACHE, fetched,
+                           max_age_hours=VENDOR_CACHE_HOURS,
+                           keep_key=_vendor_cache_key)
     finally:
         if owns_client:
             client.close()
