@@ -136,21 +136,24 @@ def _atomic_write_json(path: Path, data: Any) -> None:
                 pass
 
 
-_cache_write_warned = False
+_CACHE_WARNING_INTERVAL_SECONDS = 15 * 60
+_cache_warned_at = float("-inf")
 
 
 def _write_cache(path: Path, data: Any) -> None:
     """Write a cache file; an unwritable cache only costs a refetch later.
 
     A read-only disk or a Docker volume owned by another user must not
-    abort an assessment whose evidence was fetched successfully.
+    abort an assessment whose evidence was fetched successfully. The warning
+    repeats every 15 minutes, so a long-running GUI keeps showing it.
     """
-    global _cache_write_warned
+    global _cache_warned_at
     try:
         _atomic_write_json(path, data)
     except OSError as exc:
-        if not _cache_write_warned:
-            _cache_write_warned = True
+        now = time.monotonic()
+        if now - _cache_warned_at >= _CACHE_WARNING_INTERVAL_SECONDS:
+            _cache_warned_at = now
             _log.warning("enrichment cache %s is not writable (%s); results "
                          "are used but will be fetched again next time",
                          path.parent, exc.strerror or exc)

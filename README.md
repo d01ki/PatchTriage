@@ -131,13 +131,9 @@ compliance attestation.
 ### macOS and Linux
 
 Use the same `docker compose` commands, or `./run.sh` (`./run.sh demo`,
-`./run.sh start`, `./run.sh` for the GUI). On Linux, if `id -u` is not 1000,
-run this once per shell before `docker compose run ...` so reports in `./out`
-are writable and owned by you (`./run.sh` does it automatically):
-
-```sh
-export PATCHTRIAGE_UID=$(id -u) PATCHTRIAGE_GID=$(id -g)
-```
+`./run.sh start`, `./run.sh` for the GUI). On Linux the terminal services run
+as the owner of your clone, so reports in `./out` belong to you whatever your
+user id; nothing extra to set.
 
 ### Without Docker
 

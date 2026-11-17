@@ -1,7 +1,8 @@
 # PatchTriage — reproducible container build.
 #
 #   docker build -t patchtriage .
-#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" patchtriage   # offline demo
+#   docker run --rm --user 0 -v "$PWD/out:/out" patchtriage   # offline demo -> ./out
+#   (--user 0 lets the entrypoint run as the owner of ./out, then drop root)
 #   docker run --rm -e PATCHTRIAGE_AI_PROVIDER -e OPENAI_API_KEY \
 #       -e PATCHTRIAGE_AI_MODEL -v "$PWD:/work" patchtriage \
 #       run /work/trivy.json --triage ai -o /work/report.json
@@ -34,18 +35,15 @@ RUN apt-get update \
        /home/patchtriage/.cache/patchtriage \
        /home/patchtriage/.config/patchtriage \
     && chown -R patchtriage:patchtriage /out /work /home/patchtriage \
-    && chmod 1777 /out /work /home/patchtriage \
-       /home/patchtriage/.cache /home/patchtriage/.cache/patchtriage \
-       /home/patchtriage/.config /home/patchtriage/.config/patchtriage
+    && chmod 700 /home/patchtriage/.config/patchtriage
 # Pre-creating + chowning the cache/config dirs means Docker initializes the
 # named volumes mounted there with uid 1000 ownership, so the GUI (which runs
-# as this user) can persist targets, caches and reports. The sticky,
-# world-writable mode lets the CLI services run as the host user instead
-# (docker-compose.yml `user:`), so reports in bind-mounted ./out stay
-# writable and owned by that user on Linux; saved keys remain 0600.
+# as this user) can persist targets, caches and reports.
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENV HOME=/home/patchtriage
 USER patchtriage
 WORKDIR /work
-# `docker run patchtriage` runs the fully offline demo by default
-ENTRYPOINT ["patchtriage"]
+# `docker run patchtriage` runs the fully offline demo by default. The
+# entrypoint only changes anything when the container starts as root.
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["demo", "--html", "/out/demo_report.html", "--output", "/out/demo_report.json"]

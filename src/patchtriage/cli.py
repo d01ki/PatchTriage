@@ -31,6 +31,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import config as cfgmod
@@ -88,11 +89,12 @@ def _write_report(path: Path, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     except OSError as exc:
+        hint = ("Run PatchTriage through docker compose or ./run.sh from your "
+                "clone, so it writes ./out as you." if _in_container()
+                else "Choose a folder you can write to.")
         console.print(
-            f"[red]Cannot write {path}: {exc.strerror or exc}.[/red]\n"
-            "Choose a writable folder. In Docker on Linux, run\n"
-            "  export PATCHTRIAGE_UID=$(id -u) PATCHTRIAGE_GID=$(id -g)\n"
-            "once in this shell (./run.sh does this), then retry.")
+            f"[red]Cannot write {escape(str(path))}: "
+            f"{escape(str(exc.strerror or exc))}.[/red] {hint}")
         raise typer.Exit(1) from None
 
 
@@ -1144,10 +1146,11 @@ def verify(
     ),
 ):
     """Verify SSVC conformance, target sensitivity, and reproducibility offline."""
-    from .validation import write_validation_report
+    from .validation import run_validation
 
     with console.status("running offline reproducibility verification..."):
-        report = write_validation_report(output, repeats=repeats)
+        report = run_validation(repeats=repeats)
+    _write_report(output, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     table = Table(title="Reviewer verification")
     table.add_column("Evidence")
     table.add_column("Cases", justify="right")
@@ -1173,8 +1176,8 @@ def demo(
     No network, no API keys. This is what reviewers should run first.
     """
     data = resources.files("patchtriage") / "data"
-    tmp = Path(".patchtriage_demo")
-    tmp.mkdir(exist_ok=True)
+    # A private temp folder, so the demo also runs from a read-only folder.
+    tmp = Path(tempfile.mkdtemp(prefix="patchtriage-demo-"))
 
     # Seed the bundled snapshot into an ISOLATED cache dir, not the user's
     # real ~/.cache/patchtriage. The demo KEV/EPSS snapshot only covers a

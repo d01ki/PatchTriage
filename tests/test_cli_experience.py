@@ -184,6 +184,7 @@ def test_version_flag_prints_the_installed_version():
     assert result.exit_code == 0
     assert result.stdout.startswith("patchtriage ")
 
+
 def test_unwritable_report_path_gives_a_fix_not_a_traceback(tmp_path):
     import typer
 
@@ -192,3 +193,24 @@ def test_unwritable_report_path_gives_a_fix_not_a_traceback(tmp_path):
     with pytest.raises(typer.Exit) as stopped:
         cli._write_report(blocker / "report.html", "<html></html>")
     assert stopped.value.exit_code == 1
+
+
+def test_report_error_escapes_markup_in_the_path(tmp_path, capsys):
+    import typer
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(typer.Exit):
+        cli._write_report(blocker / "[draft]" / "r.html", "x")
+    assert "[draft]" in capsys.readouterr().out
+
+
+def test_demo_runs_from_a_folder_it_cannot_write(tmp_path, monkeypatch):
+    # The demo's scratch files live in a private temp folder, not the cwd.
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    result = CliRunner().invoke(cli.app, [
+        "demo", "--html", str(out / "d.html"), "--output", str(out / "d.json")])
+    assert result.exit_code == 0, result.stdout
+    assert not (tmp_path / ".patchtriage_demo").exists()
+    assert (out / "d.html").exists()

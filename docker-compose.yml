@@ -11,10 +11,22 @@
 # The AI settings, NVD key, and GitHub token are read from your shell
 # environment (all optional).
 #
-# Linux: the CLI services run as PATCHTRIAGE_UID:PATCHTRIAGE_GID (default
-# 1000:1000) so files they write under ./out belong to you. If your id is
-# not 1000, export both once per shell (./run.sh does this for you):
-#   export PATCHTRIAGE_UID=$(id -u) PATCHTRIAGE_GID=$(id -g)
+# The CLI services start as root only to run docker-entrypoint.sh, which
+# switches to the owner of ./out (or ./) and drops root, so reports in ./out
+# belong to you on Linux whatever your uid.
+
+# Shared by the CLI services: start as root only for docker-entrypoint.sh,
+# with just the capabilities it needs to hand volumes over and drop root.
+x-cli-runtime: &cli-runtime
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - SETUID
+    - SETGID
 
 services:
   # Web GUI console: register targets, import scans/SBOMs, browse reports.
@@ -66,7 +78,8 @@ services:
   # Offline demo: no network, no keys.
   demo:
     build: .
-    user: "${PATCHTRIAGE_UID:-1000}:${PATCHTRIAGE_GID:-1000}"
+    user: "0:0"
+    <<: *cli-runtime
     volumes:
       - ./out:/out
 
@@ -75,7 +88,8 @@ services:
   # container and the report path under ./out is printed instead.
   start:
     build: .
-    user: "${PATCHTRIAGE_UID:-1000}:${PATCHTRIAGE_GID:-1000}"
+    user: "0:0"
+    <<: *cli-runtime
     stdin_open: true
     tty: true
     environment:
@@ -101,16 +115,16 @@ services:
     volumes:
       - ./:/work
       - ./out:/out
-      - cache:/home/patchtriage/.cache
+      - cli-cache:/home/patchtriage/.cache
       - cli-config:/home/patchtriage/.config
     working_dir: /work
-    entrypoint: ["patchtriage"]
     command: ["start"]
 
   # Scriptable triage: pass any `run ...` arguments after the service name.
   triage:
     build: .
-    user: "${PATCHTRIAGE_UID:-1000}:${PATCHTRIAGE_GID:-1000}"
+    user: "0:0"
+    <<: *cli-runtime
     environment:
       - PATCHTRIAGE_AI_PROVIDER
       - PATCHTRIAGE_AI_API_KEY
@@ -130,25 +144,25 @@ services:
     volumes:
       - ./:/work
       - ./out:/out
-      - cache:/home/patchtriage/.cache
+      - cli-cache:/home/patchtriage/.cache
       - cli-config:/home/patchtriage/.config
     working_dir: /work
-    entrypoint: ["patchtriage"]
     command: ["--help"]
 
   # Saves API keys for `start` and `triage`, kept apart from the GUI's volume
   # because anonymous GUI sessions must not depend on an operator's CLI keys.
   setup:
     build: .
-    user: "${PATCHTRIAGE_UID:-1000}:${PATCHTRIAGE_GID:-1000}"
+    user: "0:0"
+    <<: *cli-runtime
     stdin_open: true
     tty: true
     volumes:
       - cli-config:/home/patchtriage/.config
-    entrypoint: ["patchtriage"]
     command: ["setup"]
 
 volumes:
   cache:
   config:
+  cli-cache:
   cli-config:
