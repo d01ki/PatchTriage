@@ -62,6 +62,12 @@ _RUN_SLOTS = threading.BoundedSemaphore(
     max(1, int(os.environ.get("PATCHTRIAGE_MAX_CONCURRENT_RUNS", 2))))
 _IMPORT_SLOTS = threading.BoundedSemaphore(
     max(1, int(os.environ.get("PATCHTRIAGE_MAX_CONCURRENT_IMPORTS", 2))))
+# Repository and fleet imports run as background jobs so a slow provider
+# never holds an HTTP request (and a reverse proxy's timeout) open.
+IMPORT_DEADLINE_SECONDS = float(
+    os.environ.get("PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", 600))
+_IMPORTS: dict[str, dict] = {}
+_ACTIVE_IMPORT_STATES = frozenset({"queued", "running"})
 
 # Bundled IBM Plex Latin-1 subsets (SIL OFL 1.1, see fonts/OFL.txt) keep the GUI offline.
 _FONT_NAME = re.compile(r"[A-Za-z0-9-]+\.woff2")
@@ -217,6 +223,9 @@ def _cleanup_expired_workspaces() -> int:
         active_workspaces = {
             job["workspace"] for job in _JOBS.values()
             if job.get("state") in {"queued", "running"}
+        } | {
+            job["workspace"] for job in _IMPORTS.values()
+            if job.get("state") in _ACTIVE_IMPORT_STATES
         }
     return tstore.cleanup_workspaces(
         SESSION_TTL_SECONDS, exclude_workspace_ids=active_workspaces)
@@ -315,6 +324,190 @@ class RequestError(ValueError):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+# ------------------------------------------------------------ import jobs
+def _public_import(job: dict) -> dict:
+    with _JOB_LOCK:
+        snapshot = dict(job)
+    for internal in ("workspace", "key", "deadline", "cancel_requested"):
+        snapshot.pop(internal, None)
+    # Server-measured, so the browser's clock never skews the progress.
+    snapshot["elapsed_seconds"] = round(
+        (snapshot.get("finished_at") or time.time())
+        - snapshot["created_at"], 1)
+    return snapshot
+
+
+def _prune_imports_locked() -> None:
+    cutoff = time.time() - SESSION_TTL_SECONDS
+    terminal = sorted(
+        ((import_id, job) for import_id, job in _IMPORTS.items()
+         if job["state"] not in _ACTIVE_IMPORT_STATES),
+        key=lambda item: item[1].get("finished_at", 0), reverse=True)
+    for index, (import_id, job) in enumerate(terminal):
+        if (job.get("finished_at", 0) < cutoff
+                or index >= max(1, MAX_RETAINED_JOBS)):
+            _IMPORTS.pop(import_id, None)
+
+
+def _import_stop(import_id: str) -> tuple[str, int]:
+    """Why an import must stop now, with the status it reports, or ("", 0)."""
+    with _JOB_LOCK:
+        job = _IMPORTS.get(import_id)
+        if job is None or job.get("cancel_requested"):
+            return "import was cancelled", 409
+        if time.monotonic() > job["deadline"]:
+            return (f"import exceeded its {IMPORT_DEADLINE_SECONDS:g}-second "
+                    "time budget", 504)
+    return "", 0
+
+
+def _execute_import(import_id: str, work) -> None:
+    """Run ``work(import_id) -> (status, payload)``; always free the slot."""
+    try:
+        with _JOB_LOCK:
+            job = _IMPORTS.get(import_id)
+            if job:
+                job.update(state="running", started_at=time.time())
+        try:
+            status, payload = work(import_id)
+        except Exception as exc:
+            status, payload = 500, {"error": _exception_message(exc)}
+        with _JOB_LOCK:
+            job = _IMPORTS.get(import_id)
+            if job:
+                if status < 400:
+                    job.update(state="succeeded", result=payload)
+                else:
+                    job.update(
+                        state=("cancelled" if job.get("cancel_requested")
+                               else "failed"),
+                        error=str(payload.get("error") or "import failed"),
+                        error_status=status)
+                job["finished_at"] = time.time()
+                _prune_imports_locked()
+    finally:
+        _IMPORT_SLOTS.release()
+
+
+def _start_import(workspace: str, kind: str, target_id: str, key: str,
+                  work) -> dict:
+    """Queue one import; an identical active import is returned instead."""
+    with _JOB_LOCK:
+        _prune_imports_locked()
+        for job in _IMPORTS.values():
+            if (job["workspace"] == workspace and job["kind"] == kind
+                    and job["target_id"] == target_id
+                    and job["state"] in _ACTIVE_IMPORT_STATES):
+                if job["key"] == key:
+                    return job
+                raise RequestError(
+                    "another import is already running here; wait for it "
+                    "or cancel it first", 409)
+        if not _IMPORT_SLOTS.acquire(blocking=False):
+            raise RequestError(
+                "repository import capacity is busy; retry later", 429)
+        import_id = secrets.token_hex(12)
+        job = {
+            "import_id": import_id, "kind": kind, "workspace": workspace,
+            "target_id": target_id, "key": key, "state": "queued",
+            "created_at": time.time(),
+            "deadline": time.monotonic() + IMPORT_DEADLINE_SECONDS,
+            "deadline_seconds": IMPORT_DEADLINE_SECONDS,
+        }
+        _IMPORTS[import_id] = job
+    try:
+        threading.Thread(target=_execute_import, args=(import_id, work),
+                         daemon=True).start()
+    except BaseException:
+        with _JOB_LOCK:
+            _IMPORTS.pop(import_id, None)
+        _IMPORT_SLOTS.release()
+        raise
+    return job
+
+
+def _repository_error(exc: Exception) -> tuple[int, dict]:
+    for error_type, status in (
+            (RepositoryRateLimitError, 429), (RepositoryAccessDeniedError, 403),
+            (RepositoryNotFoundError, 404), (RepositoryTooLargeError, 413),
+            (RepositoryFetchError, 502), (RepositoryError, 400),
+            (ValueError, 400)):
+        if isinstance(exc, error_type):
+            return status, {"error": str(exc)}
+    raise exc
+
+
+def _repository_import_work(workspace: str, target_id: str,
+                            repository_url: str, baseline_sha256: str):
+    def work(import_id: str) -> tuple[int, dict]:
+        try:
+            evidence = acquire_repository_evidence(
+                repository_url,
+                github_token=_github_import_token(),
+                max_bytes=MAX_SOURCE_BYTES,
+                allow_generic=_generic_repository_enabled(),
+            )
+        except (RepositoryError, ValueError) as exc:
+            return _repository_error(exc)
+        content, fmt = evidence.content, evidence.format
+        provenance = evidence.provenance
+        reason, status = _import_stop(import_id)
+        if reason:
+            return status, {"error": f"{reason}; nothing was saved"}
+        size = len(content.encode("utf-8"))
+        if size > MAX_SOURCE_BYTES:
+            return 413, {"error": f"repository evidence exceeds the "
+                                  f"{MAX_SOURCE_BYTES} byte limit"}
+        target = tstore.get_target(target_id, workspace)
+        if target is None:
+            return 404, {"error": "target was deleted during the import; "
+                                  "nothing was saved"}
+        if str(target.get("source_sha256") or "") != baseline_sha256:
+            # Newer evidence arrived meanwhile; never overwrite it with
+            # the result of an older request.
+            return 409, {"error": "this target's evidence changed while the "
+                                  "import ran; nothing was saved"}
+        filename = (
+            provenance["repository"].replace("/", "_") + f".{fmt}.json")
+        try:
+            tstore.save_source(
+                target_id, content, fmt, workspace,
+                filename=filename, source_kind="repository",
+                provenance=provenance,
+                max_workspace_source_bytes=MAX_SESSION_SOURCE_BYTES,
+            )
+        except tstore.SourceQuotaError as exc:
+            return 413, {"error": str(exc)}
+        except KeyError:
+            return 404, {"error": "target was deleted during the import; "
+                                  "nothing was saved"}
+        refreshed = tstore.get_target(target_id, workspace) or target
+        return 200, {
+            "ok": True, "format": fmt, "filename": filename,
+            "sha256": refreshed.get("source_sha256", ""),
+            "size": size, "provenance": provenance,
+        }
+    return work
+
+
+def _fleet_import_work(workspace: str, owner_url: str, options: dict):
+    def work(import_id: str) -> tuple[int, dict]:
+        try:
+            report = fleetmod.import_fleet(
+                owner_url,
+                workspace_id=workspace,
+                github_token=_github_import_token(),
+                max_targets=MAX_TARGETS_PER_SESSION,
+                max_workspace_source_bytes=MAX_SESSION_SOURCE_BYTES,
+                should_stop=lambda: _import_stop(import_id)[0],
+                **options,
+            )
+        except (RepositoryError, ValueError) as exc:
+            return _repository_error(exc)
+        return 200, report
+    return work
 
 
 def _detect_format(content: str) -> str:
@@ -597,6 +790,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not job or job["workspace"] != workspace:
                     return self._send_json({"error": "no such job"}, 404)
             return self._send_json(_public_job(job))
+        if path == "/api/imports":
+            with _JOB_LOCK:
+                _prune_imports_locked()
+                visible = [job for job in _IMPORTS.values()
+                           if job["workspace"] == workspace
+                           and job["state"] in _ACTIVE_IMPORT_STATES]
+            return self._send_json([_public_import(job) for job in visible])
+        m = re.fullmatch(r"/api/imports/([0-9a-f]{24})", path)
+        if m:
+            with _JOB_LOCK:
+                job = _IMPORTS.get(m.group(1))
+                if not job or job["workspace"] != workspace:
+                    return self._send_json({"error": "no such import"}, 404)
+            return self._send_json(_public_import(job))
         m = re.fullmatch(r"/report/([0-9a-f]{12})", path)
         if m:
             report = tstore.load_current_report(m.group(1), workspace)
@@ -712,39 +919,23 @@ class Handler(BaseHTTPRequestHandler):
                 for key in fleetmod.FLEET_CONTEXT_FIELDS
                 if isinstance(body.get(key), str)
             }
-            if not _IMPORT_SLOTS.acquire(blocking=False):
-                return self._send_json(
-                    {"error": "repository import capacity is busy; retry later"},
-                    429,
-                )
+            options = {
+                "limit": limit,
+                "include_forks": bool(body.get("include_forks")),
+                "include_archived": bool(body.get("include_archived")),
+                "context": context,
+            }
             try:
-                try:
-                    report = fleetmod.import_fleet(
-                        owner_url,
-                        workspace_id=workspace,
-                        limit=limit,
-                        include_forks=bool(body.get("include_forks")),
-                        include_archived=bool(body.get("include_archived")),
-                        github_token=_github_import_token(),
-                        context=context,
-                        max_targets=MAX_TARGETS_PER_SESSION,
-                        max_workspace_source_bytes=MAX_SESSION_SOURCE_BYTES,
-                    )
-                except RepositoryRateLimitError as exc:
-                    return self._send_json({"error": str(exc)}, 429)
-                except RepositoryAccessDeniedError as exc:
-                    return self._send_json({"error": str(exc)}, 403)
-                except RepositoryNotFoundError as exc:
-                    return self._send_json({"error": str(exc)}, 404)
-                except RepositoryFetchError as exc:
-                    return self._send_json({"error": str(exc)}, 502)
-                except RepositoryError as exc:
-                    return self._send_json({"error": str(exc)}, 400)
-                except ValueError as exc:
-                    return self._send_json({"error": str(exc)}, 400)
-            finally:
-                _IMPORT_SLOTS.release()
-            return self._send_json(report)
+                fleetmod.normalize_owner_url(owner_url)
+                job = _start_import(
+                    workspace, "fleet", "",
+                    json.dumps([owner_url.strip(), options], sort_keys=True),
+                    _fleet_import_work(workspace, owner_url, options))
+            except RequestError as exc:
+                return self._send_json({"error": str(exc)}, exc.status)
+            except (RepositoryError, ValueError) as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            return self._send_json(_public_import(job), 202)
 
         m = re.fullmatch(r"/api/targets/([0-9a-f]{12})/context", path)
         if m:
@@ -874,60 +1065,16 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(repository_url, str) or not repository_url.strip():
                 return self._send_json(
                     {"error": "repository_url is required"}, 400)
-            if not _IMPORT_SLOTS.acquire(blocking=False):
-                return self._send_json(
-                    {"error": "repository import capacity is busy; retry later"},
-                    429,
-                )
+            repository_url = repository_url.strip()
             try:
-                try:
-                    evidence = acquire_repository_evidence(
-                        repository_url,
-                        github_token=_github_import_token(),
-                        max_bytes=MAX_SOURCE_BYTES,
-                        allow_generic=_generic_repository_enabled(),
-                    )
-                    content = evidence.content
-                    fmt = evidence.format
-                    provenance = evidence.provenance
-                except RepositoryRateLimitError as exc:
-                    return self._send_json({"error": str(exc)}, 429)
-                except RepositoryAccessDeniedError as exc:
-                    return self._send_json({"error": str(exc)}, 403)
-                except RepositoryNotFoundError as exc:
-                    return self._send_json({"error": str(exc)}, 404)
-                except RepositoryTooLargeError as exc:
-                    return self._send_json({"error": str(exc)}, 413)
-                except RepositoryFetchError as exc:
-                    return self._send_json({"error": str(exc)}, 502)
-                except RepositoryError as exc:
-                    return self._send_json({"error": str(exc)}, 400)
-            finally:
-                _IMPORT_SLOTS.release()
-            size = len(content.encode("utf-8"))
-            if size > MAX_SOURCE_BYTES:
-                return self._send_json(
-                    {"error": f"repository evidence exceeds the "
-                              f"{MAX_SOURCE_BYTES} byte limit"}, 413)
-            filename = (
-                provenance["repository"].replace("/", "_") + f".{fmt}.json")
-            try:
-                tstore.save_source(
-                    target["id"], content, fmt, workspace,
-                    filename=filename, source_kind="repository",
-                    provenance=provenance,
-                    max_workspace_source_bytes=MAX_SESSION_SOURCE_BYTES,
-                )
-            except tstore.SourceQuotaError as exc:
-                return self._send_json({"error": str(exc)}, 413)
-            except KeyError:
-                return self._send_json({"error": "no such target"}, 404)
-            refreshed = tstore.get_target(target["id"], workspace) or target
-            return self._send_json({
-                "ok": True, "format": fmt, "filename": filename,
-                "sha256": refreshed.get("source_sha256", ""),
-                "size": size, "provenance": provenance,
-            })
+                job = _start_import(
+                    workspace, "repository", target["id"], repository_url,
+                    _repository_import_work(
+                        workspace, target["id"], repository_url,
+                        str(target.get("source_sha256") or "")))
+            except RequestError as exc:
+                return self._send_json({"error": str(exc)}, exc.status)
+            return self._send_json(_public_import(job), 202)
 
         m = re.fullmatch(r"/api/targets/([0-9a-f]{12})/runs", path)
         if m:
@@ -989,6 +1136,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _do_DELETE(self):
         workspace = self._workspace()
+        m = re.fullmatch(r"/api/imports/([0-9a-f]{24})",
+                         self.path.split("?", 1)[0])
+        if m:
+            # The worker stops before saving or before the next repository;
+            # a provider request already in flight finishes within its own
+            # timeout and is then discarded.
+            with _JOB_LOCK:
+                job = _IMPORTS.get(m.group(1))
+                if not job or job["workspace"] != workspace:
+                    return self._send_json({"error": "no such import"}, 404)
+                if job["state"] in _ACTIVE_IMPORT_STATES:
+                    job["cancel_requested"] = True
+            return self._send_json(_public_import(job), 202)
         m = re.fullmatch(
             r"/api/targets/([0-9a-f]{12})", self.path.split("?", 1)[0])
         if m:

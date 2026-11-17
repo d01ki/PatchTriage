@@ -108,6 +108,7 @@ def enhanced_server(tmp_path, monkeypatch):
     monkeypatch.delenv("PATCHTRIAGE_COOKIE_SECURE", raising=False)
     with webserver._JOB_LOCK:
         webserver._JOBS.clear()
+        webserver._IMPORTS.clear()
     with webserver._RUN_LOCKS_GUARD:
         webserver._RUN_LOCKS.clear()
 
@@ -121,6 +122,19 @@ def enhanced_server(tmp_path, monkeypatch):
     thread.join(timeout=2)
     with webserver._JOB_LOCK:
         webserver._JOBS.clear()
+        webserver._IMPORTS.clear()
+
+
+def _poll_import(opener, base: str, import_id: str) -> dict:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        status, job = _api(opener, "GET", f"{base}/api/imports/{import_id}")
+        assert status == 200
+        assert isinstance(job, dict)
+        if job["state"] not in {"queued", "running"}:
+            return job
+        time.sleep(0.01)
+    pytest.fail("import job did not finish within ten seconds")
 
 
 def _create_demo(opener, base: str) -> dict:
@@ -407,12 +421,17 @@ def test_repository_endpoint_saves_source_and_provenance(
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
     monkeypatch.setattr(
         "patchtriage.repository.fetch_repository_sbom", fake_fetch)
-    status, imported = _api(
+    status, job = _api(
         opener, "POST",
         f"{enhanced_server}/api/targets/{target['id']}/repository",
         {"repository_url": "https://github.com/acme/widgets/tree/release/v1"},
     )
-    assert status == 200
+    assert status == 202
+    assert job["kind"] == "repository"
+    assert job["target_id"] == target["id"]
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "succeeded"
+    imported = finished["result"]
     reference = captured.pop("reference")
     assert isinstance(reference, RepositoryReference)
     assert reference.normalized_url == "https://github.com/acme/widgets"
@@ -436,6 +455,225 @@ def test_repository_endpoint_saves_source_and_provenance(
     assert stored["source_name"] == "acme_widgets.spdx.json"
     assert stored["source_sha256"] == expected_hash
     assert stored["source_provenance"] == provenance.to_dict()
+
+
+class _BlockingFetch:
+    """Repository fetch that waits until the test releases it."""
+
+    def __init__(self, error: Exception | None = None):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+        self.error = error
+        self.content = (FIXTURES / "sbom_spdx.json").read_text(
+            encoding="utf-8")
+
+    def __call__(self, reference, **_kwargs):
+        self.calls += 1
+        self.started.set()
+        assert self.release.wait(10)
+        if self.error is not None:
+            raise self.error
+        return RepositorySbom(content=self.content, provenance=RepositoryProvenance(
+            provider="github_dependency_graph", repository="acme/widgets",
+            ref="default_branch", resolved_url="https://github.com/acme/widgets",
+            api_url="test://sbom", format="spdx", component_count=2,
+            coverage_status="provider_reported", warnings=(),
+            retrieved_at="2026-07-18T00:00:00+00:00"))
+
+
+def _start_repository_import(opener, base, target_id,
+                             url="https://github.com/acme/widgets"):
+    return _api(opener, "POST", f"{base}/api/targets/{target_id}/repository",
+                {"repository_url": url})
+
+
+def _new_target(opener, base, name="repository"):
+    status, target = _api(opener, "POST", base + "/api/targets",
+                          {"name": name})
+    assert status == 201
+    return target
+
+
+def test_repository_import_returns_before_a_slow_provider_finishes(
+        enhanced_server, monkeypatch):
+    fetch = _BlockingFetch()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    status, job = _start_repository_import(opener, enhanced_server,
+                                           target["id"])
+    assert status == 202
+    assert fetch.started.wait(5)
+    # The import is still running, yet other requests are answered.
+    status, active = _api(opener, "GET", enhanced_server + "/api/imports")
+    assert status == 200
+    assert [item["import_id"] for item in active] == [job["import_id"]]
+    assert "workspace" not in active[0] and "deadline" not in active[0]
+    assert active[0]["elapsed_seconds"] >= 0
+    # Submitting the same import again joins it; a different one is refused.
+    status, again = _start_repository_import(opener, enhanced_server,
+                                             target["id"])
+    assert status == 202 and again["import_id"] == job["import_id"]
+    status, other = _start_repository_import(
+        opener, enhanced_server, target["id"], "https://github.com/acme/other")
+    assert status == 409
+    fetch.release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "succeeded"
+    assert fetch.calls == 1
+
+
+def test_import_status_is_private_to_its_workspace(
+        enhanced_server, monkeypatch):
+    fetch = _BlockingFetch()
+    fetch.release.set()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    owner = _opener()
+    target = _new_target(owner, enhanced_server)
+    _, job = _start_repository_import(owner, enhanced_server, target["id"])
+    _poll_import(owner, enhanced_server, job["import_id"])
+    stranger = _opener()
+    status, _ = _api(stranger, "GET",
+                     f"{enhanced_server}/api/imports/{job['import_id']}")
+    assert status == 404
+    status, _ = _api(stranger, "DELETE",
+                     f"{enhanced_server}/api/imports/{job['import_id']}")
+    assert status == 404
+
+
+def test_import_past_its_deadline_saves_nothing_and_frees_the_slot(
+        enhanced_server, monkeypatch):
+    monkeypatch.setattr(webserver, "IMPORT_DEADLINE_SECONDS", 0.05)
+    fetch = _BlockingFetch()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    _, job = _start_repository_import(opener, enhanced_server, target["id"])
+    assert fetch.started.wait(5)
+    time.sleep(0.1)
+    fetch.release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "failed"
+    assert finished["error_status"] == 504
+    assert "time budget" in finished["error"]
+    _, targets = _api(opener, "GET", enhanced_server + "/api/targets")
+    assert targets[0]["source_file"] is False
+
+    # Every slot is free again, and a retry with more time succeeds.
+    monkeypatch.setattr(webserver, "IMPORT_DEADLINE_SECONDS", 60)
+    for _ in range(3):
+        assert webserver._IMPORT_SLOTS.acquire(blocking=False)
+        webserver._IMPORT_SLOTS.release()
+    _, retry = _start_repository_import(opener, enhanced_server, target["id"])
+    assert _poll_import(opener, enhanced_server,
+                        retry["import_id"])["state"] == "succeeded"
+
+
+def test_failed_import_reports_provider_status_and_can_be_retried(
+        enhanced_server, monkeypatch):
+    from patchtriage.repository import RepositoryNotFoundError
+
+    fetch = _BlockingFetch(RepositoryNotFoundError("no dependency graph"))
+    fetch.release.set()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    _, job = _start_repository_import(opener, enhanced_server, target["id"])
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "failed"
+    assert finished["error_status"] == 404
+    assert "no dependency graph" in finished["error"]
+    fetch.error = None
+    _, retry = _start_repository_import(opener, enhanced_server, target["id"])
+    assert retry["import_id"] != job["import_id"]
+    assert _poll_import(opener, enhanced_server,
+                        retry["import_id"])["state"] == "succeeded"
+
+
+def test_older_import_never_overwrites_newer_uploaded_evidence(
+        enhanced_server, monkeypatch):
+    fetch = _BlockingFetch()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    _, job = _start_repository_import(opener, enhanced_server, target["id"])
+    assert fetch.started.wait(5)
+    upload = (FIXTURES / "trivy_sample.json").read_text(encoding="utf-8")
+    status, uploaded = _api(
+        opener, "POST", f"{enhanced_server}/api/targets/{target['id']}/source",
+        {"content": upload, "filename": "trivy.json"})
+    assert status == 200
+    fetch.release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "failed"
+    assert finished["error_status"] == 409
+    _, targets = _api(opener, "GET", enhanced_server + "/api/targets")
+    assert targets[0]["source_sha256"] == uploaded["sha256"]
+    assert targets[0]["source_name"] == "trivy.json"
+
+
+def test_deleting_the_target_during_an_import_discards_the_result(
+        enhanced_server, monkeypatch):
+    fetch = _BlockingFetch()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    _, job = _start_repository_import(opener, enhanced_server, target["id"])
+    assert fetch.started.wait(5)
+    status, _ = _api(opener, "DELETE",
+                     f"{enhanced_server}/api/targets/{target['id']}")
+    assert status == 204
+    fetch.release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "failed"
+    assert finished["error_status"] == 404
+    _, targets = _api(opener, "GET", enhanced_server + "/api/targets")
+    assert targets == []
+
+
+def test_cancelled_import_saves_nothing(enhanced_server, monkeypatch):
+    fetch = _BlockingFetch()
+    monkeypatch.setattr("patchtriage.repository.fetch_repository_sbom", fetch)
+    opener = _opener()
+    target = _new_target(opener, enhanced_server)
+    _, job = _start_repository_import(opener, enhanced_server, target["id"])
+    assert fetch.started.wait(5)
+    status, _ = _api(opener, "DELETE",
+                     f"{enhanced_server}/api/imports/{job['import_id']}")
+    assert status == 202
+    fetch.release.set()
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "cancelled"
+    _, targets = _api(opener, "GET", enhanced_server + "/api/targets")
+    assert targets[0]["source_file"] is False
+
+
+def test_fleet_import_runs_as_a_background_job(enhanced_server, monkeypatch):
+    calls = {}
+
+    def fake_import_fleet(owner_url, **kwargs):
+        calls.update(kwargs, owner_url=owner_url)
+        assert kwargs["should_stop"]() == ""
+        return {"owner": "acme", "imported": 0, "already_imported": 0,
+                "failed": 0, "not_attempted": 0, "stopped_reason": "",
+                "results": [], "imported_target_ids": []}
+
+    monkeypatch.setattr(webserver.fleetmod, "import_fleet", fake_import_fleet)
+    opener = _opener()
+    status, job = _api(opener, "POST", enhanced_server + "/api/fleet/import",
+                       {"owner_url": "https://github.com/acme", "limit": 3})
+    assert status == 202
+    assert job["kind"] == "fleet"
+    finished = _poll_import(opener, enhanced_server, job["import_id"])
+    assert finished["state"] == "succeeded"
+    assert finished["result"]["owner"] == "acme"
+    assert calls["owner_url"] == "https://github.com/acme"
+    assert calls["limit"] == 3
+    status, invalid = _api(opener, "POST",
+                           enhanced_server + "/api/fleet/import",
+                           {"owner_url": "https://github.com/acme/repo"})
+    assert status == 400
 
 
 def test_public_deployment_never_passes_service_token_to_repository_import(

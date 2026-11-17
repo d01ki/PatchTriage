@@ -135,7 +135,20 @@ and rejects unavailable acquisition paths with a specific error.
 
 The GUI uses background assessment jobs (`POST .../runs`, then
 `GET /api/jobs/{job_id}`) and persists completed summaries. A refresh restores
-the current result. Replacing evidence or changing target/SSVC context deletes
+the current result.
+
+Repository and organization imports are background jobs too:
+`POST /api/targets/{id}/repository` and `POST /api/fleet/import` return
+`202` with an `import_id`, and `GET /api/imports/{import_id}` reports
+`queued`, `running`, `succeeded` (with `result`), `failed` (with `error` and
+`error_status`), or `cancelled`. `DELETE /api/imports/{import_id}` cancels.
+Each import has a time budget (`PATCHTRIAGE_IMPORT_DEADLINE_SECONDS`, default
+600). A repository import past its budget, cancelled, or whose target was
+deleted or received newer evidence meanwhile saves nothing; an organization
+import stops before the next repository and lists the rest as not attempted.
+Submitting the same import again returns the running job; a different import
+for the same target is refused with `409`. A provider request already in
+flight finishes within its own timeout before the job ends. Replacing evidence or changing target/SSVC context deletes
 the old summary and HTML report before another assessment.
 
 ## Configuration

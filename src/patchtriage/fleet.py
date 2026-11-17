@@ -81,6 +81,7 @@ def import_fleet(
     client: httpx.Client | None = None,
     list_fn: Callable[..., OwnerListing] = list_owner_repositories,
     fetch_fn: Callable[..., RepositorySbom] = fetch_github_sbom,
+    should_stop: Callable[[], str] | None = None,
 ) -> dict[str, Any]:
     """Import up to ``limit`` repositories of one GitHub account as targets.
 
@@ -91,6 +92,8 @@ def import_fleet(
     remainder *visibly* (``stopped_reason``) instead of half-succeeding in
     silence.  Reruns are idempotent: a repository already imported into this
     workspace is reported as ``already_imported`` and not duplicated.
+    ``should_stop`` returns a non-empty reason (time budget, cancellation)
+    to stop before the next repository the same visible way.
     """
     reference = normalize_owner_url(owner_url)
     shared_context = _clean_context(context)
@@ -109,6 +112,8 @@ def import_fleet(
     stopped_reason = ""
 
     for repo in listing.repositories:
+        if not stopped_reason and should_stop is not None:
+            stopped_reason = should_stop()
         if stopped_reason:
             results.append({
                 "repository": repo.full_name, "status": "not_attempted",

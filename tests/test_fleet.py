@@ -222,6 +222,28 @@ def test_import_fleet_rate_limit_stops_remaining(tmp_path, monkeypatch):
     assert {t["name"] for t in tstore.load_targets()} == {"acme/one"}
 
 
+def test_import_fleet_stops_visibly_when_asked(tmp_path, monkeypatch):
+    # The GUI's time budget and cancel button stop between repositories.
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "config"))
+    fetched = []
+
+    def counting_fetch(url, **kwargs):
+        fetched.append(url)
+        return _fake_fetch(url, **kwargs)
+
+    pages = [[_repo("one"), _repo("two"), _repo("three")]]
+    report = import_fleet(
+        "https://github.com/acme",
+        list_fn=_fake_list(pages), fetch_fn=counting_fetch,
+        should_stop=lambda: "time budget reached" if fetched else "",
+    )
+    assert report["imported"] == 1
+    assert report["not_attempted"] == 2
+    assert report["stopped_reason"] == "time budget reached"
+    assert len(fetched) == 1
+    assert {t["name"] for t in tstore.load_targets()} == {"acme/one"}
+
+
 def test_import_fleet_rejects_unknown_context_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path / "config"))
     with pytest.raises(ValueError, match="unsupported fleet context"):
