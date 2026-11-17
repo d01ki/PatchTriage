@@ -37,6 +37,7 @@ from . import config as cfgmod
 from .assess import assess, result_message
 from .models import Asset
 from .bod2604 import summarize as summarize_response_policy
+from .evalcmp import evaluation_context
 from .plan import Action
 from .presentation import priority_definition
 from .report.html import render_html
@@ -133,6 +134,7 @@ def _emit(result, output, html, coverage_warnings=()):
             "findings": [f.model_dump(mode="json") for f in result.findings],
             "actions": [a.model_dump(mode="json") for a in result.actions],
             "evaluation": [r.model_dump(mode="json") for r in result.eval_rows],
+            "evaluation_context": evaluation_context(result.subset),
             "response_policy": summarize_response_policy(result.findings),
             "coverage": coverage,
         }
@@ -1419,19 +1421,18 @@ def _print_actions(actions) -> None:
 def _print_eval(rows) -> None:
     table = Table(title="Outcome check: CVSS vs EPSS vs KEV-first vs SSVC")
     for col in ("Budget", "KEV CVSS", "KEV EPSS", "KEV first", "KEV SSVC",
-                "Urgent CVSS", "Urgent EPSS", "Urgent KEV", "Urgent SSVC"):
+                "Urgent CVSS", "Urgent EPSS", "Urgent KEV", "Urgent SSVC (ref)"):
         table.add_column(col)
     for r in rows:
         best_kev = max(r.kev_baseline, r.kev_epss, r.kev_kev, r.kev_ssvc)
-        best_urgent = max(
-            r.urgent_cvss, r.urgent_epss, r.urgent_kev, r.urgent_ssvc
-        )
+        # SSVC's own urgent count is the label, not a competitor.
+        best_urgent = max(r.urgent_cvss, r.urgent_epss, r.urgent_kev)
 
         def best(value, maximum, text):
             return f"[bold green]{text}[/bold green]" if value == maximum else text
 
         table.add_row(
-            f"top {r.k}",
+            f"top {r.k}" + (" tie*" if r.boundary_ties else ""),
             best(r.kev_baseline, best_kev, f"{r.kev_baseline}/{r.kev_total}"),
             best(r.kev_epss, best_kev, f"{r.kev_epss}/{r.kev_total}"),
             best(r.kev_kev, best_kev, f"{r.kev_kev}/{r.kev_total}"),
@@ -1442,17 +1443,22 @@ def _print_eval(rows) -> None:
                  f"{r.urgent_epss}/{r.urgent_total}"),
             best(r.urgent_kev, best_urgent,
                  f"{r.urgent_kev}/{r.urgent_total}"),
-            best(r.urgent_ssvc, best_urgent,
-                 f"{r.urgent_ssvc}/{r.urgent_total}"),
+            f"{r.urgent_ssvc}/{r.urgent_total}",
         )
     console.print(table)
     console.print(
         "[dim]How to read x/y: x target findings appear within that top-k "
         "queue, out of y target findings in the full result. KEV = CISA "
-        "Known Exploited Vulnerabilities; Urgent = SSVC Immediate or "
-        "Out-of-Cycle (P1/P2). Example: 1/2 at top 1 means the first-ranked "
-        "item captures one of the two target findings.[/dim]"
+        "Known Exploited Vulnerabilities; Urgent = this run's own SSVC "
+        "Immediate or Out-of-Cycle (P1/P2) decisions, so the SSVC column is "
+        "a reference and the comparison is a self-consistency check, not "
+        "independent ground truth. Example: 1/2 at top 1 means the "
+        "first-ranked item captures one of the two target findings.[/dim]"
     )
+    if any(r.boundary_ties for r in rows):
+        console.print(
+            "[dim]tie* = the top-k cut falls inside findings with equal "
+            "ordering keys; those counts depend on input order.[/dim]")
 
 
 if __name__ == "__main__":

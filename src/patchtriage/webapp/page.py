@@ -475,6 +475,7 @@ _TEMPLATE = r"""<!doctype html>
   .evidencelinks a,.advisoryline a{color:var(--acc)}
 
   .privacy,.confirmbar,.resultnotice,.fieldnow.fallback,.patchtriagenote,.basis,.decisionnote{background:var(--s2);border-color:var(--line2);color:var(--mut);border-radius:6px}
+  .aiexplain{margin-top:9px;border:1px solid var(--line2);background:var(--s2);color:var(--mut);border-radius:6px;padding:10px 11px;font-size:13px}.aiexplain>b{color:var(--ink)}.aiexplain .aistatus{display:block;margin:3px 0 5px;font-size:12px}.aiexplain .aistatus.flagged{color:var(--amber);font-weight:600}.aiexplain ul{margin:6px 0 0;padding-left:18px}.aiexplain .aisub{margin-top:6px;font-size:12px;font-weight:600;color:var(--ink)}
 
   .patchtriagenote{color:var(--mut)!important}
   .patchtriagenote b,.fieldnow.fallback b{color:var(--ink)}
@@ -986,14 +987,23 @@ function compareBlock(summary){
     <div class="outcomegrid">
       <div class="outcomemicro"><b>${esc(o.review_reduction_pct==null?"n/a":o.review_reduction_pct+"%")}</b><span>smaller first-pass queue</span></div>
       <div class="outcomemicro"><b>${esc(coverage)}</b><span>KEV coverage</span></div>
-      <div class="outcomemicro"><b>${esc(urgent)}</b><span>SSVC urgent coverage</span></div>
+      <div class="outcomemicro" title="SSVC's own Immediate and Out-of-Cycle decisions that fit in the budget. A self-consistency check, not an effectiveness measure."><b>${esc(urgent)}</b><span>Urgent within budget</span></div>
     </div>
     <div class="microtitle">Known-exploited findings surfaced</div>
     <div class="barrow"><span>CVSS only</span><div class="track"><div class="fill" style="width:${pct(c.kev.cvss,maximum)}%"></div></div><span class="barvalue">${c.kev.cvss}/${c.kev_total}</span></div>
     <div class="barrow"><span>EPSS only</span><div class="track"><div class="fill epss" style="width:${pct(c.kev.epss,maximum)}%"></div></div><span class="barvalue">${c.kev.epss}/${c.kev_total}</span></div>
     <div class="barrow"><span>KEV first</span><div class="track"><div class="fill epss" style="width:${pct(c.kev.kev,maximum)}%"></div></div><span class="barvalue">${c.kev.kev}/${c.kev_total}</span></div>
     <div class="barrow"><span>SSVC context</span><div class="track"><div class="fill pt" style="width:${pct(c.kev.ssvc,maximum)}%"></div></div><span class="barvalue">${c.kev.ssvc}/${c.kev_total}</span></div>
-    <div class="comparefoot">KEV-first is now an explicit baseline. SSVC may rank a KEV below another finding when your exposure and human impact justify a different deployment action.</div>`;
+    <div class="comparefoot">KEV-first is now an explicit baseline. SSVC may rank a KEV below another finding when your exposure and human impact justify a different deployment action. “Urgent within budget” counts SSVC's own decisions, so it checks consistency, not whether SSVC reduces risk.${compareContext(c)}</div>`;
+}
+function compareContext(c){
+  const x=c.context||{},parts=[];
+  if(x.findings!=null)parts.push(`${x.findings} findings compared`);
+  if(x.epss_missing)parts.push(`${x.epss_missing} without EPSS (sorted as 0)`);
+  if(x.cvss_missing)parts.push(`${x.cvss_missing} without CVSS (sorted as 0)`);
+  if(x.kev_unknown)parts.push(`${x.kev_unknown} with an unresolved KEV lookup, counted as not listed`);
+  if((c.boundary_ties||[]).length)parts.push(`the top-${c.k} cut falls inside a tie for ${c.boundary_ties.join(", ")}, so those counts depend on input order`);
+  return parts.length?` ${esc(parts.join("; "))}.`:"";
 }
 function explainBlock(summary){
   const x=summary.explanation;if(!x)return `<div class="emptyresult"><b>${summary.result_state==="coverage_incomplete"?"Coverage incomplete":summary.result_state==="no_findings"?"No findings reported":"No decision explanation available"}</b><span>${esc(summary.result_message||"Inspect the full report for input and processing details.")}</span></div>`;
@@ -1017,7 +1027,17 @@ function explainBlock(summary){
     ${bodBlock(x)}
     ${(x.needs_confirmation||[]).length?`<div class="confirmbar">Confirm inferred inputs: ${esc(x.needs_confirmation.map(v=>String(v).replaceAll("_"," ")).join(", "))}. Conservative defaults remain active until reviewed.</div>`:""}
     ${checks?`<ul class="evidence" aria-label="Decision evidence checklist">${checks}</ul>`:""}
+    ${aiExplanationBlock(x.ai_explanation)}
     ${advisories?`<div class="advisoryline">${advisories}</div>`:""}`;
+}
+function aiExplanationBlock(ai){
+  // AI text is supporting prose only; the outcome above never comes from it.
+  if(!ai||!(ai.text||(ai.remediation_steps||[]).length||(ai.uncertainties||[]).length))return "";
+  const flagged=ai.verified===false;
+  const status=flagged?`⚑ Flagged by the audit: ${(ai.flags||[]).join(", ")}. Rely on the decision path above.`:ai.verified?"✓ Numbers and action checked against the evidence. Other statements are not verified.":"Not audited.";
+  const list=(items,label)=>(items||[]).length?`<ul aria-label="${esc(label)}">${items.map(item=>`<li>${esc(item)}</li>`).join("")}</ul>`:"";
+  const uncertain=(ai.uncertainties||[]).length?`<div class="aisub">Uncertainties</div>${list(ai.uncertainties,"AI-stated uncertainties")}`:"";
+  return `<div class="aiexplain" role="note" title="${esc(ai.limitations||"")}"><b>AI explanation</b> <span>· not used for the decision</span><span class="aistatus${flagged?" flagged":""}">${esc(status)}</span>${ai.text?`<div>${esc(ai.text)}</div>`:""}${list(ai.remediation_steps,"AI-suggested remediation steps")}${uncertain}</div>`;
 }
 function ssvcInputSelect(field,item){
   const point=item[field]||{},override=(item.override||{})[field]||"auto";

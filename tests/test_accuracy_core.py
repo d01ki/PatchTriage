@@ -241,6 +241,118 @@ def test_audit_accepts_supported_ai_claims_and_matching_action():
     assert result["flags"] == []
 
 
+def _ai_flags(finding, text):
+    finding.triage["ai_recommendation"] = {
+        "action": finding.triage["action"], "rationale": text,
+        "remediation_steps": [], "uncertainties": [],
+    }
+    return audit_finding(finding, RulesBackend())["flags"]
+
+
+def test_audit_rejects_a_cvss_value_presented_as_epss():
+    # 7.5 is the real CVSS score; it is not the EPSS score.
+    assert any(flag.startswith("fabricated_number:ai_rationale:7.5")
+               for flag in _ai_flags(_audited_finding(), "EPSS is 7.5."))
+
+
+def test_audit_rejects_an_epss_value_presented_as_cvss():
+    assert any(flag.startswith("fabricated_number:ai_rationale:0.86")
+               for flag in _ai_flags(_audited_finding(), "CVSS is 0.86."))
+
+
+def test_audit_rejects_the_epss_score_presented_as_its_percentile():
+    flags = _ai_flags(_audited_finding(), "It sits at the 85.6 percentile.")
+    assert any(flag.startswith("fabricated_number") for flag in flags)
+    assert _ai_flags(_audited_finding(), "It sits at the 99.1 percentile.") == []
+
+
+def test_audit_checks_the_unit_of_a_service_target():
+    finding = _audited_finding()
+    days = finding.triage["suggested_deadline_days"]
+    assert _ai_flags(finding, f"Patch within {days} days.") == []
+    assert _ai_flags(finding, f"Patch within {days * 24} hours.") == []
+    assert any(flag.startswith("fabricated_number")
+               for flag in _ai_flags(finding, f"Patch within {days} hours."))
+    assert any(flag.startswith("fabricated_number")
+               for flag in _ai_flags(finding, f"Patch within {days} weeks."))
+
+
+@pytest.mark.parametrize("text", [
+    "EPSS score is 7.5.", "The EPSS score of 7.5 is high.", "CVSS score 0.86."])
+def test_audit_catches_swapped_signals_in_score_phrasing(text):
+    assert any(flag.startswith("fabricated_number")
+               for flag in _ai_flags(_audited_finding(), text))
+
+
+def test_audit_keeps_each_number_with_its_own_clause():
+    assert _ai_flags(_audited_finding(), "CVSS is 7.5, EPSS 0.86.") == []
+    assert _ai_flags(_audited_finding(),
+                     "EPSS 0.86 and CVSS 7.5 in this release.") == []
+
+
+def test_audit_reads_a_percentage_beside_a_time_unit_as_a_percentage():
+    flags = _ai_flags(_audited_finding(), "There is a 2% chance per day.")
+    assert flags == ["fabricated_percentage:ai_rationale:2%"]
+    assert _ai_flags(_audited_finding(), "EPSS is 85.6% per day.") == []
+
+
+def test_ai_status_ignores_flags_about_the_deterministic_result():
+    from patchtriage.presentation import ai_explanation
+
+    finding = _audited_finding()
+    finding.triage["ai_recommendation"] = {
+        "action": finding.triage["action"], "rationale": "CVSS is 7.5.",
+        "remediation_steps": [], "uncertainties": ["Exposure unconfirmed"]}
+    finding.triage["audit"] = {"verified": False,
+                               "flags": ["ssvc_evidence_missing:automatable"]}
+    explanation = ai_explanation(finding.triage)
+    assert explanation["verified"] is True
+    assert explanation["flags"] == []
+    assert explanation["uncertainties"] == ["Exposure unconfirmed"]
+    assert "not verify" in explanation["limitations"]
+
+
+def test_report_keeps_the_audit_badge_on_rows_without_ai_text():
+    from patchtriage.report.html import _audit_badge
+
+    finding = _audited_finding()
+    finding.triage["audit"] = audit_finding(finding, RulesBackend())
+    assert "✓" in _audit_badge(finding.triage)
+    finding.triage["audit"] = {"verified": False,
+                               "flags": ["ai_action_mismatch:a->b"]}
+    # An AI-only flag is shown with the AI text, not on the decision.
+    assert "✓" in _audit_badge(finding.triage)
+
+
+def test_audit_states_what_it_cannot_verify():
+    result = audit_finding(_audited_finding(), RulesBackend())
+    assert "limitations" in result
+    assert "not" in result["limitations"].lower()
+
+
+def test_ai_explanation_is_shown_apart_from_the_decision_rationale():
+    from patchtriage.presentation import ai_explanation
+    from patchtriage.report.html import _ai_explanation_cell
+
+    finding = _audited_finding()
+    rationale = finding.triage["rationale"]
+    assert ai_explanation(finding.triage) is None
+    assert _ai_explanation_cell(finding.triage) == ""
+    finding.triage["ai_recommendation"] = {
+        "action": finding.triage["action"],
+        "rationale": "EPSS is 7.5 <script>alert(1)</script>",
+        "remediation_steps": [], "uncertainties": [],
+    }
+    finding.triage["audit"] = audit_finding(finding, RulesBackend())
+    explanation = ai_explanation(finding.triage)
+    assert explanation["verified"] is False
+    assert finding.triage["rationale"] == rationale
+    cell = _ai_explanation_cell(finding.triage)
+    assert "AI explanation" in cell and "not used for the decision" in cell
+    assert "flagged by the audit" in cell
+    assert "<script>" not in cell
+
+
 def _plan(*raws):
     return build_plan(_triage(dedup(list(raws))))
 

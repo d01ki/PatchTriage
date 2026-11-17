@@ -12,12 +12,14 @@ from ..assess import result_message as _result_message
 from ..models import Asset
 from ..bod2604 import summarize as summarize_response_policy
 from ..presentation import (
+    ai_explanation,
     decision_quality,
     evaluation_outcome,
     priority_basis,
     priority_definition,
     priority_evidence,
 )
+from ..evalcmp import evaluation_context
 from ..report.html import render_html
 from ..ssvc import human_impact_branches, ssvc_order_key
 from .. import targets as tstore
@@ -241,10 +243,12 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
     run_coverage, audit = result.coverage, result.audit
 
     title = f"PatchTriage - {target['name']}"
+    eval_context = evaluation_context(result.subset)
     html = render_html(
         findings, actions, eval_rows, title=title,
         coverage=run_coverage,
         coverage_warnings=list(source_provenance.get("warnings") or []),
+        eval_context=eval_context,
     )
     outcomes = {
         "immediate": 0, "out_of_cycle": 0, "scheduled": 0, "defer": 0,
@@ -278,6 +282,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "basis": priority_basis(top_finding),
             "checks": priority_evidence(top_finding),
             "rationale": (top_finding.triage or {}).get("rationale", ""),
+            "ai_explanation": ai_explanation(top_finding.triage or {}),
             "ssvc": ssvc,
             "bod2604": (top_finding.triage or {}).get("bod2604"),
             "effective": (top_finding.triage or {}).get("effective"),
@@ -323,6 +328,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                 "ssvc": row.urgent_ssvc,
             },
             "outcome": evaluation_outcome(row, len(findings)),
+            "boundary_ties": row.boundary_ties,
+            "context": eval_context,
         }
 
     advisory_keys = {

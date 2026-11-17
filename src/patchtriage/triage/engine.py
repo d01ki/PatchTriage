@@ -114,11 +114,15 @@ def _finding_payload(f: Finding) -> str:
 
 def _merge_ai_recommendation(f: Finding, recommendation: dict,
                              backend: str) -> dict:
-    """Keep the SSVC decision authoritative and attach AI assistance."""
+    """Keep the SSVC decision authoritative and attach AI assistance.
+
+    ``rationale`` stays the deterministic decision rationale. The AI text is
+    a separate explanation in ``ai_recommendation`` so reports can label it
+    and an AI outage never changes what the decision record says.
+    """
     result = triage_from_assessment(assess(f), backend=backend)
-    if recommendation.get("rationale"):
-        result["rationale"] = str(recommendation["rationale"])
     result["ai_recommendation"] = {
+        "rationale": str(recommendation.get("rationale") or ""),
         "action": recommendation.get("action"),
         "remediation_steps": recommendation.get("remediation_steps", []),
         "uncertainties": recommendation.get("uncertainties", []),

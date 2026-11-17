@@ -188,6 +188,11 @@ def test_provider_neutral_backend_keeps_ssvc_authoritative():
     assert result["ai_recommendation"]["remediation_steps"] == [
         "Review the vendor advisory."
     ]
+    # The decision rationale stays the deterministic one; the AI text is a
+    # separate, labelled explanation.
+    assert result["rationale"] == baseline["rationale"]
+    assert result["ai_recommendation"]["rationale"] == (
+        "Explain the supplied SSVC path.")
     assert provider.calls[0]["system_prompt"] == TRIAGE_SYSTEM_PROMPT
     assert '"ssvc_assessment"' in provider.calls[0]["payload"]
 

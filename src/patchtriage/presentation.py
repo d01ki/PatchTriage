@@ -165,6 +165,38 @@ def priority_evidence(finding: Finding) -> list[dict[str, str]]:
     return checks
 
 
+def ai_explanation(triage: dict) -> dict | None:
+    """The AI explanation, kept apart from the deterministic decision.
+
+    None when no AI text was produced (rules backend, or the provider failed
+    and the deterministic result was used). ``verified`` is None until the
+    audit has run.
+    """
+    ai = triage.get("ai_recommendation")
+    if not isinstance(ai, dict):
+        return None
+    text = str(ai.get("rationale") or "").strip()
+    steps = [str(step) for step in ai.get("remediation_steps") or []]
+    uncertainties = [str(item) for item in ai.get("uncertainties") or []]
+    if not (text or steps or uncertainties):
+        return None
+    from .triage.audit import AUDIT_LIMITATIONS, is_ai_flag
+
+    audit = triage.get("audit") if isinstance(triage.get("audit"), dict) else {}
+    flags = [flag for flag in audit.get("flags") or [] if is_ai_flag(flag)]
+    return {
+        "text": text,
+        "remediation_steps": steps,
+        "uncertainties": uncertainties,
+        "backend": str(triage.get("backend") or ""),
+        # Only checks of the AI text and action count here; problems with
+        # the deterministic result are shown with the decision itself.
+        "verified": (not flags) if audit else None,
+        "flags": flags,
+        "limitations": AUDIT_LIMITATIONS,
+    }
+
+
 def priority_basis(finding: Finding) -> str:
     """Explain the deterministic SSVC path behind the assigned priority."""
     triage = finding.triage or {}
