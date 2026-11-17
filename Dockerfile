@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir --prefix=/install ".[ai]"
 # Pin the static repository scanner used only by the opt-in local importer.
 # Source scanning reads manifests/lockfiles; PatchTriage never invokes the
 # scanner's remediation command or a package manager on untrusted content.
-FROM ghcr.io/google/osv-scanner:v2.3.8@sha256:64e86bec6df2466feea5137fc7c78fb3b7c21ec077f014d7130f64810e50676b AS osv-scanner
+FROM ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde AS osv-scanner
 
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 LABEL org.opencontainers.image.title="PatchTriage" \
