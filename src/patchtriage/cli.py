@@ -17,6 +17,7 @@ Scriptable usage:
 
 from __future__ import annotations
 
+import errno
 import glob as globmod
 import json
 import os
@@ -31,6 +32,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import config as cfgmod
@@ -50,8 +52,23 @@ app = typer.Typer(
 console = Console()
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            installed = version("patchtriage")
+        except PackageNotFoundError:
+            installed = "development"
+        console.print(f"patchtriage {installed}")
+        raise typer.Exit()
+
+
 @app.callback()
-def _load_config() -> None:
+def _load_config(
+    show_version: bool = typer.Option(
+        False, "--version", callback=_print_version, is_eager=True,
+        help="Show the installed version and exit"),
+) -> None:
     """Export keys saved by `patchtriage setup` into the environment.
 
     Environment variables set by the user always take precedence.
@@ -65,6 +82,27 @@ def _load_config() -> None:
             except (OSError, ValueError):
                 pass
     cfgmod.apply_to_env()
+
+
+def _write_report(path: Path, text: str) -> None:
+    """Write a report, or stop with a short fix instead of a traceback."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        denied = exc.errno in (errno.EACCES, errno.EPERM)
+        if denied and _in_container():
+            hint = ("The folder belongs to another user. On the host, run:\n"
+                    '  sudo chown -R "$(id -u):$(id -g)" out')
+        elif denied:
+            hint = "Choose a folder you can write to."
+        else:
+            hint = ""
+        # soft_wrap: never break the command in the hint across lines.
+        console.print(
+            f"[red]Cannot write {escape(str(path))}: "
+            f"{escape(str(exc.strerror or exc))}.[/red] {hint}", soft_wrap=True)
+        raise typer.Exit(1) from None
 
 
 def _pipeline(files, fmt, asset_override, inventory_path, use_nvd, nvd_api_key,
@@ -122,12 +160,9 @@ def _emit(result, output, html, coverage_warnings=()):
         console.print(f"[yellow]{message}[/yellow]")
     if html:
         html_path = Path(html)
-        html_path.parent.mkdir(parents=True, exist_ok=True)
-        html_path.write_text(
-            render_html(result.subset, result.actions, result.eval_rows,
-                        coverage=coverage,
-                        coverage_warnings=list(coverage_warnings)),
-            encoding="utf-8")
+        _write_report(html_path, render_html(
+            result.subset, result.actions, result.eval_rows,
+            coverage=coverage, coverage_warnings=list(coverage_warnings)))
         console.print(f"HTML report: [bold]{_output_location(html_path)}[/bold]")
     if output:
         report = {
@@ -139,9 +174,7 @@ def _emit(result, output, html, coverage_warnings=()):
             "coverage": coverage,
         }
         output_path = Path(output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(report, indent=2, default=str),
-                               encoding="utf-8")
+        _write_report(output_path, json.dumps(report, indent=2, default=str))
         console.print(
             f"JSON report: [bold]{_output_location(output_path)}[/bold]"
         )
@@ -1120,10 +1153,11 @@ def verify(
     ),
 ):
     """Verify SSVC conformance, target sensitivity, and reproducibility offline."""
-    from .validation import write_validation_report
+    from .validation import run_validation, validation_report_text
 
     with console.status("running offline reproducibility verification..."):
-        report = write_validation_report(output, repeats=repeats)
+        report = run_validation(repeats=repeats)
+    _write_report(output, validation_report_text(report))
     table = Table(title="Reviewer verification")
     table.add_column("Evidence")
     table.add_column("Cases", justify="right")
@@ -1149,38 +1183,38 @@ def demo(
     No network, no API keys. This is what reviewers should run first.
     """
     data = resources.files("patchtriage") / "data"
-    tmp = Path(".patchtriage_demo")
-    tmp.mkdir(exist_ok=True)
-
-    # Seed the bundled snapshot into an ISOLATED cache dir, not the user's
-    # real ~/.cache/patchtriage. The demo KEV/EPSS snapshot only covers a
-    # handful of CVEs; writing it into the shared cache would silently break
-    # KEV enrichment on real scans until the 24h TTL expired.
-    demo_cache = (tmp / "cache").resolve()
-    demo_cache.mkdir(parents=True, exist_ok=True)
-    for src, dst in (("demo_epss.json", "epss.json"),
-                     ("demo_kev.json", "kev.json"),
-                     ("demo_nvd.json", "nvd.json"),
-                     ("demo_vulnrichment.json", "vulnrichment.json")):
-        (demo_cache / dst).write_text((data / src).read_text(encoding="utf-8"),
-                                      encoding="utf-8")
+    # A private temp folder, so the demo also runs from a read-only folder.
+    tmp = Path(tempfile.mkdtemp(prefix="patchtriage-demo-"))
     previous_cache_dir = os.environ.get("PATCHTRIAGE_CACHE_DIR")
-    os.environ["PATCHTRIAGE_CACHE_DIR"] = str(demo_cache)
-    console.print("[dim]using isolated offline enrichment snapshot in "
-                  f"{demo_cache}[/dim]")
-
-    fixtures = resources.files("patchtriage") / "data" / "fixtures"
-    files = []
-    for name in ("trivy_sample.json", "grype_sample.json"):
-        p = tmp / name
-        p.write_text((fixtures / name).read_text(encoding="utf-8"),
-                     encoding="utf-8")
-        files.append(p)
-    assets_yaml = tmp / "assets.yaml"
-    assets_yaml.write_text((data / "demo_assets.yaml").read_text(encoding="utf-8"),
-                           encoding="utf-8")
-
     try:
+        # Seed the bundled snapshot into an ISOLATED cache dir, not the
+        # user's real ~/.cache/patchtriage. The demo KEV/EPSS snapshot only
+        # covers a handful of CVEs; writing it into the shared cache would
+        # silently break KEV enrichment on real scans until the TTL expired.
+        demo_cache = (tmp / "cache").resolve()
+        demo_cache.mkdir(parents=True, exist_ok=True)
+        for src, dst in (("demo_epss.json", "epss.json"),
+                         ("demo_kev.json", "kev.json"),
+                         ("demo_nvd.json", "nvd.json"),
+                         ("demo_vulnrichment.json", "vulnrichment.json")):
+            (demo_cache / dst).write_text(
+                (data / src).read_text(encoding="utf-8"), encoding="utf-8")
+        os.environ["PATCHTRIAGE_CACHE_DIR"] = str(demo_cache)
+        console.print("[dim]using isolated offline enrichment snapshot in "
+                      f"{escape(str(demo_cache))}[/dim]")
+
+        fixtures = resources.files("patchtriage") / "data" / "fixtures"
+        files = []
+        for name in ("trivy_sample.json", "grype_sample.json"):
+            p = tmp / name
+            p.write_text((fixtures / name).read_text(encoding="utf-8"),
+                         encoding="utf-8")
+            files.append(p)
+        assets_yaml = tmp / "assets.yaml"
+        assets_yaml.write_text(
+            (data / "demo_assets.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8")
+
         result = _pipeline(
             files, None, None, assets_yaml, True, None, "rules", None, None,
             vendor_sources=None,
@@ -1346,14 +1380,12 @@ def fleet(
                 f"{entry.get('deadline_days', 90)}d")
         console.print(queue_table)
 
-    html.write_text(render_fleet_html(
-        rollup, title=f"PatchTriage - Fleet Report - {report['owner']}"),
-        encoding="utf-8")
+    _write_report(html, render_fleet_html(
+        rollup, title=f"PatchTriage - Fleet Report - {report['owner']}"))
     console.print(f"fleet HTML report: [bold]{html.resolve()}[/bold]")
     if output is not None:
-        output.write_text(
-            json.dumps({"import": report, "rollup": rollup}, indent=2),
-            encoding="utf-8")
+        _write_report(
+            output, json.dumps({"import": report, "rollup": rollup}, indent=2))
         console.print(f"fleet JSON rollup: [bold]{output.resolve()}[/bold]")
 
 

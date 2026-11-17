@@ -177,3 +177,57 @@ def test_limit_must_be_positive(tmp_path, value):
     scan.write_text('{"results": []}', encoding="utf-8")
     result = CliRunner().invoke(cli.app, ["run", str(scan), "--limit", value])
     assert result.exit_code == 2
+
+
+def test_version_flag_prints_the_installed_version():
+    result = CliRunner().invoke(cli.app, ["--version"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("patchtriage ")
+
+
+def test_unwritable_report_path_gives_a_fix_not_a_traceback(tmp_path):
+    import typer
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(typer.Exit) as stopped:
+        cli._write_report(blocker / "report.html", "<html></html>")
+    assert stopped.value.exit_code == 1
+
+
+def test_report_error_escapes_markup_in_the_path(tmp_path, capsys):
+    import typer
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    with pytest.raises(typer.Exit):
+        cli._write_report(blocker / "[draft]" / "r.html", "x")
+    assert "[draft]" in capsys.readouterr().out
+
+
+def test_demo_writes_nothing_to_the_current_folder(tmp_path, monkeypatch):
+    # From a read-only clone or /work the demo may only write its outputs.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    out = tmp_path / "out"
+    result = CliRunner().invoke(cli.app, [
+        "demo", "--html", str(out / "d.html"), "--output", str(out / "d.json")])
+    assert result.exit_code == 0, result.stdout
+    assert list(cwd.iterdir()) == []
+    assert (out / "d.html").exists()
+
+
+def test_permission_error_in_docker_names_the_host_fix(tmp_path, monkeypatch,
+                                                      capsys):
+    import typer
+
+    def denied(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(cli, "_in_container", lambda: True)
+    monkeypatch.setattr(cli.Path, "write_text", denied)
+    with pytest.raises(typer.Exit):
+        cli._write_report(tmp_path / "r.html", "x")
+    out = capsys.readouterr().out
+    assert '  sudo chown -R "$(id -u):$(id -g)" out\n' in out

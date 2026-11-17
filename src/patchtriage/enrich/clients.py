@@ -19,6 +19,7 @@ Design rules:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import tempfile
@@ -33,6 +34,8 @@ from urllib.parse import urlparse
 import httpx
 
 from ..models import Finding
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_DIR = Path.home() / ".cache" / "patchtriage"
 EPSS_URL = "https://api.first.org/data/v1/epss"
@@ -98,7 +101,10 @@ CACHE_DIR = _DEFAULT_CACHE_DIR
 
 def _cache_path(name: str) -> Path:
     d = cache_dir()
-    d.mkdir(parents=True, exist_ok=True)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # reads then miss and writes are skipped; see _write_cache
     return d / name
 
 
@@ -130,6 +136,29 @@ def _atomic_write_json(path: Path, data: Any) -> None:
                 pass
 
 
+_CACHE_WARNING_INTERVAL_SECONDS = 15 * 60
+_cache_warned_at = float("-inf")
+
+
+def _write_cache(path: Path, data: Any) -> None:
+    """Write a cache file; an unwritable cache only costs a refetch later.
+
+    A read-only disk or a Docker volume owned by another user must not
+    abort an assessment whose evidence was fetched successfully. The warning
+    repeats every 15 minutes, so a long-running GUI keeps showing it.
+    """
+    global _cache_warned_at
+    try:
+        _atomic_write_json(path, data)
+    except OSError as exc:
+        now = time.monotonic()
+        if now - _cache_warned_at >= _CACHE_WARNING_INTERVAL_SECONDS:
+            _cache_warned_at = now
+            _log.warning("enrichment cache %s is not writable (%s); results "
+                         "are used but will be fetched again next time",
+                         path.parent, exc.strerror or exc)
+
+
 def _load_cache(name: str, max_age_hours: float,
                 *, allow_stale: bool = False) -> dict | None:
     p = _cache_path(name)
@@ -147,7 +176,7 @@ def _load_cache(name: str, max_age_hours: float,
 
 def _save_cache(name: str, data: dict) -> None:
     with _CACHE_LOCK:
-        _atomic_write_json(_cache_path(name), data)
+        _write_cache(_cache_path(name), data)
 
 
 def _decode_entry_cache(data: Any, fallback_timestamp: float) -> dict[str, dict]:
@@ -218,8 +247,8 @@ def _merge_entry_cache(name: str, updates: dict[str, dict],
             fallback_timestamp = path.stat().st_mtime
         except OSError:
             fallback_timestamp = time.time()
-        entries = _decode_entry_cache(
-            _read_json(path) if path.exists() else {}, fallback_timestamp)
+        # _read_json returns None for a missing or unreadable file.
+        entries = _decode_entry_cache(_read_json(path), fallback_timestamp)
         now = time.time()
         stamp = now if fetched_at is None else min(float(fetched_at), now)
         if max_age_hours is not None:
@@ -233,7 +262,7 @@ def _merge_entry_cache(name: str, updates: dict[str, dict],
             if isinstance(value, dict):
                 entries[str(key)] = {"value": value,
                                      "fetched_at": stamp}
-        _atomic_write_json(path, {
+        _write_cache(path, {
             "_schema": _ENTRY_CACHE_SCHEMA,
             "entries": entries,
         })

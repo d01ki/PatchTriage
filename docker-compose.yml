@@ -10,6 +10,23 @@
 # inside the container. Reports written to /out land in ./out on the host.
 # The AI settings, NVD key, and GitHub token are read from your shell
 # environment (all optional).
+#
+# The CLI services start as root only to run docker-entrypoint.sh, which
+# switches to the owner of ./out (or ./) and drops root, so reports in ./out
+# belong to you on Linux whatever your uid.
+
+# Shared by the CLI services: start as root only for docker-entrypoint.sh,
+# with just the capabilities it needs to hand volumes over and drop root.
+x-cli-runtime: &cli-runtime
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - SETUID
+    - SETGID
 
 services:
   # Web GUI console: register targets, import scans/SBOMs, browse reports.
@@ -61,14 +78,20 @@ services:
   # Offline demo: no network, no keys.
   demo:
     build: .
+    user: "0:0"
+    <<: *cli-runtime
     volumes:
       - ./out:/out
+      # Read-only, only so the entrypoint can see who owns the clone.
+      - ./:/work:ro
 
   # Interactive guided run. `run` (not `-d`) keeps stdin/tty attached so the
   # wizard can ask its questions; the browser step is auto-skipped in the
   # container and the report path under ./out is printed instead.
   start:
     build: .
+    user: "0:0"
+    <<: *cli-runtime
     stdin_open: true
     tty: true
     environment:
@@ -94,15 +117,16 @@ services:
     volumes:
       - ./:/work
       - ./out:/out
-      - cache:/home/patchtriage/.cache
+      - cli-cache:/home/patchtriage/.cache
       - cli-config:/home/patchtriage/.config
     working_dir: /work
-    entrypoint: ["patchtriage"]
     command: ["start"]
 
   # Scriptable triage: pass any `run ...` arguments after the service name.
   triage:
     build: .
+    user: "0:0"
+    <<: *cli-runtime
     environment:
       - PATCHTRIAGE_AI_PROVIDER
       - PATCHTRIAGE_AI_API_KEY
@@ -122,24 +146,25 @@ services:
     volumes:
       - ./:/work
       - ./out:/out
-      - cache:/home/patchtriage/.cache
+      - cli-cache:/home/patchtriage/.cache
       - cli-config:/home/patchtriage/.config
     working_dir: /work
-    entrypoint: ["patchtriage"]
     command: ["--help"]
 
   # Saves API keys for `start` and `triage`, kept apart from the GUI's volume
   # because anonymous GUI sessions must not depend on an operator's CLI keys.
   setup:
     build: .
+    user: "0:0"
+    <<: *cli-runtime
     stdin_open: true
     tty: true
     volumes:
       - cli-config:/home/patchtriage/.config
-    entrypoint: ["patchtriage"]
     command: ["setup"]
 
 volumes:
   cache:
   config:
+  cli-cache:
   cli-config:

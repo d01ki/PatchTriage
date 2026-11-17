@@ -8,7 +8,9 @@ report.json
 demo_report.html
 demo_report.json
 .patchtriage_demo/
-out/
+# out/ is kept (empty) so Docker never creates it as root on Linux.
+out/*
+!out/.gitkeep
 benchmarks/out/
 verification_report.json
 

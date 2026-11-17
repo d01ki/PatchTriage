@@ -9,7 +9,6 @@ import sys
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from importlib import resources
-from pathlib import Path
 from typing import Any
 
 from .context import apply_context, load_inventory
@@ -458,12 +457,6 @@ def run_validation(repeats: int = 25) -> dict:
     return report
 
 
-def write_validation_report(path: str | Path, repeats: int = 25) -> dict:
-    report = run_validation(repeats=repeats)
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return report
+def validation_report_text(report: dict) -> str:
+    """The JSON evidence file written by ``patchtriage verify``."""
+    return json.dumps(report, indent=2, ensure_ascii=False) + "\n"

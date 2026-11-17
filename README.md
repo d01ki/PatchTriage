@@ -128,7 +128,31 @@ compliance attestation.
 - [Repository import and coverage model](docs/REPOSITORY_IMPORT.md)
 - [Reviewer validation protocol](docs/VALIDATION.md)
 
-macOS/Linux users can use the same `docker compose` commands, or `./run.sh`.
+### macOS and Linux
+
+Use the same `docker compose` commands, or `./run.sh` (`./run.sh demo`,
+`./run.sh start`, `./run.sh` for the GUI). On Linux the terminal services run
+as the owner of your clone, so reports in `./out` belong to you whatever your
+user id; nothing extra to set.
+
+### Without Docker
+
+With Python 3.10 or newer (repository URLs are read through the GitHub API, so
+no scanner is needed for GitHub):
+
+```sh
+python -m venv .venv
+. .venv/bin/activate              # PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install .
+patchtriage demo                  # offline demo -> demo_report.html
+patchtriage serve                 # GUI at http://localhost:8765
+patchtriage start                 # guided terminal run
+```
+
+Importing non-GitHub HTTPS repositories without Docker also needs
+`PATCHTRIAGE_ALLOW_GENERIC_REPOSITORIES=true` and
+[osv-scanner](https://google.github.io/osv-scanner/) on `PATH`; the Docker
+setup includes both.
 
 ## License
 
