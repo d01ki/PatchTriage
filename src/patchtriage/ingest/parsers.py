@@ -234,6 +234,31 @@ class LoadResult:
     coverage: dict[str, Any]
 
 
+# Scanner fix-state vocabularies mapped onto models.FIX_STATES. Unlisted
+# values become "unknown" rather than being dropped, so a state the scanner
+# did report is never mistaken for one it did not.
+_FIX_STATE_ALIASES = {
+    # Grype: fix.state
+    "fixed": "fixed",
+    "not-fixed": "not_fixed",
+    "wont-fix": "wont_fix",
+    "unknown": "unknown",
+    # Trivy: Status
+    "affected": "not_fixed",
+    "fix_deferred": "fix_deferred",
+    "will_not_fix": "wont_fix",
+    "end_of_life": "end_of_life",
+    "not_affected": "not_affected",
+    "under_investigation": "unknown",
+}
+
+
+def _fix_state(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    return _FIX_STATE_ALIASES.get(value.strip().lower(), "unknown")
+
+
 # --------------------------------------------------------------------------- Trivy
 def parse_trivy(data: dict, default_asset: Asset | None = None) -> Iterator[RawFinding]:
     """Trivy JSON (schema v2, `trivy image --format json`)."""
@@ -266,6 +291,7 @@ def parse_trivy(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
                     ecosystem=result.get("Type", ""),
                     fixed_version=fixes[0] if fixes else "",
                     fixed_version_candidates=fixes,
+                    fix_state=_fix_state(v.get("Status")),
                 ),
                 asset=asset,
                 severity=Severity.parse(v.get("Severity")),
@@ -301,8 +327,11 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
             val = (c.get("metrics") or {}).get("baseScore")
             if val is not None:
                 cvss_score = max(cvss_score or 0.0, float(val))
-        fix = vuln.get("fix") or {}
-        fixed_versions = [str(v) for v in fix.get("versions") or [] if v]
+        fix = vuln.get("fix")
+        fix = fix if isinstance(fix, dict) else {}
+        versions = fix.get("versions")
+        fixed_versions = [str(v) for v in (
+            versions if isinstance(versions, list) else []) if v]
         yield RawFinding(
             vuln_id=vuln_id,
             aliases=aliases,
@@ -315,6 +344,7 @@ def parse_grype(data: dict, default_asset: Asset | None = None) -> Iterator[RawF
                 ecosystem=art.get("type", ""),
                 fixed_version=fixed_versions[0] if fixed_versions else "",
                 fixed_version_candidates=fixed_versions,
+                fix_state=_fix_state(fix.get("state")),
             ),
             asset=asset,
             severity=Severity.parse(vuln.get("severity")),

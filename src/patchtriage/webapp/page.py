@@ -1012,7 +1012,7 @@ function explainBlock(summary){
   const cvss=x.cvss==null?"Not available":Number(x.cvss).toFixed(1);
   const epss=x.epss==null?"Not available":`${(Number(x.epss)*100).toFixed(1)}%`;
   const kevStatus=(x.retrieval_status||{}).kev;const kevLabel=kevStatus==="failed"?"Lookup failed":x.kev?"Listed":kevStatus==="not_listed"?"Not listed":"Not confirmed";
-  const signals=[["CVSS",cvss],["EPSS (30 day)",epss],["CISA KEV",kevLabel],["Fix",x.has_fix?"Available":"Not supplied"]].map(([label,value])=>`<div class="signal"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("");
+  const signals=[["CVSS",cvss],["EPSS (30 day)",epss],["CISA KEV",kevLabel],["Fix",x.fix_label||(x.has_fix?"Available":"Not supplied")]].map(([label,value])=>`<div class="signal"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join("");
   const marks={confirmed:"✓",attention:"!",unknown:"?","not-observed":"–"};
   const checks=(x.checks||[]).map(item=>`<li><span class="evidenceicon ${esc(item.status)}">${marks[item.status]||"·"}</span><span><strong>${esc(item.label)}</strong><small>${esc(item.value)}</small></span></li>`).join("");
   const advisories=(x.advisories||[]).map(a=>a.url

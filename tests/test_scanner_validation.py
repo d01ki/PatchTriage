@@ -151,6 +151,41 @@ def test_every_listed_fix_version_is_retained(tmp_path, data, expected):
     assert finding.package.fixed_version_candidates == expected
 
 
+@pytest.mark.parametrize(("state", "expected"), [
+    ("fixed", "fixed"), ("not-fixed", "not_fixed"), ("wont-fix", "wont_fix"),
+    ("unknown", "unknown"), ("something-new", "unknown"), ("", ""),
+])
+def test_grype_fix_state_is_retained(tmp_path, state, expected):
+    data = _grype({"vulnerability": {"id": "CVE-2024-0002",
+                                     "fix": {"state": state, "versions": []}},
+                   "artifact": {"name": "lodash", "version": "1.0"}})
+    package = load_file_with_metadata(_write(tmp_path, data)).findings[0].package
+    assert package.fix_state == expected
+    assert package.fixed_version == ""
+
+
+@pytest.mark.parametrize(("status", "expected"), [
+    ("fixed", "fixed"), ("affected", "not_fixed"),
+    ("fix_deferred", "fix_deferred"), ("will_not_fix", "wont_fix"),
+    ("end_of_life", "end_of_life"), ("not_affected", "not_affected"),
+    ("under_investigation", "unknown"), (None, ""),
+])
+def test_trivy_status_is_retained(tmp_path, status, expected):
+    vuln = {**TRIVY_VULN, **({"Status": status} if status else {})}
+    package = load_file_with_metadata(
+        _write(tmp_path, _trivy(vuln))).findings[0].package
+    assert package.fix_state == expected
+
+
+@pytest.mark.parametrize("fix", ["fixed", ["1.1"], {"versions": "1.1"}])
+def test_malformed_grype_fix_reads_as_unreported(fix):
+    match = {"vulnerability": {"id": "CVE-1", "fix": fix},
+             "artifact": {"name": "lodash", "version": "1.0"}}
+    package = next(parse_grype({"matches": [match]})).package
+    assert package.fixed_version == ""
+    assert package.fix_state == ""
+
+
 def test_grype_parse_does_not_mutate_its_input():
     match = {"vulnerability": {"id": "CVE-1", "cvss": [
         {"metrics": {"baseScore": 5.0}}]},

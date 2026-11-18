@@ -15,6 +15,7 @@ from ..presentation import (
     ai_explanation,
     decision_quality,
     evaluation_outcome,
+    fix_status,
     priority_basis,
     priority_definition,
     priority_evidence,
@@ -103,6 +104,8 @@ def decision_path(finding) -> dict | None:
         "version": finding.package.version,
         "version_source": finding.package.version_source,
         "fixed_version": finding.package.fixed_version,
+        "fix_state": finding.package.fix_state,
+        "fix_states_reported": finding.package.fix_states_reported,
         "asset": finding.asset.identifier,
         "model": ssvc.get("model", ""),
         "decision": ssvc.get("decision", ""),
@@ -295,6 +298,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "retrieval_errors": e.retrieval_errors,
             "ransomware": e.kev_ransomware,
             "has_fix": bool(top_finding.package.fixed_version),
+            "fix_label": fix_status(top_finding)["label"],
             "advisories": [
                 advisory.model_dump(mode="json")
                 for advisory in e.vendor_advisories[:5]
