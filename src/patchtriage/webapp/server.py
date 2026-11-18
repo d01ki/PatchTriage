@@ -128,7 +128,11 @@ def _ai_available() -> bool:
     """Anonymous visitors spend the operator's AI budget only by opt-in."""
     if not has_ai_configuration():
         return False
-    return not _is_public_mode() or os.environ.get(
+    if not _is_public_mode():
+        return True
+    # A zero hourly budget turns public AI off rather than offering a
+    # backend that every run would be refused.
+    return PUBLIC_AI_RUNS_PER_HOUR > 0 and os.environ.get(
         "PATCHTRIAGE_PUBLIC_AI", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -324,8 +328,9 @@ def _reserve_public_ai_run_locked() -> None:
     _AI_RUN_STARTS[:] = [t for t in _AI_RUN_STARTS if now - t < 3600]
     if len(_AI_RUN_STARTS) >= PUBLIC_AI_RUNS_PER_HOUR:
         raise RequestError(
-            "this server's hourly AI assessment budget is used up; run the "
-            "deterministic rules assessment or retry later", 429)
+            "this server's hourly AI assessment budget is used up; choose "
+            "the rules backend or retry later", 429,
+            code="ai_budget_exhausted")
     _AI_RUN_STARTS.append(now)
 
 
@@ -366,9 +371,16 @@ def _start_job(workspace: str, target_id: str, backend: str) -> dict:
 
 
 class RequestError(ValueError):
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, code: str = ""):
         super().__init__(message)
         self.status = status
+        # A stable code lets clients tell a final refusal from a 429 that
+        # is worth retrying.
+        self.code = code
+
+    def payload(self) -> dict:
+        return {"error": str(self), **({"error_code": self.code}
+                                       if self.code else {})}
 
 
 # ------------------------------------------------------------ import jobs
@@ -697,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError("unrecognized Host header", 403)
             fn()
         except RequestError as exc:
-            self._send_json({"error": str(exc)}, exc.status)
+            self._send_json(exc.payload(), exc.status)
         except BrokenPipeError:
             raise
         except Exception as exc:

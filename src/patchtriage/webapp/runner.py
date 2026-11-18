@@ -13,6 +13,7 @@ from ..models import Asset
 from ..bod2604 import summarize as summarize_response_policy
 from ..presentation import (
     ai_explanation,
+    ai_scope_note,
     decision_quality,
     evaluation_outcome,
     fix_status,
@@ -265,6 +266,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         coverage=run_coverage,
         coverage_warnings=list(source_provenance.get("warnings") or []),
         eval_context=eval_context,
+        ai_triage=ai_triage,
     )
     outcomes = {
         "immediate": 0, "out_of_cycle": 0, "scheduled": 0, "defer": 0,
@@ -429,6 +431,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         "actions": len(actions),
         "decision_quality": decision_quality(findings),
         "ai_triage": ai_triage,
+        "ai_scope_note": ai_scope_note(ai_triage),
         "audit_verified": audit["verified"],
         "audit_flagged": len(audit["flagged"]),
         "audit_rate": round(audit["verified"] / len(findings) * 100, 1)

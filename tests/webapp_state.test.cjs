@@ -136,6 +136,25 @@ test('a full queue backs off before retrying instead of failing the target', asy
   assert((await r.run(`runTargets(['target0'])`)).every(Boolean));assert.equal(posts,2);
 });
 
+test('a used-up AI budget fails the target with its message instead of retrying', async () => {
+  const r=runtime();r.ctx.fixtures=targets(2);r.run('TARGETS=fixtures');const posted=[];
+  r.ctx.api=async(method,url)=>{
+    if(method==='POST'){
+      const id=url.split('/')[3];posted.push(id);
+      if(id==='target0')throw Object.assign(new Error('budget used up'),
+        {status:429,code:'ai_budget_exhausted',retryable:false});
+      return {job_id:id};
+    }
+    if(url==='/api/jobs?latest=1')return [];
+    return {state:'succeeded',summary:summary(url.split('/').at(-1))};
+  };
+  const results=await r.run(`runTargets(['target0','target1'])`);
+  assert.deepEqual([...results],[false,true]);
+  assert.deepEqual(posted,['target0','target1']);
+  assert.equal(r.run(`STATUS.get('target0').state`),'failed');
+  assert.equal(r.run(`STATUS.get('target0').error`),'budget used up');
+});
+
 test('refresh includes a job finishing between discovery and summary loading', async () => {
   const r=runtime();r.ctx.fixtures=targets(1);r.run('TARGETS=fixtures');const calls=[];
   r.ctx.api=async(method,url)=>{

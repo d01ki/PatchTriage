@@ -20,6 +20,7 @@ from .evalcmp import evaluate
 from .ingest.parsers import load_file_with_metadata
 from .models import Asset
 from .plan import build_plan
+from .presentation import ai_scope_note
 from .ssvc import ssvc_order_key
 from .triage.audit import audit_all
 from .triage.engine import get_backend, run_triage, run_triage_batch
@@ -99,13 +100,7 @@ def result_message(findings: list, actions: list, incomplete: bool,
         message = (f"{message} {withdrawn} matching advisory record(s) had "
                    "been withdrawn by their publisher and were excluded."
                    ).strip()
-    ai = ai_triage or {}
-    if ai.get("deterministic_only"):
-        message = (f"{message} This deployment sends at most "
-                   f"{ai.get('findings_sent', 0)} findings per run to the AI "
-                   f"backend; the other {ai['deterministic_only']} have the "
-                   "deterministic explanation only.").strip()
-    return message
+    return f"{message} {ai_scope_note(ai_triage)}".strip()
 
 
 def _checked_scope_message(findings: list, actions: list, incomplete: bool,

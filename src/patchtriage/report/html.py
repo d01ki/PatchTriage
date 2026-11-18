@@ -18,6 +18,7 @@ from ..plan import Action
 from ..presentation import (
     PRIORITY_DEFINITIONS,
     ai_explanation,
+    ai_scope_note,
     decision_quality,
     evaluation_outcome,
     fix_status,
@@ -183,11 +184,13 @@ def render_html(findings: list[Finding], actions: list[Action],
                 title: str = "PatchTriage — Situation Report",
                 coverage: dict | None = None,
                 coverage_warnings: list[str] | None = None,
-                eval_context: dict | None = None) -> str:
+                eval_context: dict | None = None,
+                ai_triage: dict | None = None) -> str:
     """Render the self-contained report.
 
     ``eval_context`` describes the findings the evaluation rows were built
     from (``evalcmp.evaluation_context``); it defaults to ``findings``.
+    ``ai_triage`` is the run's AI scope (``Assessment.ai_triage``).
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
@@ -721,6 +724,7 @@ def render_html(findings: list[Finding], actions: list[Action],
     <div class="card"><div class="v">{total}</div><div class="l">unique findings</div></div>
   </div>
   {quality_html}
+  {f'<p class="lede">{_esc(ai_scope_note(ai_triage))}</p>' if ai_scope_note(ai_triage) else ''}
   <div class="priorityguide" aria-label="SSVC outcome meanings">{priority_guide}</div>
 
   {explain_html}

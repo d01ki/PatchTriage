@@ -163,7 +163,10 @@ def test_public_ai_budget_is_shared_by_every_session(ai_budget):
     with pytest.raises(srv.RequestError) as refused:
         start("cccccccccccccccccccccccccccccccc")
     assert refused.value.status == 429
-    assert "rules assessment" in str(refused.value)
+    # The code tells the GUI this 429 is final, not queue pressure to retry.
+    assert refused.value.payload() == {
+        "error": str(refused.value), "error_code": "ai_budget_exhausted"}
+    assert "rules backend" in str(refused.value)
     # Refusal happens before a job exists, so nothing reaches the provider,
     # and the deterministic assessment is still accepted.
     assert len(srv._JOBS) == 2
@@ -178,6 +181,16 @@ def test_local_ai_runs_are_not_budgeted(ai_budget, monkeypatch):
     for index in range(3):
         start(f"{index:032d}")
     assert srv._AI_RUN_STARTS == []
+
+
+def test_zero_ai_budget_withdraws_public_ai(monkeypatch):
+    monkeypatch.setattr(srv, "has_ai_configuration", lambda: True)
+    monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")
+    monkeypatch.setenv("PATCHTRIAGE_PUBLIC_AI", "true")
+    monkeypatch.setattr(srv, "PUBLIC_AI_RUNS_PER_HOUR", 0)
+    assert srv._ai_available() is False
+    with pytest.raises(srv.RequestError):
+        srv._validate_backend("ai")
 
 
 def test_config_that_is_not_an_object_is_ignored(tmp_path, monkeypatch):

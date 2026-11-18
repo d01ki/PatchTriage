@@ -269,5 +269,6 @@ def test_ai_limit_sends_only_the_most_urgent_findings(monkeypatch, tmp_path):
     message = assessmod.result_message(
         result.findings, result.actions, False, "complete", result.coverage,
         result.ai_triage)
-    assert "at most 2 findings per run" in message
-    assert "other 2 have the deterministic explanation only" in message
+    assert ("AI explained only the 2 most urgent finding(s), this "
+            "deployment's per-run limit; the other 2 have the deterministic "
+            "explanation only.") in message

@@ -264,6 +264,17 @@ def ai_explanation(triage: dict) -> dict | None:
     }
 
 
+def ai_scope_note(ai_triage: dict | None) -> str:
+    """Say when a deployment limit left findings without an AI explanation."""
+    ai = ai_triage or {}
+    rest = int(ai.get("deterministic_only") or 0)
+    if not rest:
+        return ""
+    return (f"AI explained only the {int(ai.get('findings_sent') or 0)} most "
+            f"urgent finding(s), this deployment's per-run limit; the other "
+            f"{rest} have the deterministic explanation only.")
+
+
 def priority_basis(finding: Finding) -> str:
     """Explain the deterministic SSVC path behind the assigned priority."""
     triage = finding.triage or {}
