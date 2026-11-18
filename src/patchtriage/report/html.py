@@ -359,7 +359,7 @@ def render_html(findings: list[Finding], actions: list[Action],
                 ("CVSS", f"{cvss:.1f}" if cvss is not None else "Not available"),
                 ("EPSS (30 day)", f"{epss * 100:.1f}%" if epss is not None else "Not available"),
                 ("CISA KEV", _kev_display(lead_finding)),
-                ("Fix", fix_status(lead_finding.package)["label"]),
+                ("Fix", fix_status(lead_finding)["label"]),
             )
             signals_html = "".join(
                 f'<div class="signal"><span>{_esc(label)}</span><b>{_esc(value)}</b></div>'

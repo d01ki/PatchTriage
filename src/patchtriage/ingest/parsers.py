@@ -245,9 +245,10 @@ _FIX_STATE_ALIASES = {
     "unknown": "unknown",
     # Trivy: Status
     "affected": "not_fixed",
-    "fix_deferred": "not_fixed",
+    "fix_deferred": "fix_deferred",
     "will_not_fix": "wont_fix",
-    "end_of_life": "wont_fix",
+    "end_of_life": "end_of_life",
+    "not_affected": "not_affected",
     "under_investigation": "unknown",
 }
 

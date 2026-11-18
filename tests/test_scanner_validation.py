@@ -166,9 +166,9 @@ def test_grype_fix_state_is_retained(tmp_path, state, expected):
 
 @pytest.mark.parametrize(("status", "expected"), [
     ("fixed", "fixed"), ("affected", "not_fixed"),
-    ("fix_deferred", "not_fixed"), ("will_not_fix", "wont_fix"),
-    ("end_of_life", "wont_fix"), ("under_investigation", "unknown"),
-    (None, ""),
+    ("fix_deferred", "fix_deferred"), ("will_not_fix", "wont_fix"),
+    ("end_of_life", "end_of_life"), ("not_affected", "not_affected"),
+    ("under_investigation", "unknown"), (None, ""),
 ])
 def test_trivy_status_is_retained(tmp_path, status, expected):
     vuln = {**TRIVY_VULN, **({"Status": status} if status else {})}

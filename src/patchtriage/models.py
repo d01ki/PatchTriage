@@ -152,9 +152,19 @@ class Package(BaseModel):
             raise ValueError(f"fix_state must be one of {list(FIX_STATES)}")
         return value
 
+    @field_validator("fix_states_reported", mode="before")
+    @classmethod
+    def validate_fix_states_reported(cls, value):
+        states = [str(state).strip() for state in value or []]
+        unknown = [state for state in states if state not in FIX_STATES]
+        if unknown:
+            raise ValueError(f"unknown fix states: {unknown}")
+        return states
+
 
 #: Normalized scanner fix states, most to least informative for a decision.
-FIX_STATES = ("fixed", "wont_fix", "not_fixed", "unknown")
+FIX_STATES = ("fixed", "wont_fix", "end_of_life", "fix_deferred",
+              "not_fixed", "not_affected", "unknown")
 
 
 class Asset(BaseModel):

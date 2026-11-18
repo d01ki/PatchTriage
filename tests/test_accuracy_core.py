@@ -9,6 +9,7 @@ from patchtriage.models import (
     Package,
     RawFinding,
     Severity,
+    VendorAdvisory,
 )
 from patchtriage.plan import build_plan, compare_versions
 from patchtriage.presentation import fix_status
@@ -403,7 +404,11 @@ def _with_state(raw, state):
 
 @pytest.mark.parametrize(("state", "summary", "label"), [
     ("wont_fix", "Vendor will not fix widget", "Won't fix"),
+    ("end_of_life", "widget on asset-1 is end of life", "End of life"),
+    ("fix_deferred", "Vendor deferred the fix for widget", "Fix deferred"),
     ("not_fixed", "No fix released yet for widget", "Not yet fixed"),
+    ("not_affected", "No fixed version confirmed for widget",
+     "Reported not affected"),
     ("unknown", "No fixed version confirmed for widget", "Fix status unknown"),
     ("", "No fixed version confirmed for widget", "Not supplied"),
 ])
@@ -414,9 +419,20 @@ def test_scanner_fix_state_explains_a_missing_fix(state, summary, label):
     action = build_plan(findings)[0]
     assert action.kind == "mitigate"
     assert action.summary.startswith(summary)
-    assert fix_status(findings[0].package)["label"] == label
+    assert fix_status(findings[0])["label"] == label
     # The scanner state explains; it never changes the SSVC action.
     assert findings[0].triage["action"] == "mitigate"
+
+
+def test_vendor_advisory_fix_keeps_the_summary_neutral():
+    findings = _triage(dedup([_with_state(
+        _raw("CVE-2026-0053", fixed=""), "wont_fix")]))
+    findings[0].enrichment.vendor_advisories = [VendorAdvisory(
+        source="ubuntu", advisory_id="USN-1-1", fixed_versions=["1.0-1ubuntu2"])]
+    assert build_plan(findings)[0].summary.startswith(
+        "No fixed version confirmed")
+    detail = fix_status(findings[0])["detail"]
+    assert "vendor advisories list fixed releases (1.0-1ubuntu2)" in detail
 
 
 def test_disagreeing_fix_states_stay_visible_after_dedup():
@@ -429,21 +445,26 @@ def test_disagreeing_fix_states_stay_visible_after_dedup():
     package = findings[0].package
     assert package.fix_state == "wont_fix"
     assert package.fix_states_reported == ["wont_fix", "not_fixed"]
-    assert "scanners disagree" in fix_status(package)["detail"]
-    # A conflict falls back to the neutral summary instead of picking a side.
+    # Neither the label nor the summary picks a side.
+    status = fix_status(findings[0])
+    assert status["label"] == "Scanners disagree"
+    assert "Won't fix, Not yet fixed" in status["detail"]
     assert build_plan(findings)[0].summary.startswith(
         "No fixed version confirmed")
 
 
 def test_fixed_version_outranks_scanner_state():
-    package = _with_state(_raw("CVE-2026-0052", fixed="2.0"), "wont_fix").package
-    status = fix_status(package)
+    findings = dedup([_with_state(_raw("CVE-2026-0052", fixed="2.0"),
+                                  "wont_fix")])
+    status = fix_status(findings[0])
     assert status["available"] and status["label"] == "Available"
 
 
-def test_unknown_fix_state_value_is_rejected():
+@pytest.mark.parametrize("update", [
+    {"fix_state": "maybe"}, {"fix_states_reported": ["fixed", "maybe"]}])
+def test_unknown_fix_state_value_is_rejected(update):
     with pytest.raises(ValueError):
-        Package(name="widget", fix_state="maybe")
+        Package(name="widget", **update)
 
 
 def test_candidate_only_finding_is_not_recommended():

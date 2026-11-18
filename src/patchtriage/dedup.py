@@ -322,6 +322,7 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
             "fixed_version": fixed,
             "fixed_version_candidates": fixed_candidates,
             "fix_state": fix_state,
+            # Set only on disagreement: non-empty means scanners conflict.
             "fix_states_reported": reported if len(reported) > 1 else [],
         })
         findings.append(Finding(

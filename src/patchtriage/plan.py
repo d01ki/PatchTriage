@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from .bod2604 import action_policy
 from .dedup import package_identity
 from .models import Finding
+from .presentation import advisory_fixed_versions
 from .ssvc import ssvc_sort_key
 
 _PRIORITY_RANK = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
@@ -323,10 +324,30 @@ def _select_upgrade_target(group: list[Finding], installed: str,
     return target, ""
 
 
+_MITIGATE_SUMMARY = {
+    "wont_fix": ("Vendor will not fix {pkg} on {asset} - "
+                 "apply mitigations or replace the component"),
+    "end_of_life": ("{pkg} on {asset} is end of life - move to a supported "
+                    "release or replace the component"),
+    "fix_deferred": ("Vendor deferred the fix for {pkg} on {asset} - "
+                     "apply mitigations and review the vendor's decision"),
+    "not_fixed": ("No fix released yet for {pkg} on {asset} - "
+                  "apply mitigations and track the vendor fix"),
+    "": ("No fixed version confirmed for {pkg} on {asset} - "
+         "investigate vendor guidance and apply mitigations"),
+}
+
+
 def _agreed_fix_state(group: list[Finding]) -> str:
-    """The scanner fix state every finding shares without conflict, or ""."""
+    """The scanner fix state every finding shares without contradiction.
+
+    "" when scanners disagree or a vendor advisory names a fixed release,
+    so the summary never asserts what other evidence disputes.
+    """
     states = {g.package.fix_state for g in group}
-    if len(states) != 1 or any(g.package.fix_states_reported for g in group):
+    if (len(states) != 1
+            or any(g.package.fix_states_reported for g in group)
+            or any(advisory_fixed_versions(g) for g in group)):
         return ""
     return states.pop()
 
@@ -368,15 +389,10 @@ def build_plan(findings: list[Finding]) -> list[Action]:
         elif kind == "investigate":
             summary = (f"Review the fix for {pkg} on {asset}: "
                        f"{manual_reason}")
-        elif _agreed_fix_state(group) == "wont_fix":
-            summary = (f"Vendor will not fix {pkg} on {asset} - "
-                       f"apply mitigations or replace the component")
-        elif _agreed_fix_state(group) == "not_fixed":
-            summary = (f"No fix released yet for {pkg} on {asset} - "
-                       f"apply mitigations and track the vendor fix")
         else:
-            summary = (f"No fixed version confirmed for {pkg} on {asset} - "
-                       f"investigate vendor guidance and apply mitigations")
+            summary = _MITIGATE_SUMMARY.get(
+                _agreed_fix_state(group), _MITIGATE_SUMMARY[""]).format(
+                    pkg=pkg, asset=asset)
         identity = ":".join((ecosystem, namespace, _name, installed))
         action_id = f"{kind}:{asset}:{identity}"
         top_group = [

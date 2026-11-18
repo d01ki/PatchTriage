@@ -156,7 +156,7 @@ def priority_evidence(finding: Finding) -> list[dict[str, str]]:
                 + " (not an input to the Deployer decision)"
             ),
         })
-    fix = fix_status(finding.package)
+    fix = fix_status(finding)
     checks.append(
         {"label": "Fix readiness",
          "status": "confirmed" if fix["available"] else "attention",
@@ -172,9 +172,20 @@ _FIX_STATE_TEXT = {
     "wont_fix": ("Won't fix",
                  "The scanner reports that the vendor will not fix this "
                  "package; mitigate or replace the component"),
+    "end_of_life": ("End of life",
+                    "The scanner reports this release is end of life and "
+                    "receives no fixes; move to a supported release or "
+                    "replace the component"),
+    "fix_deferred": ("Fix deferred",
+                     "The scanner reports the vendor has deferred a fix, "
+                     "possibly indefinitely; mitigate and review the "
+                     "vendor's decision"),
     "not_fixed": ("Not yet fixed",
                   "The scanner reports no fix released yet; mitigate and "
                   "track the vendor fix"),
+    "not_affected": ("Reported not affected",
+                     "The scanner reports the vendor considers this package "
+                     "not affected; confirm before closing the finding"),
     "unknown": ("Fix status unknown",
                 "The scanner could not determine whether a fix exists; "
                 "mitigate or investigate"),
@@ -183,25 +194,42 @@ _FIX_STATE_TEXT = {
 }
 
 
-def fix_status(package) -> dict:
+def advisory_fixed_versions(finding: Finding) -> list[str]:
+    """Fixed releases named by enriched vendor advisories for this CVE."""
+    return sorted({
+        version for advisory in finding.enrichment.vendor_advisories
+        for version in advisory.fixed_versions if version
+    })
+
+
+def fix_status(finding: Finding) -> dict:
     """One fix label for CLI, GUI and HTML.
 
     A fixed version decides availability, as it does for the SSVC action;
     the scanner's fix state only explains why no version is available.
-    Disagreeing scanner states are named rather than hidden.
+    Disagreeing scanners, or a vendor advisory that names a fix the
+    scanner did not, are stated rather than resolved by picking a side.
     """
+    package = finding.package
+    conflict = list(package.fix_states_reported)
     if package.fixed_version:
         label = "Available"
         detail = f"Fixed version {package.fixed_version} is available"
+    elif conflict:
+        label = "Scanners disagree"
+        detail = ("Scanners report different fix states ("
+                  + ", ".join(_FIX_STATE_TEXT[s][0] for s in conflict)
+                  + "); confirm with vendor guidance")
     else:
         label, detail = _FIX_STATE_TEXT.get(
             package.fix_state, _FIX_STATE_TEXT[""])
-    reported = list(package.fix_states_reported)
-    if len(reported) > 1:
-        detail += ("; scanners disagree, reporting "
-                   + ", ".join(s.replace("_", " ") for s in reported))
-    return {"available": bool(package.fixed_version), "state": package.fix_state,
-            "label": label, "detail": detail}
+    advisory_fixes = advisory_fixed_versions(finding)
+    if advisory_fixes and not package.fixed_version:
+        detail += ("; vendor advisories list fixed releases ("
+                   + ", ".join(advisory_fixes[:3])
+                   + "), confirm which applies to this package")
+    return {"available": bool(package.fixed_version),
+            "state": package.fix_state, "label": label, "detail": detail}
 
 
 def ai_explanation(triage: dict) -> dict | None:
