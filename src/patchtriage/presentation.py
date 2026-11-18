@@ -156,13 +156,52 @@ def priority_evidence(finding: Finding) -> list[dict[str, str]]:
                 + " (not an input to the Deployer decision)"
             ),
         })
-    has_fix = bool(finding.package.fixed_version)
+    fix = fix_status(finding.package)
     checks.append(
-        {"label": "Fix readiness", "status": "confirmed" if has_fix else "attention",
-         "value": (f"Fixed version {finding.package.fixed_version} is available"
-                   if has_fix else "No fixed version supplied; mitigate or investigate")}
+        {"label": "Fix readiness",
+         "status": "confirmed" if fix["available"] else "attention",
+         "value": fix["detail"]}
     )
     return checks
+
+
+_FIX_STATE_TEXT = {
+    "fixed": ("Fixed, version not supplied",
+              "The scanner reports a fix but no fixed version; confirm the "
+              "release in vendor guidance"),
+    "wont_fix": ("Won't fix",
+                 "The scanner reports that the vendor will not fix this "
+                 "package; mitigate or replace the component"),
+    "not_fixed": ("Not yet fixed",
+                  "The scanner reports no fix released yet; mitigate and "
+                  "track the vendor fix"),
+    "unknown": ("Fix status unknown",
+                "The scanner could not determine whether a fix exists; "
+                "mitigate or investigate"),
+    "": ("Not supplied",
+         "No fixed version supplied; mitigate or investigate"),
+}
+
+
+def fix_status(package) -> dict:
+    """One fix label for CLI, GUI and HTML.
+
+    A fixed version decides availability, as it does for the SSVC action;
+    the scanner's fix state only explains why no version is available.
+    Disagreeing scanner states are named rather than hidden.
+    """
+    if package.fixed_version:
+        label = "Available"
+        detail = f"Fixed version {package.fixed_version} is available"
+    else:
+        label, detail = _FIX_STATE_TEXT.get(
+            package.fix_state, _FIX_STATE_TEXT[""])
+    reported = list(package.fix_states_reported)
+    if len(reported) > 1:
+        detail += ("; scanners disagree, reporting "
+                   + ", ".join(s.replace("_", " ") for s in reported))
+    return {"available": bool(package.fixed_version), "state": package.fix_state,
+            "label": label, "detail": detail}
 
 
 def ai_explanation(triage: dict) -> dict | None:

@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from .models import (Finding, Package, RawFinding, Severity,
+from .models import (FIX_STATES, Finding, Package, RawFinding, Severity,
                      normalize_ecosystem, parse_purl)
 
 _SEV_ORDER = {
@@ -302,6 +302,11 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
         })
         fixed = next((r.package.fixed_version for r in group
                       if r.package.fixed_version), "")
+        # Scanners can disagree; keep the most informative reported state.
+        states = {state for r in group for state in (
+            r.package.fix_state, *r.package.fix_states_reported) if state}
+        reported = [s for s in FIX_STATES if s in states]
+        fix_state = reported[0] if reported else ""
         title = next((r.title for r in group if r.title), "")
         desc = max((r.description for r in group), key=len, default="")
 
@@ -316,6 +321,8 @@ def dedup(raw_findings: list[RawFinding]) -> list[Finding]:
         pkg = component.package.model_copy(update={
             "fixed_version": fixed,
             "fixed_version_candidates": fixed_candidates,
+            "fix_state": fix_state,
+            "fix_states_reported": reported if len(reported) > 1 else [],
         })
         findings.append(Finding(
             key=key,

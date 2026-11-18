@@ -135,6 +135,26 @@ class Package(BaseModel):
     # Conflicting scanner/vendor fix values are retained for safe, auditable
     # action-level selection instead of being discarded during correlation.
     fixed_version_candidates: list[str] = Field(default_factory=list)
+    # The scanner's own statement about a fix, normalized to one of
+    # FIX_STATES ("" = the scanner did not say). It explains an empty
+    # fixed_version ("won't fix" differs from "not yet fixed") but never
+    # replaces it as the basis for patch decisions.
+    fix_state: str = ""
+    # Every distinct state the merged scanners reported, so a disagreement
+    # stays visible after deduplication picks fix_state.
+    fix_states_reported: list[str] = Field(default_factory=list)
+
+    @field_validator("fix_state", mode="before")
+    @classmethod
+    def validate_fix_state(cls, value):
+        value = str(value or "").strip()
+        if value and value not in FIX_STATES:
+            raise ValueError(f"fix_state must be one of {list(FIX_STATES)}")
+        return value
+
+
+#: Normalized scanner fix states, most to least informative for a decision.
+FIX_STATES = ("fixed", "wont_fix", "not_fixed", "unknown")
 
 
 class Asset(BaseModel):

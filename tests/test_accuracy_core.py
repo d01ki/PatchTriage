@@ -11,6 +11,7 @@ from patchtriage.models import (
     Severity,
 )
 from patchtriage.plan import build_plan, compare_versions
+from patchtriage.presentation import fix_status
 from patchtriage.triage.audit import audit_finding
 from patchtriage.triage.engine import RulesBackend
 
@@ -393,6 +394,56 @@ def test_unknown_installed_version_needs_manual_review():
     action = _plan(_raw("CVE-2026-0045", version="", fixed="2.0.0"))[0]
     assert action.kind == "investigate"
     assert "installed version is unknown" in action.manual_review_reason
+
+
+def _with_state(raw, state):
+    raw.package = raw.package.model_copy(update={"fix_state": state})
+    return raw
+
+
+@pytest.mark.parametrize(("state", "summary", "label"), [
+    ("wont_fix", "Vendor will not fix widget", "Won't fix"),
+    ("not_fixed", "No fix released yet for widget", "Not yet fixed"),
+    ("unknown", "No fixed version confirmed for widget", "Fix status unknown"),
+    ("", "No fixed version confirmed for widget", "Not supplied"),
+])
+def test_scanner_fix_state_explains_a_missing_fix(state, summary, label):
+    findings = _triage(dedup([_with_state(
+        _raw("CVE-2026-0050", fixed=""), state)]))
+    assert findings[0].package.fix_state == state
+    action = build_plan(findings)[0]
+    assert action.kind == "mitigate"
+    assert action.summary.startswith(summary)
+    assert fix_status(findings[0].package)["label"] == label
+    # The scanner state explains; it never changes the SSVC action.
+    assert findings[0].triage["action"] == "mitigate"
+
+
+def test_disagreeing_fix_states_stay_visible_after_dedup():
+    findings = _triage(dedup([
+        _with_state(_raw("CVE-2026-0051", fixed="", scanner="grype"),
+                    "not_fixed"),
+        _with_state(_raw("CVE-2026-0051", fixed="", scanner="trivy"),
+                    "wont_fix"),
+    ]))
+    package = findings[0].package
+    assert package.fix_state == "wont_fix"
+    assert package.fix_states_reported == ["wont_fix", "not_fixed"]
+    assert "scanners disagree" in fix_status(package)["detail"]
+    # A conflict falls back to the neutral summary instead of picking a side.
+    assert build_plan(findings)[0].summary.startswith(
+        "No fixed version confirmed")
+
+
+def test_fixed_version_outranks_scanner_state():
+    package = _with_state(_raw("CVE-2026-0052", fixed="2.0"), "wont_fix").package
+    status = fix_status(package)
+    assert status["available"] and status["label"] == "Available"
+
+
+def test_unknown_fix_state_value_is_rejected():
+    with pytest.raises(ValueError):
+        Package(name="widget", fix_state="maybe")
 
 
 def test_candidate_only_finding_is_not_recommended():

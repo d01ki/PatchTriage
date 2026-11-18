@@ -20,6 +20,7 @@ from ..presentation import (
     ai_explanation,
     decision_quality,
     evaluation_outcome,
+    fix_status,
     priority_basis,
     priority_definition,
     priority_evidence,
@@ -358,7 +359,7 @@ def render_html(findings: list[Finding], actions: list[Action],
                 ("CVSS", f"{cvss:.1f}" if cvss is not None else "Not available"),
                 ("EPSS (30 day)", f"{epss * 100:.1f}%" if epss is not None else "Not available"),
                 ("CISA KEV", _kev_display(lead_finding)),
-                ("Fix", "Available" if lead_finding.package.fixed_version else "Not supplied"),
+                ("Fix", fix_status(lead_finding.package)["label"]),
             )
             signals_html = "".join(
                 f'<div class="signal"><span>{_esc(label)}</span><b>{_esc(value)}</b></div>'

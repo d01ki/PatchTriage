@@ -323,6 +323,14 @@ def _select_upgrade_target(group: list[Finding], installed: str,
     return target, ""
 
 
+def _agreed_fix_state(group: list[Finding]) -> str:
+    """The scanner fix state every finding shares without conflict, or ""."""
+    states = {g.package.fix_state for g in group}
+    if len(states) != 1 or any(g.package.fix_states_reported for g in group):
+        return ""
+    return states.pop()
+
+
 def build_plan(findings: list[Finding]) -> list[Action]:
     """Group findings into actions and rank by SSVC action timing."""
     groups: dict[tuple, list[Finding]] = defaultdict(list)
@@ -360,6 +368,12 @@ def build_plan(findings: list[Finding]) -> list[Action]:
         elif kind == "investigate":
             summary = (f"Review the fix for {pkg} on {asset}: "
                        f"{manual_reason}")
+        elif _agreed_fix_state(group) == "wont_fix":
+            summary = (f"Vendor will not fix {pkg} on {asset} - "
+                       f"apply mitigations or replace the component")
+        elif _agreed_fix_state(group) == "not_fixed":
+            summary = (f"No fix released yet for {pkg} on {asset} - "
+                       f"apply mitigations and track the vendor fix")
         else:
             summary = (f"No fixed version confirmed for {pkg} on {asset} - "
                        f"investigate vendor guidance and apply mitigations")
