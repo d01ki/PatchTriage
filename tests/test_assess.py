@@ -233,3 +233,41 @@ def test_limit_reports_total_and_assessed(monkeypatch, tmp_path):
     assert result.coverage["findings_assessed"] == 1
     assert len(result.actions) == 1
     assert any("1 of 2" in message for message in messages)
+
+
+def test_ai_limit_sends_only_the_most_urgent_findings(monkeypatch, tmp_path):
+    raw = [_raw(f"pkg{i}", "npm").model_copy(
+        update={"vuln_id": f"CVE-2024-{3000 + i}"}) for i in range(4)]
+    _offline(monkeypatch)
+    monkeypatch.setattr(
+        assessmod, "load_file_with_metadata",
+        lambda path, fmt=None, asset=None, progress=None: LoadResult(raw, {
+            "source_type": "scanner:osv", "complete": True}))
+    sent = []
+    rules_triage = assessmod.run_triage
+    rules_get_backend = assessmod.get_backend
+
+    def fake_run_triage(findings, backend, jobs=1):
+        if backend == "fake-ai":
+            sent.extend(f.vuln_id for f in findings)
+            return
+        rules_triage(findings, backend, jobs=jobs)
+
+    monkeypatch.setattr(assessmod, "run_triage", fake_run_triage)
+    monkeypatch.setattr(assessmod, "get_backend", lambda name, *args, **kwargs: (
+        "fake-ai" if name == "ai" else rules_get_backend(name)))
+    scan = tmp_path / "scan.json"
+    scan.write_text("{}", encoding="utf-8")
+    result = assessmod.assess([scan], backend="ai", ai_limit=2)
+    # Deterministic order picks the AI subset; every finding keeps a decision.
+    assert sent == [f.vuln_id for f in result.subset[:2]]
+    assert all(f.triage for f in result.findings)
+    assert result.ai_triage == {
+        "backend": "ai", "findings_sent": 2, "deterministic_only": 2}
+    # Run-specific: never written into coverage, which is saved as evidence.
+    assert "ai_triage" not in result.coverage
+    message = assessmod.result_message(
+        result.findings, result.actions, False, "complete", result.coverage,
+        result.ai_triage)
+    assert "at most 2 findings per run" in message
+    assert "other 2 have the deterministic explanation only" in message
