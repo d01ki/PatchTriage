@@ -878,7 +878,7 @@ async function api(method,path,body){
     let payload;
     try{payload=response.status===204?null:await response.json();}
     catch(error){const invalid=new Error("The server returned an unreadable response. Reconnect to check the result.");invalid.status=response.status;invalid.retryable=true;throw invalid;}
-    if(!response.ok){const error=new Error((payload&&payload.error)||response.statusText);error.status=response.status;error.retryable=response.status>=500||response.status===429;throw error;}
+    if(!response.ok){const error=new Error((payload&&payload.error)||response.statusText);error.status=response.status;error.code=(payload&&payload.error_code)||"";error.retryable=response.status>=500||(response.status===429&&!error.code);throw error;}
     return payload;
   }catch(error){if(!error.status)error.retryable=true;throw error;}
   finally{clearTimeout(timer);}
@@ -1292,7 +1292,7 @@ function renderResult(summary){
   return `<article class="result" style="--top:${OUTCOME_COLOR[outcomeKey]||"var(--line2)"}" data-result="${esc(summary.target_id)}" data-id="${esc(summary.target_id)}">
     <div class="resulthead">
       <div class="prioritybox"><div class="priority ${esc(cls)}" data-outcome="${outcomeKey}">${esc(outcome)}</div><div class="prioritymeaning" title="Highest-priority SSVC outcome">${hasFindings?"Top outcome":"Evidence coverage"}</div><div class="prioritydue">${summary.top_deadline_days==null?"":`workflow ≤ ${esc(summary.top_deadline_days)} days`}</div></div>
-      <div><div class="rname">${esc(summary.name)} · ${summary.total} findings · ${summary.actions} actions${summary.demo?" · offline demo":""}</div><div class="action">${esc(summary.top_action||"Assessment completed")}</div><div class="resulttools"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="manage">Manage evidence</button><button class="textbutton" data-action="run">Run again</button></div></div>
+      <div><div class="rname">${esc(summary.name)} · ${summary.total} findings · ${summary.actions} actions${summary.demo?" · offline demo":""}</div><div class="action">${esc(summary.top_action||"Assessment completed")}</div>${summary.ai_scope_note?`<div class="rname">${esc(summary.ai_scope_note)}</div>`:""}<div class="resulttools"><button class="textbutton" data-action="edit">Review context</button><button class="textbutton" data-action="manage">Manage evidence</button><button class="textbutton" data-action="run">Run again</button></div></div>
       <div class="reportlinks"><a class="reportlink" href="${esc(summary.report_url)}" target="_blank" rel="noopener">Open full report →</a><a class="reportlink" href="${esc(summary.report_url)}" download="${esc(reportFilename(summary))}">Download HTML report</a></div>
     </div>
     ${(coverage!=="complete"||warnings.length)?`<details class="resultnotice"><summary>${coverage!=="complete"?`Coverage: ${esc(coverage.replaceAll("_"," "))}`:"Evidence lookup warnings"}${warnings.length?` · ${warnings.length} lookup warning(s)`:""} · View details</summary><p>${esc(summary.result_message||"Coverage is limited to the supplied evidence; zero findings does not prove safety.")}</p>${warnings.map(w=>`<p>${esc(w)}</p>`).join("")}</details>`:""}
@@ -1424,7 +1424,7 @@ function pumpQueue(){
         try{
           const jobs=await api("GET","/api/jobs?latest=1");const job=jobs.find(j=>j.target_id===item.id&&j.created_at>=item.queuedAt);
           if(job){const pending=watchJob(item.id,job.job_id);SUBMITTING.delete(item.id);saveQueue();item.finish(await pending);return;}
-          if(error.status===429){SUBMITTING.delete(item.id);RUN_QUEUE.unshift(item);saveQueue();queueRetryAt=Date.now()+2000;setTimeout(pumpQueue,2000);return;}
+          if(error.status===429&&!error.code){SUBMITTING.delete(item.id);RUN_QUEUE.unshift(item);saveQueue();queueRetryAt=Date.now()+2000;setTimeout(pumpQueue,2000);return;}
         }catch{}
         SUBMITTING.delete(item.id);saveQueue();
         STATUS.set(item.id,{state:error.retryable?"disconnected":"failed",error:error.message});item.finish(false);

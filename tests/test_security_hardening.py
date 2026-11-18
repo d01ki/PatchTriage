@@ -137,6 +137,62 @@ def test_ai_requires_opt_in_when_public(monkeypatch, mode, opt_in, expected):
             srv._validate_backend("ai")
 
 
+@pytest.fixture
+def ai_budget(tmp_path, monkeypatch):
+    """Two AI runs per hour, a controllable clock, and jobs that never run."""
+    monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")
+    monkeypatch.setattr(srv, "PUBLIC_AI_RUNS_PER_HOUR", 2)
+    monkeypatch.setattr(srv, "_AI_RUN_STARTS", [])
+    monkeypatch.setattr(srv, "_JOBS", {})
+    monkeypatch.setattr(srv, "_execute_job", lambda job_id: None)
+    clock = [10_000.0]
+    monkeypatch.setattr(srv.time, "time", lambda: clock[0])
+
+    def start(workspace, backend="ai"):
+        target = tstore.add_target(name=f"t-{workspace}", workspace_id=workspace)
+        return srv._start_job(workspace, target["id"], backend)
+    return start, clock
+
+
+def test_public_ai_budget_is_shared_by_every_session(ai_budget):
+    start, clock = ai_budget
+    start("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    start("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    # A fresh cookie is a fresh session, but not a fresh budget.
+    with pytest.raises(srv.RequestError) as refused:
+        start("cccccccccccccccccccccccccccccccc")
+    assert refused.value.status == 429
+    # The code tells the GUI this 429 is final, not queue pressure to retry.
+    assert refused.value.payload() == {
+        "error": str(refused.value), "error_code": "ai_budget_exhausted"}
+    assert "rules backend" in str(refused.value)
+    # Refusal happens before a job exists, so nothing reaches the provider,
+    # and the deterministic assessment is still accepted.
+    assert len(srv._JOBS) == 2
+    assert start("cccccccccccccccccccccccccccccccc", backend="rules")["state"] == "queued"
+    clock[0] += 3600
+    assert start("dddddddddddddddddddddddddddddddd")["backend"] == "ai"
+
+
+def test_local_ai_runs_are_not_budgeted(ai_budget, monkeypatch):
+    start, _clock = ai_budget
+    monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "local")
+    for index in range(3):
+        start(f"{index:032d}")
+    assert srv._AI_RUN_STARTS == []
+
+
+def test_zero_ai_budget_withdraws_public_ai(monkeypatch):
+    monkeypatch.setattr(srv, "has_ai_configuration", lambda: True)
+    monkeypatch.setenv("PATCHTRIAGE_DEPLOYMENT_MODE", "public")
+    monkeypatch.setenv("PATCHTRIAGE_PUBLIC_AI", "true")
+    monkeypatch.setattr(srv, "PUBLIC_AI_RUNS_PER_HOUR", 0)
+    assert srv._ai_available() is False
+    with pytest.raises(srv.RequestError):
+        srv._validate_backend("ai")
+
+
 def test_config_that_is_not_an_object_is_ignored(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRIAGE_CONFIG_DIR", str(tmp_path))
     cfgmod.config_path().write_text("[1]", encoding="utf-8")

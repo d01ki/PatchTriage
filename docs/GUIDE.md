@@ -661,7 +661,16 @@ PATCHTRIAGE_BUILD_SHA=<deployed-git-sha>
 
 Local mode answers only to `localhost` and loopback addresses. To reach it by a
 LAN name or IP, list those in `PATCHTRIAGE_ALLOWED_HOSTS`. A public deployment
-offers AI backends only with `PATCHTRIAGE_PUBLIC_AI=true`.
+offers AI backends only with `PATCHTRIAGE_PUBLIC_AI=true`. Those runs spend the
+operator's key, so they are bounded server-wide rather than per session:
+`PATCHTRIAGE_PUBLIC_AI_RUNS_PER_HOUR` (default 10) AI runs started per rolling
+hour across all visitors (a run counts when it is accepted, even if it later
+fails; `0` turns public AI off), and `PATCHTRIAGE_PUBLIC_AI_MAX_FINDINGS`
+(default 25) findings per run sent to the provider, the most urgent first in
+deterministic order. The rest keep the deterministic result; the GUI result
+header, run message and HTML report say how many. A run refused by the hourly
+budget gets `429` with `error_code: ai_budget_exhausted`, sends nothing, and
+the rules backend stays available.
 
 `/api/config` exposes the application version, build SHA, UI schema version,
 repository capabilities, retention, and anonymous-workspace limits. Local and

@@ -38,7 +38,7 @@ from ..repository import (
 )
 from ..triage.providers import has_ai_configuration, resolve_provider_name
 from .page import INDEX_HTML
-from .runner import MAX_WEB_SSVC_INPUTS, run_target
+from .runner import MAX_WEB_SSVC_INPUTS, public_ai_finding_limit, run_target
 
 MAX_REQUEST_BYTES = int(os.environ.get("PATCHTRIAGE_MAX_REQUEST_BYTES", 20 * 1024 * 1024))
 MAX_SOURCE_BYTES = int(os.environ.get("PATCHTRIAGE_MAX_SOURCE_BYTES", 16 * 1024 * 1024))
@@ -75,6 +75,21 @@ def _env_seconds(name: str, default: float) -> float:
 
 IMPORT_DEADLINE_SECONDS = _env_seconds(
     "PATCHTRIAGE_IMPORT_DEADLINE_SECONDS", 600.0)
+
+
+def _env_count(name: str, default: int) -> int:
+    """A non-negative whole number from the environment, else the default."""
+    try:
+        value = int(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+# Public AI runs spend the operator's key. Per-session limits do not bound
+# that (a visitor can drop the cookie), so the budget is server-wide.
+PUBLIC_AI_RUNS_PER_HOUR = _env_count("PATCHTRIAGE_PUBLIC_AI_RUNS_PER_HOUR", 10)
+_AI_RUN_STARTS: list[float] = []   # guarded by _JOB_LOCK
 _IMPORTS: dict[str, dict] = {}
 _ACTIVE_STATES = frozenset({"queued", "running"})
 
@@ -113,7 +128,11 @@ def _ai_available() -> bool:
     """Anonymous visitors spend the operator's AI budget only by opt-in."""
     if not has_ai_configuration():
         return False
-    return not _is_public_mode() or os.environ.get(
+    if not _is_public_mode():
+        return True
+    # A zero hourly budget turns public AI off rather than offering a
+    # backend that every run would be refused.
+    return PUBLIC_AI_RUNS_PER_HOUR > 0 and os.environ.get(
         "PATCHTRIAGE_PUBLIC_AI", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -296,6 +315,25 @@ def _execute_job(job_id: str) -> None:
                 _prune_jobs_locked()
 
 
+def _reserve_public_ai_run_locked() -> None:
+    """Count one AI run against the server-wide hourly budget, or refuse.
+
+    Refusing before the run starts means nothing is sent to the provider;
+    the rules backend stays available. Local deployments use their own key
+    and are not limited here.
+    """
+    if not _is_public_mode():
+        return
+    now = time.time()
+    _AI_RUN_STARTS[:] = [t for t in _AI_RUN_STARTS if now - t < 3600]
+    if len(_AI_RUN_STARTS) >= PUBLIC_AI_RUNS_PER_HOUR:
+        raise RequestError(
+            "this server's hourly AI assessment budget is used up; choose "
+            "the rules backend or retry later", 429,
+            code="ai_budget_exhausted")
+    _AI_RUN_STARTS.append(now)
+
+
 def _start_job(workspace: str, target_id: str, backend: str) -> dict:
     target = tstore.get_target(target_id, workspace)
     if target is None:
@@ -317,6 +355,8 @@ def _start_job(workspace: str, target_id: str, backend: str) -> dict:
             raise RequestError(
                 "anonymous workspace assessment limit reached; wait for an "
                 "active run to finish", 429)
+        if backend != "rules":
+            _reserve_public_ai_run_locked()
         job_id = secrets.token_hex(12)
         job = {
             "job_id": job_id, "workspace": workspace,
@@ -331,9 +371,16 @@ def _start_job(workspace: str, target_id: str, backend: str) -> dict:
 
 
 class RequestError(ValueError):
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, code: str = ""):
         super().__init__(message)
         self.status = status
+        # A stable code lets clients tell a final refusal from a 429 that
+        # is worth retrying.
+        self.code = code
+
+    def payload(self) -> dict:
+        return {"error": str(self), **({"error_code": self.code}
+                                       if self.code else {})}
 
 
 # ------------------------------------------------------------ import jobs
@@ -662,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError("unrecognized Host header", 403)
             fn()
         except RequestError as exc:
-            self._send_json({"error": str(exc)}, exc.status)
+            self._send_json(exc.payload(), exc.status)
         except BrokenPipeError:
             raise
         except Exception as exc:
@@ -742,6 +789,9 @@ class Handler(BaseHTTPRequestHandler):
                     "active_jobs_per_session": MAX_ACTIVE_JOBS_PER_SESSION,
                     "ssvc_review_rows": MAX_WEB_SSVC_INPUTS,
                     "fleet_import_repos": MAX_FLEET_IMPORT_REPOS,
+                    **({"ai_runs_per_hour": PUBLIC_AI_RUNS_PER_HOUR,
+                        "ai_findings_per_run": public_ai_finding_limit()}
+                       if has_ai and _is_public_mode() else {}),
                 },
                 "connectors": {
                     "msrc": "public", "rhsa": "public", "usn": "public",

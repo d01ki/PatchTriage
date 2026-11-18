@@ -13,6 +13,7 @@ from ..models import Asset
 from ..bod2604 import summarize as summarize_response_policy
 from ..presentation import (
     ai_explanation,
+    ai_scope_note,
     decision_quality,
     evaluation_outcome,
     fix_status,
@@ -190,6 +191,17 @@ def _run_finding_limit() -> int | None:
         return 1000
 
 
+def public_ai_finding_limit() -> int | None:
+    """Anonymous AI runs spend the operator's key, so each one is bounded."""
+    if os.environ.get("PATCHTRIAGE_DEPLOYMENT_MODE", "local").lower() != "public":
+        return None
+    try:
+        return max(1, int(os.environ.get(
+            "PATCHTRIAGE_PUBLIC_AI_MAX_FINDINGS", "25")))
+    except ValueError:
+        return 25
+
+
 def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
                nvd_api_key: str | None = None,
                vendor_sources: str | None = "auto",
@@ -240,10 +252,12 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         github_token=(os.environ.get("GITHUB_TOKEN") or
                       os.environ.get("GH_TOKEN")),
         backend=backend, on_coverage=record_coverage,
+        ai_limit=public_ai_finding_limit(),
     )
     findings, actions, eval_rows = (
         result.findings, result.actions, result.eval_rows)
     run_coverage, audit = result.coverage, result.audit
+    ai_triage = result.ai_triage
 
     title = f"PatchTriage - {target['name']}"
     eval_context = evaluation_context(result.subset)
@@ -252,6 +266,7 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         coverage=run_coverage,
         coverage_warnings=list(source_provenance.get("warnings") or []),
         eval_context=eval_context,
+        ai_triage=ai_triage,
     )
     outcomes = {
         "immediate": 0, "out_of_cycle": 0, "scheduled": 0, "defer": 0,
@@ -415,6 +430,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
         "enrichment_errors": enrichment_errors,
         "actions": len(actions),
         "decision_quality": decision_quality(findings),
+        "ai_triage": ai_triage,
+        "ai_scope_note": ai_scope_note(ai_triage),
         "audit_verified": audit["verified"],
         "audit_flagged": len(audit["flagged"]),
         "audit_rate": round(audit["verified"] / len(findings) * 100, 1)
@@ -465,7 +482,8 @@ def run_target(target: dict, backend: str = "rules", use_nvd: bool = True,
             "assessed" if actions else "no_plan"
         ),
         "result_message": _result_message(
-            findings, actions, incomplete, coverage_status, run_coverage),
+            findings, actions, incomplete, coverage_status, run_coverage,
+            ai_triage),
         "source": {
             "kind": target.get("source_kind") or "upload",
             "format": target.get("source_format", ""),

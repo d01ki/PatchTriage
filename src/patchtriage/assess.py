@@ -20,6 +20,7 @@ from .evalcmp import evaluate
 from .ingest.parsers import load_file_with_metadata
 from .models import Asset
 from .plan import build_plan
+from .presentation import ai_scope_note
 from .ssvc import ssvc_order_key
 from .triage.audit import audit_all
 from .triage.engine import get_backend, run_triage, run_triage_batch
@@ -39,6 +40,9 @@ class Assessment:
     eval_rows: list
     coverage: dict
     audit: dict = field(default_factory=dict)
+    # Run-specific, so kept out of coverage (which is saved as evidence
+    # provenance and read back by the next run).
+    ai_triage: dict | None = None
 
 
 def combine_coverage(declared: dict, observed: dict,
@@ -85,8 +89,10 @@ def merge_file_coverage(coverages: list[dict]) -> dict:
 
 
 def result_message(findings: list, actions: list, incomplete: bool,
-                   coverage_status: str, coverage: dict) -> str:
-    """The run's result message, naming records excluded as withdrawn."""
+                   coverage_status: str, coverage: dict,
+                   ai_triage: dict | None = None) -> str:
+    """The run's result message, naming records excluded as withdrawn and
+    findings an AI limit left with the deterministic explanation only."""
     message = _checked_scope_message(
         findings, actions, incomplete, coverage_status, coverage)
     withdrawn = int(coverage.get("withdrawn_skipped") or 0)
@@ -94,7 +100,7 @@ def result_message(findings: list, actions: list, incomplete: bool,
         message = (f"{message} {withdrawn} matching advisory record(s) had "
                    "been withdrawn by their publisher and were excluded."
                    ).strip()
-    return message
+    return f"{message} {ai_scope_note(ai_triage)}".strip()
 
 
 def _checked_scope_message(findings: list, actions: list, incomplete: bool,
@@ -225,6 +231,7 @@ def assess(
     jobs: int = 4,
     batch: bool = False,
     limit: int | None = None,
+    ai_limit: int | None = None,
     progress: Callable[[str], None] = lambda message: None,
     on_coverage: Callable[[dict], None] | None = None,
 ) -> Assessment:
@@ -297,9 +304,12 @@ def assess(
     subset = sorted(findings, key=ssvc_order_key)
     if limit:
         subset = subset[:limit]
+    # A deployment can bound AI cost per run: the most urgent findings in
+    # deterministic order are explained, the rest keep the rules result.
+    ai_subset = subset if ai_limit is None else subset[:max(0, ai_limit)]
     if batch and backend in {"ai", "claude"}:
         run_triage_batch(
-            subset, model, progress=progress,
+            ai_subset, model, progress=progress,
             provider="anthropic" if backend == "claude" else ai_provider)
     elif batch:
         raise ValueError(
@@ -307,11 +317,22 @@ def assess(
             "Anthropic provider")
     elif backend != "rules":
         workers = max(1, jobs)
-        progress(f"triaging {len(subset)} findings via '{backend}' "
+        progress(f"triaging {len(ai_subset)} findings via '{backend}' "
                  f"({workers} workers)...")
-        run_triage(subset, get_backend(
+        run_triage(ai_subset, get_backend(
             backend, model, escalation_model,
             provider=ai_provider, base_url=ai_base_url), jobs=workers)
+    ai_triage = None
+    if backend != "rules":
+        ai_triage = {
+            "backend": backend,
+            "findings_sent": len(ai_subset),
+            "deterministic_only": len(subset) - len(ai_subset),
+        }
+        if len(ai_subset) < len(subset):
+            progress(f"AI limit: {len(ai_subset)} of {len(subset)} findings "
+                     "were sent to the AI backend; the rest keep the "
+                     "deterministic result")
 
     coverage["findings_total"] = (
         len(findings) + int(coverage.get("omitted_findings") or 0))
@@ -325,4 +346,5 @@ def assess(
     apply_response_policy(findings)
     actions = build_plan(subset)
     eval_rows = evaluate(subset)
-    return Assessment(findings, subset, actions, eval_rows, coverage, audit)
+    return Assessment(findings, subset, actions, eval_rows, coverage, audit,
+                      ai_triage)
