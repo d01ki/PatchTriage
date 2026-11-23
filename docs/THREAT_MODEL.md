@@ -72,8 +72,10 @@ that workflow:
 
 ## Residual risks and review triggers
 
-- CI has no content-based secret scanning or dependency vulnerability audit;
-  Python dependencies are lower bounds resolved at build time.
+- The workflows in `.github/workflows/` run no secret scan or dependency
+  vulnerability audit. Pull requests also show a GitGuardian secret check from
+  a GitHub App, which is configured outside this repository. Python
+  dependencies are lower bounds resolved at build time.
 - Every push to `main` deploys production; there is no path filter and no
   manual approval gate in `deploy.yml`.
 - The local generic-Git scanner relies on application-level checks, not an
