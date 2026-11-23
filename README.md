@@ -127,6 +127,8 @@ compliance attestation.
   AI backends, deployment, limits, development
 - [Repository import and coverage model](docs/REPOSITORY_IMPORT.md)
 - [Reviewer validation protocol](docs/VALIDATION.md)
+- [Architecture](docs/ARCHITECTURE.md) — module map, entry points, storage
+- [Threat model](docs/THREAT_MODEL.md) — trust boundaries and mitigations
 
 ### macOS and Linux
 
